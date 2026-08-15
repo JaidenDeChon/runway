@@ -56,13 +56,16 @@ If a design artifact appears to use a value that doesn't exist in the token set,
 
 | Screen | Slug | Related issues | Status |
 |---|---|---|---|
-| Burndown dashboard | `dashboard` | Burndown chart, Dashboard | ☐ |
-| Will I make it | `shortfall` | Shortfall calculator | ☐ |
+| Burndown dashboard | `dashboard` | Burndown chart, Dashboard | ☑ |
+| Will I make it | `shortfall` | Shortfall calculator | ☑ |
 | Occurrence editor | `occurrence-editor` | Occurrence editor, What-if mode | ☐ |
-| Accounts | `accounts` | Accounts management | ☐ |
-| Recurring items | `recurring-items` | Recurring items, Income prediction | ☐ |
-| Transfers | `transfers` | Transfers | ☐ |
-| First run | `first-run` | First-run experience | ☐ |
+| Accounts | `accounts` | Accounts management | ☑ |
+| Recurring items | `recurring-items` | Recurring items, Income prediction | ☑ |
+| Transfers | `transfers` | Transfers | ☑ |
+| First run | `first-run` | First-run experience | ☑ |
+
+The `occurrence-editor` row is unticked because that screen does not exist in the Claude Design
+project — there is no export to import. It is the one screen in this index with no artifacts.
 
 Tick a box when the screen's artifacts land. Screens are exported as they're designed, not in one batch — a partially populated directory with an accurate index is more useful than an empty one waiting on a big export.
 
