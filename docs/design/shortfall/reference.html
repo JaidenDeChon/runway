@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<!--
+  Claude Design export — VISUAL REFERENCE ONLY.
+  Do not port this markup. It is a generated React/DC-runtime prototype;
+  this codebase is Vue 3 + shadcn-vue. See ../README.md.
+
+  Changed from the original export so it renders offline from this directory:
+    - support.js and the _ds/ stylesheets repointed to ../_assets/
+    - vendored React UMD builds injected (the export expects a host-provided React)
+    - cross-screen links repointed to ../<slug>/reference.html
+  Nothing else was touched.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="../_assets/vendor/react.production.min.js"></script>
+<script src="../_assets/vendor/react-dom.production.min.js"></script>
+<script src="../_assets/support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/components/fig-tokens.css" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/components/fig-assets.css" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/tokens/fonts.css" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/tokens/theme.css" />
+  <style>
+    body{margin:0}
+    input[type="date"]{ color-scheme: light dark; }
+    a{ color:var(--general-primary); text-decoration:none; }
+    a:hover{ color:var(--general-primary); text-decoration:underline; }
+  </style>
+</helmet>
+<div style="{{ pageStyle }}" className="{{ darkClass }}">
+  <div style="{{ headerStyle }}">
+    <div style="{{ brandRow }}">
+      <a href="../dashboard/reference.html" style="{{ backLinkStyle }}">← Dashboard</a>
+    </div>
+    <div style="{{ headerControls }}">
+      <div data-component="Tabs" style="{{ tabsWrap }}">
+        <button style="{{ tabMobileStyle }}" onClick="{{ setViewportMobile }}">Mobile</button>
+        <button style="{{ tabDesktopStyle }}" onClick="{{ setViewportDesktop }}">Desktop</button>
+      </div>
+      <button data-component="Button" aria-label="Toggle theme" style="{{ themeBtnStyle }}" onClick="{{ toggleDark }}">{{ themeIcon }}</button>
+    </div>
+  </div>
+
+  <div style="{{ mainStyle }}">
+    <div style="{{ titleBlock }}">
+      <div style="{{ pageTitle }}">Will I make it?</div>
+      <div style="{{ pageSubtitle }}">Pick a bill or a date. We'll tell you if your cushion holds until then.</div>
+    </div>
+
+    <div data-component="Card" style="{{ askCardStyle }}">
+      <div data-component="Tabs" style="{{ modeToggleWrap }}">
+        <button style="{{ billTabStyle }}" onClick="{{ setModeBill }}">Upcoming bill</button>
+        <button style="{{ dateTabStyle }}" onClick="{{ setModeDate }}">Pick a date</button>
+      </div>
+
+      <sc-if value="{{ isModeBill }}" hint-placeholder-val="{{ true }}">
+        <div data-component="RadioGroup" style="{{ billListStyle }}">
+          <sc-for list="{{ billOptions }}" as="b" hint-placeholder-count="5">
+            <label data-component="Radio" style="{{ b.rowStyle }}" onClick="{{ b.onSelect }}">
+              <span style="{{ b.dotOuter }}">
+                <sc-if value="{{ b.selected }}" hint-placeholder-val="{{ false }}">
+                  <span style="{{ b.dotInner }}"></span>
+                </sc-if>
+              </span>
+              <div style="{{ b.labelCol }}">
+                <div style="{{ b.labelText }}">{{ b.label }}</div>
+                <div style="{{ b.dateText }}">{{ b.dateLabel }}</div>
+              </div>
+              <div style="{{ b.amountText }}">{{ b.amountLabel }}</div>
+            </label>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isModeDate }}" hint-placeholder-val="{{ false }}">
+        <div style="{{ dateRow }}">
+          <div style="{{ dateFieldLabel }}">Date</div>
+          <input data-component="Input" type="date" value="{{ dateStr }}" min="{{ minDateStr }}" max="{{ maxDateStr }}" onChange="{{ onDateChange }}" style="{{ dateInputStyle }}" />
+        </div>
+      </sc-if>
+
+      <div data-component="Separator" style="{{ sepStyle }}"></div>
+
+      <div style="{{ cushionRow }}">
+        <div style="{{ cushionLabelCol }}">
+          <div style="{{ cushionLabel }}">Safety cushion</div>
+          <div style="{{ cushionHelp }}">The lowest balance you're comfortable letting it reach.</div>
+        </div>
+        <div style="{{ cushionInputWrap }}">
+          <span style="{{ cushionPrefix }}">$</span>
+          <input data-component="Input" type="number" value="{{ cushionInputVal }}" onChange="{{ onCushionChange }}" style="{{ cushionInputStyle }}" />
+        </div>
+      </div>
+    </div>
+
+    <div data-component="Card" style="{{ answerCardStyle }}">
+      <span data-component="Badge" style="{{ answerBadgeStyle }}">{{ answerBadgeLabel }}</span>
+      <div style="{{ answerHeadline }}">{{ answerHeadlineText }}</div>
+      <div style="{{ answerSub }}">{{ answerSubText }}</div>
+      <div data-component="Separator" style="{{ sepStyle }}"></div>
+      <div style="{{ answerStatsRow }}">
+        <div style="{{ answerStatCol }}">
+          <div style="{{ answerStatLabel }}">Today</div>
+          <div style="{{ answerStatVal }}">{{ todayBalanceLabel }}</div>
+        </div>
+        <div style="{{ answerStatCol }}">
+          <div style="{{ answerStatLabel }}">Lowest point</div>
+          <div style="{{ answerStatVal }}">{{ lowestBalanceLabel }}</div>
+        </div>
+        <div style="{{ answerStatCol }}">
+          <div style="{{ answerStatLabel }}">On</div>
+          <div style="{{ answerStatVal }}">{{ lowestDateLabel }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmtDate(d){ return MONTHS[d.getMonth()]+' '+d.getDate(); }
+function fmtMoney(n){ const v=Math.round(n); const s='$'+Math.abs(v).toLocaleString('en-US'); return v<0?'-'+s:s; }
+function toISO(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+
+const TODAY=new Date(2026,7,15);
+const MS_DAY=86400000;
+const ACCOUNTS=[
+  {id:'checking',name:'Checking',start:2140},
+  {id:'savings',name:'Savings',start:3200},
+];
+const MONTHLY=[
+  {day:1,amount:-1650,account:'checking',label:'Rent'},
+  {day:5,amount:-38,account:'checking',label:'Streaming subscriptions'},
+  {day:8,amount:-145,account:'checking',label:'Electric & water'},
+  {day:12,amount:-85,account:'checking',label:'Phone bill'},
+  {day:20,amount:-310,account:'checking',label:'Car payment'},
+  {day:24,amount:-175,account:'checking',label:'Car insurance'},
+  {day:1,amount:4,account:'savings',label:'Savings interest'},
+];
+const PAYCHECK_ANCHOR=new Date(2026,7,7);
+const PAYCHECK_AMOUNT=2450;
+const DISCRETIONARY=-34;
+const OFFSET_MIN=-14, OFFSET_MAX=200;
+
+function buildSeries(){
+  const evByOffset={};
+  const addEv=(off,ev)=>{ (evByOffset[off]=evByOffset[off]||[]).push(ev); };
+  for(let off=OFFSET_MIN; off<=OFFSET_MAX; off++){
+    const date=new Date(TODAY.getTime()+off*MS_DAY);
+    MONTHLY.forEach(m=>{ if(date.getDate()===m.day) addEv(off,{account:m.account,label:m.label,amount:m.amount}); });
+    const diffDays=Math.round((date-PAYCHECK_ANCHOR)/MS_DAY);
+    const mod=((diffDays%14)+14)%14;
+    if(mod===0) addEv(off,{account:'checking',label:'Paycheck',amount:PAYCHECK_AMOUNT});
+  }
+  let bal={checking:ACCOUNTS[0].start,savings:ACCOUNTS[1].start};
+  const points=[];
+  for(let off=OFFSET_MIN; off<=OFFSET_MAX; off++){
+    const evs=evByOffset[off]||[];
+    evs.forEach(e=>{ bal[e.account]+=e.amount; });
+    bal.checking+=DISCRETIONARY;
+    const date=new Date(TODAY.getTime()+off*MS_DAY);
+    points.push({offset:off,date,combined:bal.checking+bal.savings,events:evs});
+  }
+  return points;
+}
+const SERIES=buildSeries();
+const MIN_DATE=new Date(TODAY.getTime()+1*MS_DAY);
+const MAX_DATE=new Date(TODAY.getTime()+180*MS_DAY);
+
+function nextBills(){
+  const future=SERIES.filter(p=>p.offset>=1 && p.offset<=120);
+  const seen=new Set(); const out=[];
+  future.forEach(p=>{ p.events.forEach(e=>{ if(e.amount<0 && !seen.has(e.label)){ seen.add(e.label); out.push({id:e.label, label:e.label, date:p.date, offset:p.offset, amount:e.amount}); } }); });
+  out.sort((a,b)=>a.offset-b.offset);
+  return out;
+}
+const BILLS=nextBills();
+
+class Component extends DCLogic {
+  state={ dark:false, viewport:'mobile', mode:'bill', billId:BILLS[0].id, dateStr:toISO(new Date(TODAY.getTime()+14*MS_DAY)), cushion:0 };
+
+  toggleDark=()=>this.setState(s=>({dark:!s.dark}));
+  setViewport=(v)=>this.setState({viewport:v});
+  setModeBill=()=>this.setState({mode:'bill'});
+  setModeDate=()=>this.setState({mode:'date'});
+  selectBill=(id)=>this.setState({billId:id});
+  onDateChange=(e)=>{ const v=e && e.target? e.target.value: e; if(v) this.setState({dateStr:v}); };
+  onCushionChange=(e)=>{ const v=e && e.target? e.target.value: e; const n=Number(v); this.setState({cushion: isNaN(n)? 0: n}); };
+
+  renderVals(){
+    const st=this.state;
+    const isDesktop=st.viewport==='desktop';
+    const isModeBill=st.mode==='bill';
+
+    let targetOffset, targetDate;
+    if(isModeBill){
+      const bill=BILLS.find(b=>b.id===st.billId)||BILLS[0];
+      targetOffset=bill.offset; targetDate=bill.date;
+    } else {
+      const parts=st.dateStr.split('-').map(Number);
+      const d=new Date(parts[0],parts[1]-1,parts[2]);
+      targetOffset=Math.round((d-TODAY)/MS_DAY);
+      targetDate=d;
+    }
+    targetOffset=Math.max(targetOffset,0);
+
+    const window_=SERIES.filter(p=>p.offset>=0 && p.offset<=targetOffset);
+    const pts=window_.length? window_: [SERIES.find(p=>p.offset===0)];
+    let lowPt=pts[0];
+    pts.forEach(p=>{ if(p.combined<lowPt.combined) lowPt=p; });
+    const todayPt=SERIES.find(p=>p.offset===0);
+
+    const cushion=st.cushion||0;
+    const margin=lowPt.combined-cushion;
+    const covered=margin>=0;
+
+    const dateLabel=fmtDate(targetDate);
+    let headlineText, subText, badgeLabel, badgeColor;
+    if(covered){
+      badgeLabel='Covered'; badgeColor='var(--chart-positive)';
+      headlineText="You're covered.";
+      subText=`You'll have ${fmtMoney(margin)} to spare above your cushion through ${dateLabel}.`;
+    } else {
+      badgeLabel='Short'; badgeColor='var(--general-destructive)';
+      headlineText=`You need ${fmtMoney(Math.abs(margin))} more.`;
+      subText=`to keep ${fmtMoney(cushion)} in reserve through ${dateLabel}.`;
+    }
+
+    const cardBase={ background:'var(--card-card)', border:'1px solid var(--general-border)', borderRadius:'var(--radius)', padding: isDesktop? '24px 26px':'18px 16px', display:'flex', flexDirection:'column', boxSizing:'border-box' };
+
+    const billOptions=BILLS.map(b=>({
+      id:b.id, selected: st.billId===b.id, onSelect:()=>this.selectBill(b.id),
+      label:b.label, dateLabel:fmtDate(b.date)+(b.offset===0?' · Today':''), amountLabel:fmtMoney(b.amount),
+      rowStyle:{ display:'flex', alignItems:'center', gap:12, padding:'10px 8px', borderRadius:8, cursor:'pointer', background: st.billId===b.id? 'var(--general-accent)':'transparent' },
+      dotOuter:{ width:18, height:18, borderRadius:99, border:'1.5px solid '+(st.billId===b.id? 'var(--general-primary)':'var(--general-input)'), display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 },
+      dotInner:{ width:9, height:9, borderRadius:99, background:'var(--general-primary)' },
+      labelCol:{ display:'flex', flexDirection:'column', gap:2, flex:1 },
+      labelText:{ fontSize:14.5, fontWeight:500, color:'var(--general-foreground)', fontFamily:'var(--font-sans)' },
+      dateText:{ fontSize:12.5, color:'var(--general-muted-foreground)', fontFamily:'var(--font-sans)' },
+      amountText:{ fontSize:14.5, fontWeight:600, color:'var(--general-foreground)', fontFamily:'var(--font-mono)' },
+    }));
+
+    return {
+      darkClass: st.dark? 'dark':'',
+      pageStyle:{ minHeight:'100vh', background:'var(--general-background)', color:'var(--general-foreground)', fontFamily:'var(--font-sans)', display:'flex', flexDirection:'column', alignItems:'center', boxSizing:'border-box' },
+      headerStyle:{ width:'100%', maxWidth: isDesktop? 640:430, display:'flex', alignItems:'center', justifyContent:'space-between', padding: isDesktop? '24px 0 8px':'20px 16px 4px', boxSizing:'border-box' },
+      brandRow:{ display:'flex', alignItems:'center', gap:8 },
+      backLinkStyle:{ fontSize:13.5, fontWeight:500, color:'var(--general-muted-foreground)' },
+      headerControls:{ display:'flex', alignItems:'center', gap:10 },
+      tabsWrap:{ display:'flex', background:'var(--general-accent)', borderRadius:8, padding:3, gap:2 },
+      tabMobileStyle:{ border:'none', cursor:'pointer', fontFamily:'var(--font-sans)', fontSize:12, fontWeight:600, padding:'6px 10px', borderRadius:6, background: !isDesktop? 'var(--card-card)':'transparent', color: !isDesktop? 'var(--general-foreground)':'var(--general-muted-foreground)', boxShadow: !isDesktop? '0 1px 2px rgba(0,0,0,0.08)':'none' },
+      tabDesktopStyle:{ border:'none', cursor:'pointer', fontFamily:'var(--font-sans)', fontSize:12, fontWeight:600, padding:'6px 10px', borderRadius:6, background: isDesktop? 'var(--card-card)':'transparent', color: isDesktop? 'var(--general-foreground)':'var(--general-muted-foreground)', boxShadow: isDesktop? '0 1px 2px rgba(0,0,0,0.08)':'none' },
+      setViewportMobile:()=>this.setViewport('mobile'),
+      setViewportDesktop:()=>this.setViewport('desktop'),
+      themeBtnStyle:{ width:32,height:32, borderRadius:8, border:'1px solid var(--general-border)', background:'var(--card-card)', color:'var(--general-foreground)', cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center' },
+      themeIcon: st.dark? '☀':'☾',
+      toggleDark: this.toggleDark,
+
+      mainStyle:{ display:'flex', flexDirection:'column', gap:16, width:'100%', maxWidth: isDesktop? 640:430, padding: isDesktop? '20px 0 64px':'16px 16px 56px', boxSizing:'border-box' },
+
+      titleBlock:{ textAlign: isDesktop? 'center':'left', marginBottom:4 },
+      pageTitle:{ fontSize: isDesktop? 30:24, fontWeight:650, letterSpacing:'-0.02em' },
+      pageSubtitle:{ fontSize: isDesktop? 15:13.5, color:'var(--general-muted-foreground)', marginTop:6 },
+
+      askCardStyle:{ ...cardBase, gap:14 },
+      modeToggleWrap:{ display:'flex', background:'var(--general-accent)', borderRadius:9, padding:3, gap:2, alignSelf: isDesktop? 'center':'stretch' },
+      billTabStyle:{ flex:1, border:'none', cursor:'pointer', fontFamily:'var(--font-sans)', fontSize:13, fontWeight:600, padding:'8px 16px', borderRadius:7, background: isModeBill? 'var(--general-primary)':'transparent', color: isModeBill? 'var(--general-primary-foreground)':'var(--general-muted-foreground)' },
+      dateTabStyle:{ flex:1, border:'none', cursor:'pointer', fontFamily:'var(--font-sans)', fontSize:13, fontWeight:600, padding:'8px 16px', borderRadius:7, background: !isModeBill? 'var(--general-primary)':'transparent', color: !isModeBill? 'var(--general-primary-foreground)':'var(--general-muted-foreground)' },
+      setModeBill:this.setModeBill, setModeDate:this.setModeDate,
+      isModeBill, isModeDate: !isModeBill,
+
+      billListStyle:{ display:'flex', flexDirection:'column', gap:2 },
+      billOptions,
+
+      dateRow:{ display:'flex', flexDirection:'column', gap:8, padding:'4px 0' },
+      dateFieldLabel:{ fontSize:13, fontWeight:500, color:'var(--general-muted-foreground)' },
+      dateStr: st.dateStr, minDateStr: toISO(MIN_DATE), maxDateStr: toISO(MAX_DATE),
+      onDateChange: this.onDateChange,
+      dateInputStyle:{ border:'1px solid var(--general-input)', borderRadius:8, padding:'10px 12px', fontSize:15, fontFamily:'var(--font-mono)', background:'var(--general-background)', color:'var(--general-foreground)', width:'100%', boxSizing:'border-box' },
+
+      sepStyle:{ height:1, background:'var(--general-border)', width:'100%', margin:'6px 0' },
+
+      cushionRow:{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 },
+      cushionLabelCol:{ display:'flex', flexDirection:'column', gap:2, flex:1 },
+      cushionLabel:{ fontSize:14, fontWeight:500, color:'var(--general-foreground)' },
+      cushionHelp:{ fontSize:12, color:'var(--general-muted-foreground)', lineHeight:1.4 },
+      cushionInputWrap:{ display:'flex', alignItems:'center', gap:4, border:'1px solid var(--general-input)', borderRadius:8, padding:'8px 10px', background:'var(--general-background)', flexShrink:0 },
+      cushionPrefix:{ fontSize:14, color:'var(--general-muted-foreground)', fontFamily:'var(--font-mono)' },
+      cushionInputVal: st.cushion, onCushionChange: this.onCushionChange,
+      cushionInputStyle:{ border:'none', outline:'none', background:'transparent', fontSize:15, fontFamily:'var(--font-mono)', color:'var(--general-foreground)', width:78 },
+
+      answerCardStyle:{ ...cardBase, alignItems: isDesktop? 'center':'flex-start', textAlign: isDesktop? 'center':'left', gap:10, padding: isDesktop? '32px 28px':'24px 18px' },
+      answerBadgeStyle:{ fontSize:12, fontWeight:600, padding:'3px 10px', borderRadius:99, fontFamily:'var(--font-sans)', background: 'color-mix(in srgb, '+badgeColor+' 16%, transparent)', color: badgeColor },
+      answerBadgeLabel: badgeLabel,
+      answerHeadline:{ fontSize: isDesktop? 42:32, fontWeight:650, letterSpacing:'-0.02em', color: covered? 'var(--general-foreground)':'var(--general-destructive)', marginTop:6 },
+      answerHeadlineText: headlineText,
+      answerSub:{ fontSize: isDesktop? 15:14, color:'var(--general-muted-foreground)', maxWidth:420 },
+      answerSubText: subText,
+
+      answerStatsRow:{ display:'flex', gap: isDesktop? 32:20, width:'100%', justifyContent: isDesktop? 'center':'flex-start' },
+      answerStatCol:{ display:'flex', flexDirection:'column', gap:3 },
+      answerStatLabel:{ fontSize:11.5, fontWeight:600, color:'var(--general-muted-foreground)', textTransform:'uppercase', letterSpacing:'0.03em' },
+      answerStatVal:{ fontSize:15, fontWeight:600, fontFamily:'var(--font-mono)', color:'var(--general-foreground)' },
+      todayBalanceLabel: fmtMoney(todayPt.combined),
+      lowestBalanceLabel: fmtMoney(lowPt.combined),
+      lowestDateLabel: fmtDate(lowPt.date)+(lowPt.offset===0?' (today)':''),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

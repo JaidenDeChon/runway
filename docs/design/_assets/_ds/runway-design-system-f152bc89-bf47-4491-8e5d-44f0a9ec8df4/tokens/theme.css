@@ -1,0 +1,50 @@
+/* Brand customization layer — applied AFTER fig-tokens.css.
+   The Obra shadcn kit ships a neutral (black/white) primary by default.
+   This product's brief calls for a blue shadcn primary + a green chart accent,
+   so we override just the semantic tokens that carry "primary" and "chart" meaning,
+   reusing the kit's own Tailwind-blue / Tailwind-green raw scales — no invented hex. */
+:root{
+  --brand-primary-50:var(--tw-raw-blue-50);
+  --brand-primary-100:var(--tw-raw-blue-100);
+  --brand-primary-200:var(--tw-raw-blue-200);
+  --brand-primary-300:var(--tw-raw-blue-300);
+  --brand-primary-400:var(--tw-raw-blue-400);
+  --brand-primary-500:var(--tw-raw-blue-500);
+  --brand-primary-600:var(--tw-raw-blue-600);
+  --brand-primary-700:var(--tw-raw-blue-700);
+  --brand-primary-800:var(--tw-raw-blue-800);
+  --brand-primary-900:var(--tw-raw-blue-900);
+
+  --shadcn-colors-general-primary:var(--brand-primary-600);
+  --shadcn-colors-general-primary-foreground:var(--white);
+  --shadcn-colors-general-ring:var(--brand-primary-500);
+  --shadcn-colors-focus-ring:var(--brand-primary-300);
+  --shadcn-colors-sidebar-sidebar-primary:var(--brand-primary-600);
+  --shadcn-colors-sidebar-sidebar-primary-foreground:var(--white);
+  --shadcn-colors-sidebar-sidebar-ring:var(--brand-primary-400);
+  --general-primary:var(--brand-primary-600);
+  --general-primary-foreground:var(--white);
+  --unofficial-primary-hover:var(--brand-primary-700);
+
+  /* Chart accent: runway/burndown is fundamentally about money remaining — green reads
+     as "healthy runway", so chart-1 (the lead series, typically projected balance) is green;
+     the rest of the qualitative chart scale stays in the kit's blue family for contrast. */
+  --chart-colors-chart-1:var(--tw-raw-green-500);
+  --chart-colors-chart-2:var(--tw-raw-green-700);
+  --chart-colors-chart-3:var(--tw-raw-blue-500);
+  --chart-colors-chart-4:var(--tw-raw-blue-700);
+  --chart-colors-chart-5:var(--tw-raw-amber-500);
+  --chart-positive:var(--tw-raw-green-600);
+  --chart-negative:var(--tw-raw-red-600);
+}
+.dark{
+  --shadcn-colors-general-primary:var(--brand-primary-500);
+  --shadcn-colors-general-primary-foreground:var(--tw-raw-blue-950);
+  --shadcn-colors-sidebar-sidebar-primary:var(--brand-primary-500);
+  --chart-colors-chart-1:var(--tw-raw-green-400);
+  --chart-colors-chart-2:var(--tw-raw-green-600);
+  --chart-colors-chart-3:var(--tw-raw-blue-400);
+  --chart-colors-chart-4:var(--tw-raw-blue-600);
+  --chart-positive:var(--tw-raw-green-400);
+  --chart-negative:var(--tw-raw-red-400);
+}

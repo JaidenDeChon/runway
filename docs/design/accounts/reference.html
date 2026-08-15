@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<!--
+  Claude Design export — VISUAL REFERENCE ONLY.
+  Do not port this markup. It is a generated React/DC-runtime prototype;
+  this codebase is Vue 3 + shadcn-vue. See ../README.md.
+
+  Changed from the original export so it renders offline from this directory:
+    - support.js and the _ds/ stylesheets repointed to ../_assets/
+    - vendored React UMD builds injected (the export expects a host-provided React)
+    - cross-screen links repointed to ../<slug>/reference.html
+  Nothing else was touched.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="../_assets/vendor/react.production.min.js"></script>
+<script src="../_assets/vendor/react-dom.production.min.js"></script>
+<script src="../_assets/support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/components/fig-tokens.css" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/components/fig-assets.css" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/tokens/fonts.css" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/tokens/theme.css" />
+  <style>
+    body{margin:0}
+    input[type="date"]{ color-scheme: light dark; }
+    a{ color:var(--general-primary); text-decoration:none; }
+    a:hover{ color:var(--general-primary); text-decoration:underline; }
+  </style>
+</helmet>
+<div style="{{ pageStyle }}" className="{{ darkClass }}">
+  <div style="{{ headerStyle }}">
+    <div style="{{ brandRow }}">
+      <a href="../dashboard/reference.html" style="{{ backLinkStyle }}">← Dashboard</a>
+    </div>
+    <div style="{{ headerControls }}">
+      <div data-component="Tabs" style="{{ tabsWrap }}">
+        <button style="{{ tabMobileStyle }}" onClick="{{ setViewportMobile }}">Mobile</button>
+        <button style="{{ tabDesktopStyle }}" onClick="{{ setViewportDesktop }}">Desktop</button>
+      </div>
+      <button data-component="Button" aria-label="Toggle theme" style="{{ themeBtnStyle }}" onClick="{{ toggleDark }}">{{ themeIcon }}</button>
+    </div>
+  </div>
+
+  <div style="{{ mainStyle }}">
+    <div style="{{ titleRow }}">
+      <div style="{{ titleBlock }}">
+        <div style="{{ pageTitle }}">Accounts</div>
+        <div style="{{ pageSubtitle }}">These balances feed your runway. Keep them current.</div>
+      </div>
+      <button data-component="Button" style="{{ addBtnDesktop }}" onClick="{{ openAdd }}">+ Add account</button>
+    </div>
+
+    <div data-component="Card" style="{{ accountsCardStyle }}">
+      <sc-for list="{{ accountRows }}" as="a" hint-placeholder-count="2">
+        <div style="{{ a.rowStyle }}" onClick="{{ a.onEdit }}">
+          <span style="{{ a.swatch }}"></span>
+          <div style="{{ a.labelCol }}">
+            <div style="{{ a.nameRow }}">
+              <div style="{{ a.nameText }}">{{ a.name }}</div>
+              <sc-if value="{{ a.isSource }}" hint-placeholder-val="{{ false }}">
+                <span data-component="Badge" style="{{ a.sourceBadge }}">Discretionary source</span>
+              </sc-if>
+            </div>
+            <div style="{{ a.asOfText }}">Balance as of {{ a.asOfLabel }}</div>
+          </div>
+          <div style="{{ a.rightCol }}">
+            <div style="{{ a.balanceText }}">{{ a.balanceLabel }}</div>
+            <span style="{{ a.chevron }}">›</span>
+          </div>
+        </div>
+      </sc-for>
+      <button data-component="Button" style="{{ addBtnMobile }}" onClick="{{ openAdd }}">+ Add account</button>
+    </div>
+
+    <div data-component="Card" style="{{ connectCardStyle }}" aria-disabled="true">
+      <div style="{{ connectIconWrap }}">🏦</div>
+      <div style="{{ connectLabelCol }}">
+        <div style="{{ connectTitle }}">Connect a bank</div>
+        <div style="{{ connectSub }}">Sync balances automatically instead of updating them by hand.</div>
+      </div>
+      <span data-component="Badge" style="{{ connectBadge }}">Coming soon</span>
+    </div>
+  </div>
+
+  <sc-if value="{{ sheetOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="{{ overlayStyle }}" onClick="{{ closeSheet }}"></div>
+    <div data-component="{{ editorComponentName }}" style="{{ editorStyle }}">
+      <div style="{{ editorHandle }}"></div>
+      <div style="{{ editorHeaderRow }}">
+        <div style="{{ editorTitle }}">{{ sheetTitle }}</div>
+        <button data-component="Button" style="{{ closeBtnStyle }}" onClick="{{ closeSheet }}">✕</button>
+      </div>
+
+      <div style="{{ editFormWrap }}">
+        <div style="{{ fieldCol }}">
+          <div style="{{ fieldLabel }}">Name</div>
+          <input data-component="Input" type="text" value="{{ form.name }}" onChange="{{ onNameChange }}" style="{{ textInputStyle }}" placeholder="e.g. Checking" />
+        </div>
+
+        <div style="{{ fieldCol }}">
+          <div style="{{ fieldLabel }}">Line color</div>
+          <div style="{{ colorRow }}">
+            <sc-for list="{{ colorOptions }}" as="c" hint-placeholder-count="3">
+              <button style="{{ c.swatchStyle }}" onClick="{{ c.onSelect }}" aria-label="{{ c.name }}"></button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="{{ fieldRow }}">
+          <div style="{{ fieldCol }}">
+            <div style="{{ fieldLabel }}">Balance</div>
+            <div style="{{ moneyInputWrap }}">
+              <span style="{{ moneyPrefix }}">$</span>
+              <input data-component="Input" type="number" value="{{ form.balanceVal }}" onChange="{{ onBalanceChange }}" style="{{ moneyInputStyle }}" />
+            </div>
+          </div>
+          <div style="{{ fieldCol }}">
+            <div style="{{ fieldLabel }}">As of</div>
+            <input data-component="Input" type="date" value="{{ form.asOf }}" onChange="{{ onAsOfChange }}" style="{{ textInputStyle }}" />
+          </div>
+        </div>
+
+        <label data-component="Checkbox" style="{{ sourceRow }}" onClick="{{ toggleSource }}">
+          <span style="{{ checkboxBox }}">
+            <sc-if value="{{ form.isSource }}" hint-placeholder-val="{{ false }}">
+              <span style="{{ checkboxTick }}">✓</span>
+            </sc-if>
+          </span>
+          <div style="{{ sourceLabelCol }}">
+            <div style="{{ sourceLabel }}">Draw discretionary spend from this account</div>
+            <div style="{{ sourceHelp }}">The account your daily spending figure drains. Only one account can hold this.</div>
+          </div>
+        </label>
+
+        <div style="{{ editActionsRow }}">
+          <sc-if value="{{ isEditing }}" hint-placeholder-val="{{ false }}">
+            <button data-component="Button" style="{{ deleteBtn }}" onClick="{{ deleteAccount }}">Delete</button>
+          </sc-if>
+          <button data-component="Button" style="{{ cancelBtn }}" onClick="{{ closeSheet }}">Cancel</button>
+          <button data-component="Button" style="{{ saveBtn }}" onClick="{{ saveAccount }}">{{ saveLabel }}</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmtDate(d){ return MONTHS[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear(); }
+function fmtMoney(n){ const v=Math.round(n); const s='$'+Math.abs(v).toLocaleString('en-US'); return v<0?'-'+s:s; }
+function toISO(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function fromISO(s){ const p=s.split('-').map(Number); return new Date(p[0],p[1]-1,p[2]); }
+
+const TODAY=new Date(2026,7,15);
+// chart-1 stays reserved for the combined burndown line and chart-5 for warning/what-if tinting elsewhere in the app.
+const COLOR_TOKENS=[
+  {id:'chart-2',var:'var(--chart-colors-chart-2)'},
+  {id:'chart-3',var:'var(--chart-colors-chart-3)'},
+  {id:'chart-4',var:'var(--chart-colors-chart-4)'},
+];
+
+const INITIAL_ACCOUNTS=[
+  {id:'checking', name:'Checking', color:'chart-3', balance:2140, asOf:toISO(TODAY), isSource:true},
+  {id:'savings', name:'Savings', color:'chart-4', balance:3200, asOf:toISO(TODAY), isSource:false},
+];
+
+let uid=1;
+
+class Component extends DCLogic {
+  state={ dark:false, viewport:'mobile', accounts:INITIAL_ACCOUNTS, sheetOpen:false, editingId:null, form:null };
+
+  toggleDark=()=>this.setState(s=>({dark:!s.dark}));
+  setViewport=(v)=>this.setState({viewport:v});
+
+  openAdd=()=>this.setState({sheetOpen:true, editingId:null, form:{name:'', color:COLOR_TOKENS[this.state.accounts.length%COLOR_TOKENS.length].id, balanceVal:0, asOf:toISO(TODAY), isSource:this.state.accounts.length===0}});
+  openEdit=(acc)=>this.setState({sheetOpen:true, editingId:acc.id, form:{name:acc.name, color:acc.color, balanceVal:acc.balance, asOf:acc.asOf, isSource:acc.isSource}});
+  closeSheet=()=>this.setState({sheetOpen:false, editingId:null, form:null});
+
+  onNameChange=(e)=>{ const v=e&&e.target?e.target.value:e; this.setState(s=>({form:{...s.form,name:v}})); };
+  onBalanceChange=(e)=>{ const v=e&&e.target?e.target.value:e; const n=Number(v); this.setState(s=>({form:{...s.form,balanceVal:isNaN(n)?0:n}})); };
+  onAsOfChange=(e)=>{ const v=e&&e.target?e.target.value:e; if(v) this.setState(s=>({form:{...s.form,asOf:v}})); };
+  setColor=(id)=>this.setState(s=>({form:{...s.form,color:id}}));
+  toggleSource=()=>this.setState(s=>({form:{...s.form,isSource:!s.form.isSource}}));
+
+  saveAccount=()=>{
+    const st=this.state; const f=st.form; if(!f || !f.name.trim()) return;
+    this.setState(s=>{
+      let accounts=s.accounts.slice();
+      if(f.isSource) accounts=accounts.map(a=>({...a,isSource:false}));
+      if(s.editingId){
+        accounts=accounts.map(a=>a.id===s.editingId? {...a, name:f.name.trim(), color:f.color, balance:f.balanceVal, asOf:f.asOf, isSource:f.isSource}: a);
+      } else {
+        accounts.push({id:'acc'+(uid++), name:f.name.trim(), color:f.color, balance:f.balanceVal, asOf:f.asOf, isSource:f.isSource});
+      }
+      return {accounts, sheetOpen:false, editingId:null, form:null};
+    });
+  };
+  deleteAccount=()=>{
+    this.setState(s=>({accounts:s.accounts.filter(a=>a.id!==s.editingId), sheetOpen:false, editingId:null, form:null}));
+  };
+
+  renderVals(){
+    const st=this.state;
+    const isDesktop=st.viewport==='desktop';
+    const colorVar=id=>(COLOR_TOKENS.find(c=>c.id===id)||COLOR_TOKENS[0]).var;
+
+    const cardBase={ background:'var(--card-card)', border:'1px solid var(--general-border)', borderRadius:'var(--radius)', padding: isDesktop? '10px 12px':'6px 8px', display:'flex', flexDirection:'column', boxSizing:'border-box' };
+
+    const accountRows=st.accounts.map(a=>({
+      id:a.id, name:a.name, isSource:a.isSource,
+      onEdit:()=>this.openEdit(a),
+      rowStyle:{ display:'flex', alignItems:'center', gap:12, padding: isDesktop? '14px 10px':'12px 6px', borderBottom:'1px solid var(--general-border)', cursor:'pointer' },
+      swatch:{ width:12, height:12, borderRadius:99, background:colorVar(a.color), flexShrink:0 },
+      labelCol:{ display:'flex', flexDirection:'column', gap:3, flex:1, minWidth:0 },
+      nameRow:{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' },
+      nameText:{ fontSize:15, fontWeight:600, color:'var(--general-foreground)', fontFamily:'var(--font-sans)' },
+      sourceBadge:{ fontSize:10.5, fontWeight:600, padding:'2px 8px', borderRadius:99, background:'var(--general-accent)', color:'var(--general-muted-foreground)', fontFamily:'var(--font-sans)' },
+      asOfText:{ fontSize:12.5, color:'var(--general-muted-foreground)', fontFamily:'var(--font-sans)' },
+      asOfLabel: fmtDate(fromISO(a.asOf)),
+      rightCol:{ display:'flex', alignItems:'center', gap:8, flexShrink:0 },
+      balanceText:{ fontSize:15, fontWeight:600, fontFamily:'var(--font-mono)', color:'var(--general-foreground)' },
+      balanceLabel: fmtMoney(a.balance),
+      chevron:{ color:'var(--general-muted-foreground)', fontSize:18 },
+    }));
+
+    const f=st.form||{name:'',color:COLOR_TOKENS[0].id,balanceVal:0,asOf:toISO(TODAY),isSource:false};
+    const colorOptions=COLOR_TOKENS.map(c=>({
+      id:c.id, name:c.id, onSelect:()=>this.setColor(c.id),
+      swatchStyle:{ width:30, height:30, borderRadius:99, background:c.var, border: f.color===c.id? '2.5px solid var(--general-foreground)':'2.5px solid transparent', outline:'1px solid var(--general-border)', outlineOffset:2, cursor:'pointer', padding:0 },
+    }));
+
+    return {
+      darkClass: st.dark? 'dark':'',
+      pageStyle:{ minHeight:'100vh', background:'var(--general-background)', color:'var(--general-foreground)', fontFamily:'var(--font-sans)', display:'flex', flexDirection:'column', alignItems:'center', boxSizing:'border-box' },
+      headerStyle:{ width:'100%', maxWidth: isDesktop? 640:430, display:'flex', alignItems:'center', justifyContent:'space-between', padding: isDesktop? '24px 0 8px':'20px 16px 4px', boxSizing:'border-box' },
+      brandRow:{ display:'flex', alignItems:'center', gap:8 },
+      backLinkStyle:{ fontSize:13.5, fontWeight:500, color:'var(--general-muted-foreground)' },
+      headerControls:{ display:'flex', alignItems:'center', gap:10 },
+      tabsWrap:{ display:'flex', background:'var(--general-accent)', borderRadius:8, padding:3, gap:2 },
+      tabMobileStyle:{ border:'none', cursor:'pointer', fontFamily:'var(--font-sans)', fontSize:12, fontWeight:600, padding:'6px 10px', borderRadius:6, background: !isDesktop? 'var(--card-card)':'transparent', color: !isDesktop? 'var(--general-foreground)':'var(--general-muted-foreground)', boxShadow: !isDesktop? '0 1px 2px rgba(0,0,0,0.08)':'none' },
+      tabDesktopStyle:{ border:'none', cursor:'pointer', fontFamily:'var(--font-sans)', fontSize:12, fontWeight:600, padding:'6px 10px', borderRadius:6, background: isDesktop? 'var(--card-card)':'transparent', color: isDesktop? 'var(--general-foreground)':'var(--general-muted-foreground)', boxShadow: isDesktop? '0 1px 2px rgba(0,0,0,0.08)':'none' },
+      setViewportMobile:()=>this.setViewport('mobile'),
+      setViewportDesktop:()=>this.setViewport('desktop'),
+      themeBtnStyle:{ width:32,height:32, borderRadius:8, border:'1px solid var(--general-border)', background:'var(--card-card)', color:'var(--general-foreground)', cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center' },
+      themeIcon: st.dark? '☀':'☾',
+      toggleDark: this.toggleDark,
+
+      mainStyle:{ display:'flex', flexDirection:'column', gap:16, width:'100%', maxWidth: isDesktop? 640:430, padding: isDesktop? '20px 0 64px':'16px 16px 56px', boxSizing:'border-box' },
+
+      titleRow:{ display:'flex', alignItems: isDesktop?'center':'flex-start', justifyContent:'space-between', gap:12, flexWrap:'wrap' },
+      titleBlock:{},
+      pageTitle:{ fontSize: isDesktop? 30:24, fontWeight:650, letterSpacing:'-0.02em' },
+      pageSubtitle:{ fontSize: isDesktop? 15:13.5, color:'var(--general-muted-foreground)', marginTop:6 },
+      addBtnDesktop:{ display: isDesktop? 'inline-flex':'none', alignItems:'center', border:'none', borderRadius:8, padding:'10px 16px', fontSize:14, fontWeight:600, fontFamily:'var(--font-sans)', background:'var(--general-primary)', color:'var(--general-primary-foreground)', cursor:'pointer' },
+      addBtnMobile:{ display: isDesktop? 'none':'flex', alignItems:'center', justifyContent:'center', border:'1px dashed var(--general-border)', borderRadius:8, padding:'12px 0', fontSize:14, fontWeight:600, fontFamily:'var(--font-sans)', background:'transparent', color:'var(--general-primary)', cursor:'pointer', marginTop:6 },
+
+      accountsCardStyle:{ ...cardBase },
+      accountRows,
+
+      connectCardStyle:{ ...cardBase, flexDirection:'row', alignItems:'center', gap:12, opacity:0.6, cursor:'not-allowed', padding: isDesktop? '16px 18px':'14px 14px' },
+      connectIconWrap:{ fontSize:20, width:36, height:36, borderRadius:8, background:'var(--general-accent)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 },
+      connectLabelCol:{ display:'flex', flexDirection:'column', gap:2, flex:1 },
+      connectTitle:{ fontSize:14.5, fontWeight:600, color:'var(--general-foreground)' },
+      connectSub:{ fontSize:12.5, color:'var(--general-muted-foreground)', lineHeight:1.4 },
+      connectBadge:{ fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:99, background:'var(--general-accent)', color:'var(--general-muted-foreground)', fontFamily:'var(--font-sans)', flexShrink:0 },
+
+      overlayStyle:{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:10 },
+      sheetOpen: st.sheetOpen, closeSheet: this.closeSheet,
+      editorComponentName: isDesktop? 'Dialog':'Sheet',
+      editorStyle: isDesktop
+        ? { position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:420, background:'var(--card-card)', border:'1px solid var(--general-border)', borderRadius:14, padding:'22px 24px', boxShadow:'0 20px 50px rgba(0,0,0,0.3)', zIndex:11, boxSizing:'border-box' }
+        : { position:'fixed', left:0, right:0, bottom:0, background:'var(--card-card)', borderTopLeftRadius:16, borderTopRightRadius:16, border:'1px solid var(--general-border)', padding:'10px 18px 24px', zIndex:11, boxSizing:'border-box', maxHeight:'88vh', overflowY:'auto' },
+      editorHandle:{ display: isDesktop?'none':'block', width:36, height:4, borderRadius:99, background:'var(--general-border)', margin:'0 auto 14px' },
+      editorHeaderRow:{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 },
+      editorTitle:{ fontSize:17, fontWeight:650 },
+      sheetTitle: st.editingId? 'Edit account':'Add account',
+      closeBtnStyle:{ width:28,height:28, borderRadius:7, border:'1px solid var(--general-border)', background:'transparent', color:'var(--general-muted-foreground)', cursor:'pointer', fontSize:12 },
+
+      editFormWrap:{ display:'flex', flexDirection:'column', gap:16, padding:'2px 0 4px' },
+      fieldCol:{ display:'flex', flexDirection:'column', gap:6, flex:1 },
+      fieldRow:{ display:'flex', gap:12 },
+      fieldLabel:{ fontSize:13, fontWeight:500, color:'var(--general-muted-foreground)' },
+      textInputStyle:{ border:'1px solid var(--general-input)', borderRadius:8, padding:'10px 12px', fontSize:15, fontFamily:'var(--font-sans)', background:'var(--general-background)', color:'var(--general-foreground)', width:'100%', boxSizing:'border-box' },
+      form: {name:f.name, balanceVal:f.balanceVal, asOf:f.asOf, isSource:f.isSource},
+      onNameChange:this.onNameChange, onBalanceChange:this.onBalanceChange, onAsOfChange:this.onAsOfChange,
+
+      colorRow:{ display:'flex', gap:10 },
+      colorOptions,
+
+      moneyInputWrap:{ display:'flex', alignItems:'center', gap:4, border:'1px solid var(--general-input)', borderRadius:8, padding:'8px 12px', background:'var(--general-background)' },
+      moneyPrefix:{ fontSize:14, color:'var(--general-muted-foreground)', fontFamily:'var(--font-mono)' },
+      moneyInputStyle:{ border:'none', outline:'none', background:'transparent', fontSize:15, fontFamily:'var(--font-mono)', color:'var(--general-foreground)', width:'100%' },
+
+      sourceRow:{ display:'flex', alignItems:'flex-start', gap:10, cursor:'pointer', padding:'4px 0' },
+      checkboxBox:{ width:18, height:18, borderRadius:5, border:'1.5px solid '+(f.isSource? 'var(--general-primary)':'var(--general-input)'), background: f.isSource? 'var(--general-primary)':'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, marginTop:1 },
+      checkboxTick:{ color:'var(--general-primary-foreground)', fontSize:11, fontWeight:700 },
+      sourceLabelCol:{ display:'flex', flexDirection:'column', gap:2 },
+      sourceLabel:{ fontSize:14, fontWeight:500, color:'var(--general-foreground)' },
+      sourceHelp:{ fontSize:12, color:'var(--general-muted-foreground)', lineHeight:1.4 },
+      toggleSource:this.toggleSource,
+
+      isEditing: !!st.editingId,
+      editActionsRow:{ display:'flex', gap:8, marginTop:4 },
+      deleteBtn:{ background:'transparent', color:'var(--general-destructive)', border:'1px solid var(--general-border)', borderRadius:8, padding:'10px 14px', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:'var(--font-sans)' },
+      cancelBtn:{ flex:1, background:'transparent', color:'var(--general-foreground)', border:'1px solid var(--general-border)', borderRadius:8, padding:'10px 0', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:'var(--font-sans)' },
+      saveBtn:{ flex:1, background:'var(--general-primary)', color:'var(--general-primary-foreground)', border:'none', borderRadius:8, padding:'10px 0', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:'var(--font-sans)' },
+      saveAccount:this.saveAccount, deleteAccount:this.deleteAccount,
+      saveLabel: st.editingId? 'Save changes':'Add account',
+    };
+  }
+}
+
+</script>
+</body>
+</html>

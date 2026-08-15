@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<!--
+  Claude Design export — VISUAL REFERENCE ONLY.
+  Do not port this markup. It is a generated React/DC-runtime prototype;
+  this codebase is Vue 3 + shadcn-vue. See ../README.md.
+
+  Changed from the original export so it renders offline from this directory:
+    - support.js and the _ds/ stylesheets repointed to ../_assets/
+    - vendored React UMD builds injected (the export expects a host-provided React)
+    - cross-screen links repointed to ../<slug>/reference.html
+  Nothing else was touched.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="../_assets/vendor/react.production.min.js"></script>
+<script src="../_assets/vendor/react-dom.production.min.js"></script>
+<script src="../_assets/support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/components/fig-tokens.css" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/components/fig-assets.css" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/tokens/fonts.css" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/tokens/theme.css" />
+  <style>
+    body{margin:0}
+    input[type="date"]{ color-scheme: light dark; }
+    a{ color:var(--general-primary); text-decoration:none; }
+    a:hover{ color:var(--general-primary); text-decoration:underline; }
+    select{ color-scheme: light dark; }
+  </style>
+</helmet>
+<div style="{{ pageStyle }}" className="{{ darkClass }}">
+  <div style="{{ headerStyle }}">
+    <div style="{{ brandRow }}">
+      <a href="../dashboard/reference.html" style="{{ backLinkStyle }}">← Dashboard</a>
+    </div>
+    <div style="{{ headerControls }}">
+      <div data-component="Tabs" style="{{ tabsWrap }}">
+        <button style="{{ tabMobileStyle }}" onClick="{{ setViewportMobile }}">Mobile</button>
+        <button style="{{ tabDesktopStyle }}" onClick="{{ setViewportDesktop }}">Desktop</button>
+      </div>
+      <button data-component="Button" aria-label="Toggle theme" style="{{ themeBtnStyle }}" onClick="{{ toggleDark }}">{{ themeIcon }}</button>
+    </div>
+  </div>
+
+  <div style="{{ mainStyle }}">
+    <div style="{{ titleRow }}">
+      <div style="{{ titleBlock }}">
+        <div style="{{ pageTitle }}">Transfers</div>
+        <div style="{{ pageSubtitle }}">Move money between your own accounts. This never counts as income or spending.</div>
+      </div>
+    </div>
+
+    <div data-component="Card" style="{{ formCardStyle }}">
+      <div style="{{ formTitle }}">New transfer</div>
+      <div style="{{ legsRow }}">
+        <div style="{{ fieldCol }}">
+          <div style="{{ fieldLabel }}">From</div>
+          <select data-component="Select" value="{{ fromAccount }}" onChange="{{ onFromChange }}" style="{{ selectStyle }}">
+            <sc-for list="{{ fromOptions }}" as="a" hint-placeholder-count="2">
+              <option value="{{ a.value }}">{{ a.label }}</option>
+            </sc-for>
+          </select>
+        </div>
+        <div style="{{ legArrow }}">→</div>
+        <div style="{{ fieldCol }}">
+          <div style="{{ fieldLabel }}">To</div>
+          <select data-component="Select" value="{{ toAccount }}" onChange="{{ onToChange }}" style="{{ selectStyle }}">
+            <sc-for list="{{ toOptions }}" as="a" hint-placeholder-count="2">
+              <option value="{{ a.value }}">{{ a.label }}</option>
+            </sc-for>
+          </select>
+        </div>
+      </div>
+
+      <div style="{{ fieldRow }}">
+        <div style="{{ fieldCol }}">
+          <div style="{{ fieldLabel }}">Amount</div>
+          <div style="{{ moneyInputWrap }}">
+            <span style="{{ moneyPrefix }}">$</span>
+            <input data-component="Input" type="number" value="{{ amountVal }}" onChange="{{ onAmountChange }}" style="{{ moneyInputStyle }}" />
+          </div>
+        </div>
+        <div style="{{ fieldCol }}">
+          <div style="{{ fieldLabel }}">Date</div>
+          <input data-component="Input" type="date" value="{{ dateVal }}" onChange="{{ onDateChange }}" style="{{ textInputStyle }}" />
+        </div>
+      </div>
+
+      <sc-if value="{{ showSameAccountWarning }}" hint-placeholder-val="{{ false }}">
+        <div data-component="Alert" style="{{ warningBox }}">Choose two different accounts to move money between them.</div>
+      </sc-if>
+
+      <button data-component="Button" style="{{ moveBtn }}" onClick="{{ moveMoney }}" disabled="{{ moveDisabled }}">Move money</button>
+    </div>
+
+    <div style="{{ listHeaderRow }}">
+      <div style="{{ listHeaderTitle }}">Recent transfers</div>
+    </div>
+
+    <div data-component="Card" style="{{ listCardStyle }}">
+      <sc-for list="{{ transferRows }}" as="t" hint-placeholder-count="2">
+        <div style="{{ t.rowStyle }}">
+          <div style="{{ t.legsWrap }}">
+            <span style="{{ t.fromSwatch }}"></span>
+            <span style="{{ t.arrow }}">→</span>
+            <span style="{{ t.toSwatch }}"></span>
+          </div>
+          <div style="{{ t.labelCol }}">
+            <div style="{{ t.nameText }}">{{ t.nameLabel }}</div>
+            <div style="{{ t.dateText }}">{{ t.dateLabel }}</div>
+          </div>
+          <div style="{{ t.rightCol }}">
+            <div style="{{ t.amountText }}">{{ t.amountLabel }}</div>
+            <span data-component="Badge" style="{{ t.badgeStyle }}">Transfer</span>
+          </div>
+        </div>
+      </sc-for>
+      <sc-if value="{{ hasNoTransfers }}" hint-placeholder-val="{{ false }}">
+        <div style="{{ emptyState }}">No transfers yet. Moves you make between your accounts will show up here.</div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmtDate(d){ return MONTHS[d.getMonth()]+' '+d.getDate(); }
+function fmtMoney(n){ const v=Math.round(n); return '$'+Math.abs(v).toLocaleString('en-US'); }
+function toISO(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function fromISO(s){ const p=s.split('-').map(Number); return new Date(p[0],p[1]-1,p[2]); }
+
+const TODAY=new Date(2026,7,15);
+const ACCOUNTS=[
+  {id:'checking', name:'Checking', color:'var(--chart-colors-chart-3)'},
+  {id:'savings', name:'Savings', color:'var(--chart-colors-chart-4)'},
+];
+
+const INITIAL_TRANSFERS=[
+  {id:'t1', from:'checking', to:'savings', amount:400, date:toISO(new Date(2026,7,1))},
+  {id:'t2', from:'savings', to:'checking', amount:150, date:toISO(new Date(2026,6,18))},
+];
+
+let uid=1;
+
+class Component extends DCLogic {
+  state={ dark:false, viewport:'mobile', fromAccount:'checking', toAccount:'savings', amountVal:0, dateVal:toISO(TODAY), transfers:INITIAL_TRANSFERS };
+
+  toggleDark=()=>this.setState(s=>({dark:!s.dark}));
+  setViewport=(v)=>this.setState({viewport:v});
+
+  onFromChange=(e)=>{ const v=e&&e.target?e.target.value:e; this.setState(s=>({fromAccount:v, toAccount: v===s.toAccount? (ACCOUNTS.find(a=>a.id!==v)||ACCOUNTS[0]).id : s.toAccount})); };
+  onToChange=(e)=>{ const v=e&&e.target?e.target.value:e; this.setState({toAccount:v}); };
+  onAmountChange=(e)=>{ const v=e&&e.target?e.target.value:e; const n=Number(v); this.setState({amountVal:isNaN(n)?0:n}); };
+  onDateChange=(e)=>{ const v=e&&e.target?e.target.value:e; if(v) this.setState({dateVal:v}); };
+
+  moveMoney=()=>{
+    const st=this.state;
+    if(st.fromAccount===st.toAccount || !st.amountVal || st.amountVal<=0) return;
+    this.setState(s=>({
+      transfers:[{id:'t'+(uid++), from:s.fromAccount, to:s.toAccount, amount:s.amountVal, date:s.dateVal}, ...s.transfers],
+      amountVal:0,
+    }));
+  };
+
+  renderVals(){
+    const st=this.state;
+    const isDesktop=st.viewport==='desktop';
+    const cardBase={ background:'var(--card-card)', border:'1px solid var(--general-border)', borderRadius:'var(--radius)', padding: isDesktop? '16px 18px':'14px 14px', display:'flex', flexDirection:'column', boxSizing:'border-box' };
+    const accById=id=>ACCOUNTS.find(a=>a.id===id)||ACCOUNTS[0];
+
+    const sorted=st.transfers.slice().sort((a,b)=>fromISO(b.date)-fromISO(a.date));
+    const transferRows=sorted.map(t=>{
+      const from=accById(t.from), to=accById(t.to);
+      return {
+        id:t.id,
+        rowStyle:{ display:'flex', alignItems:'center', gap:12, padding: isDesktop? '14px 10px':'12px 6px', borderBottom:'1px solid var(--general-border)' },
+        legsWrap:{ display:'flex', alignItems:'center', gap:5, flexShrink:0 },
+        fromSwatch:{ width:11, height:11, borderRadius:99, background:from.color },
+        arrow:{ color:'var(--general-muted-foreground)', fontSize:12 },
+        toSwatch:{ width:11, height:11, borderRadius:99, background:to.color },
+        labelCol:{ display:'flex', flexDirection:'column', gap:3, flex:1, minWidth:0 },
+        nameText:{ fontSize:14.5, fontWeight:600, color:'var(--general-foreground)', fontFamily:'var(--font-sans)' },
+        nameLabel: from.name+' to '+to.name,
+        dateText:{ fontSize:12.5, color:'var(--general-muted-foreground)', fontFamily:'var(--font-sans)' },
+        dateLabel: fmtDate(fromISO(t.date)),
+        rightCol:{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4, flexShrink:0 },
+        amountText:{ fontSize:15, fontWeight:600, fontFamily:'var(--font-mono)', color:'var(--general-foreground)' },
+        amountLabel: fmtMoney(t.amount),
+        badgeStyle:{ fontSize:10.5, fontWeight:600, padding:'2px 8px', borderRadius:99, background:'var(--general-accent)', color:'var(--general-muted-foreground)', fontFamily:'var(--font-sans)' },
+      };
+    });
+
+    const fromOptions=ACCOUNTS.map(a=>({value:a.id,label:a.name}));
+    const toOptions=ACCOUNTS.map(a=>({value:a.id,label:a.name}));
+    const sameAccount = st.fromAccount===st.toAccount;
+    const moveDisabled = sameAccount || !st.amountVal || st.amountVal<=0;
+
+    return {
+      darkClass: st.dark? 'dark':'',
+      pageStyle:{ minHeight:'100vh', background:'var(--general-background)', color:'var(--general-foreground)', fontFamily:'var(--font-sans)', display:'flex', flexDirection:'column', alignItems:'center', boxSizing:'border-box' },
+      headerStyle:{ width:'100%', maxWidth: isDesktop? 640:430, display:'flex', alignItems:'center', justifyContent:'space-between', padding: isDesktop? '24px 0 8px':'20px 16px 4px', boxSizing:'border-box' },
+      brandRow:{ display:'flex', alignItems:'center', gap:8 },
+      backLinkStyle:{ fontSize:13.5, fontWeight:500, color:'var(--general-muted-foreground)' },
+      headerControls:{ display:'flex', alignItems:'center', gap:10 },
+      tabsWrap:{ display:'flex', background:'var(--general-accent)', borderRadius:8, padding:3, gap:2 },
+      tabMobileStyle:{ border:'none', cursor:'pointer', fontFamily:'var(--font-sans)', fontSize:12, fontWeight:600, padding:'6px 10px', borderRadius:6, background: !isDesktop? 'var(--card-card)':'transparent', color: !isDesktop? 'var(--general-foreground)':'var(--general-muted-foreground)', boxShadow: !isDesktop? '0 1px 2px rgba(0,0,0,0.08)':'none' },
+      tabDesktopStyle:{ border:'none', cursor:'pointer', fontFamily:'var(--font-sans)', fontSize:12, fontWeight:600, padding:'6px 10px', borderRadius:6, background: isDesktop? 'var(--card-card)':'transparent', color: isDesktop? 'var(--general-foreground)':'var(--general-muted-foreground)', boxShadow: isDesktop? '0 1px 2px rgba(0,0,0,0.08)':'none' },
+      setViewportMobile:()=>this.setViewport('mobile'),
+      setViewportDesktop:()=>this.setViewport('desktop'),
+      themeBtnStyle:{ width:32,height:32, borderRadius:8, border:'1px solid var(--general-border)', background:'var(--card-card)', color:'var(--general-foreground)', cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center' },
+      themeIcon: st.dark? '☀':'☾',
+      toggleDark: this.toggleDark,
+
+      mainStyle:{ display:'flex', flexDirection:'column', gap:16, width:'100%', maxWidth: isDesktop? 640:430, padding: isDesktop? '20px 0 64px':'16px 16px 56px', boxSizing:'border-box' },
+
+      titleRow:{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:12, flexWrap:'wrap' },
+      titleBlock:{},
+      pageTitle:{ fontSize: isDesktop? 30:24, fontWeight:650, letterSpacing:'-0.02em' },
+      pageSubtitle:{ fontSize: isDesktop? 15:13.5, color:'var(--general-muted-foreground)', marginTop:6, maxWidth:420 },
+
+      formCardStyle:{ ...cardBase, gap:14 },
+      formTitle:{ fontSize:15, fontWeight:650 },
+      legsRow:{ display:'flex', alignItems:'flex-end', gap:10 },
+      legArrow:{ color:'var(--general-muted-foreground)', fontSize:16, paddingBottom:10 },
+      fieldCol:{ display:'flex', flexDirection:'column', gap:6, flex:1 },
+      fieldRow:{ display:'flex', gap:12 },
+      fieldLabel:{ fontSize:13, fontWeight:500, color:'var(--general-muted-foreground)' },
+      selectStyle:{ border:'1px solid var(--general-input)', borderRadius:8, padding:'10px 12px', fontSize:15, fontFamily:'var(--font-sans)', background:'var(--general-background)', color:'var(--general-foreground)', width:'100%', boxSizing:'border-box' },
+      textInputStyle:{ border:'1px solid var(--general-input)', borderRadius:8, padding:'10px 12px', fontSize:15, fontFamily:'var(--font-sans)', background:'var(--general-background)', color:'var(--general-foreground)', width:'100%', boxSizing:'border-box' },
+      fromAccount: st.fromAccount, toAccount: st.toAccount, onFromChange:this.onFromChange, onToChange:this.onToChange,
+      fromOptions, toOptions,
+
+      moneyInputWrap:{ display:'flex', alignItems:'center', gap:4, border:'1px solid var(--general-input)', borderRadius:8, padding:'8px 12px', background:'var(--general-background)' },
+      moneyPrefix:{ fontSize:14, color:'var(--general-muted-foreground)', fontFamily:'var(--font-mono)' },
+      moneyInputStyle:{ border:'none', outline:'none', background:'transparent', fontSize:15, fontFamily:'var(--font-mono)', color:'var(--general-foreground)', width:'100%' },
+      amountVal: st.amountVal, dateVal: st.dateVal, onAmountChange:this.onAmountChange, onDateChange:this.onDateChange,
+
+      showSameAccountWarning: sameAccount,
+      warningBox:{ fontSize:12.5, color:'var(--general-destructive)', background:'var(--general-accent)', borderRadius:8, padding:'8px 12px', lineHeight:1.4 },
+
+      moveBtn:{ border:'none', borderRadius:8, padding:'11px 0', fontSize:14.5, fontWeight:600, fontFamily:'var(--font-sans)', background: moveDisabled? 'var(--general-accent)':'var(--general-primary)', color: moveDisabled? 'var(--general-muted-foreground)':'var(--general-primary-foreground)', cursor: moveDisabled? 'not-allowed':'pointer' },
+      moveDisabled,
+      moveMoney: this.moveMoney,
+
+      listHeaderRow:{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:4 },
+      listHeaderTitle:{ fontSize: isDesktop? 15:14, fontWeight:650, color:'var(--general-muted-foreground)' },
+
+      listCardStyle:{ ...cardBase },
+      transferRows,
+      hasNoTransfers: transferRows.length===0,
+      emptyState:{ fontSize:13.5, color:'var(--general-muted-foreground)', padding: isDesktop? '18px 4px':'16px 2px' },
+    };
+  }
+}
+
+</script>
+</body>
+</html>
