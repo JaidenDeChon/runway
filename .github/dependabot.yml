@@ -1,0 +1,24 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: 'chore(ci)'
+
+  # Dependabot's Bun (bun.lock) support is newer than its npm support. If it
+  # does not open PRs within a week, switch this ecosystem to Renovate, which
+  # has had bun.lock support longer.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'chore(deps)'
+    groups:
+      nuxt:
+        patterns: ['nuxt', '@nuxt/*', '@nuxtjs/*']
+      shadcn:
+        patterns: ['shadcn-vue', 'reka-ui', '@lucide/vue', 'tailwind*', '@tailwindcss/*']

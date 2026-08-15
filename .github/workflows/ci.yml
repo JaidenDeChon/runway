@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.0
+
+      # postinstall runs `nuxt prepare`, which generates .nuxt/tsconfig.*.json.
+      # `bun run typecheck` depends on that having happened.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint (Biome)
+        run: bun run lint
+
+      - name: Typecheck (vue-tsc + domain tsc)
+        run: bun run typecheck
+
+      - name: Unit tests (Vitest)
+        run: bun run test:unit
+
+      - name: Production build
+        run: bun run build
+
+  security:
+    name: Trivy vulnerability scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.0
+
+      # Install so Trivy can walk node_modules as well as bun.lock — bun.lock
+      # (text format) parsing is newer than the lockfile analysers Trivy has
+      # had longest, so node_modules is the reliable signal.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table

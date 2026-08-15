@@ -1,0 +1,86 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.8/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true, "defaultBranch": "main" },
+  "files": {
+    "ignoreUnknown": true,
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!.nuxt",
+      "!.output",
+      "!dist",
+      "!app/components/ui",
+      "!bun.lock"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100,
+    "lineEnding": "lf"
+  },
+  "linter": { "enabled": true, "rules": { "preset": "recommended" } },
+  "assist": { "enabled": true, "actions": { "source": { "organizeImports": "on" } } },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "asNeeded",
+      "trailingCommas": "all",
+      "arrowParentheses": "always"
+    }
+  },
+  "json": { "formatter": { "enabled": true } },
+  "css": {
+    "parser": { "tailwindDirectives": true },
+    "formatter": { "enabled": false },
+    "linter": { "enabled": false }
+  },
+  "overrides": [
+    {
+      "includes": ["**/*.vue"],
+      "linter": {
+        "rules": {
+          "correctness": { "noUnusedImports": "off", "noUnusedVariables": "off" },
+          "style": { "useConst": "off", "useImportType": "off" }
+        }
+      }
+    },
+    {
+      "includes": ["domain/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "nuxt",
+                      "nuxt/*",
+                      "#app",
+                      "#app/*",
+                      "#imports",
+                      "vue",
+                      "vue/*",
+                      "@vue/*",
+                      "vue-router",
+                      "@lucide/*",
+                      "@supabase/*",
+                      "node:*",
+                      "~/*",
+                      "@/*",
+                      "#shared/*"
+                    ],
+                    "message": "domain/ must stay framework-free and runtime-agnostic. See domain/README.md."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
