@@ -8,8 +8,8 @@
  * look-back portion of every chart.
  */
 
-import { addDays, addMonthsClamped, compareDates, dayOfMonth, daysBetween } from './dates'
 import type { IsoDate } from './dates'
+import { addDays, addMonthsClamped, compareDates, dayOfMonth, daysBetween } from './dates'
 import type { Cadence, RecurringItem } from './types'
 
 const STEP_DAYS: Record<Exclude<Cadence, 'monthly'>, number> = { weekly: 7, biweekly: 14 }

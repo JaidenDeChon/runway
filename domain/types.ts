@@ -9,8 +9,8 @@
  * 2. **Dates are calendar days**, `YYYY-MM-DD`, never instants. See `dates.ts`.
  */
 
-import type { MinorUnits } from './money'
 import type { IsoDate } from './dates'
+import type { MinorUnits } from './money'
 
 /**
  * The chart ramp slot an account's line is drawn in.

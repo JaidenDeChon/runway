@@ -29,7 +29,11 @@ describe('occurrenceDates', () => {
 
   it('expands biweekly', () => {
     expect(
-      occurrenceDates(item({ cadence: 'biweekly', nextOccurrence: '2026-08-21' }), '2026-08-21', '2026-09-18'),
+      occurrenceDates(
+        item({ cadence: 'biweekly', nextOccurrence: '2026-08-21' }),
+        '2026-08-21',
+        '2026-09-18',
+      ),
     ).toEqual(['2026-08-21', '2026-09-04', '2026-09-18'])
   })
 
@@ -37,21 +41,25 @@ describe('occurrenceDates', () => {
     // The dashboard opens two weeks before today; occurrences in that stretch
     // already moved the balance and must not be dropped.
     expect(
-      occurrenceDates(item({ cadence: 'weekly', nextOccurrence: '2026-08-20' }), '2026-08-01', '2026-08-20'),
+      occurrenceDates(
+        item({ cadence: 'weekly', nextOccurrence: '2026-08-20' }),
+        '2026-08-01',
+        '2026-08-20',
+      ),
     ).toEqual(['2026-08-06', '2026-08-13', '2026-08-20'])
   })
 
   it('clamps a month-end anchor without making the clamp stick', () => {
-    expect(occurrenceDates(item({ nextOccurrence: '2026-01-31' }), '2026-01-01', '2026-04-30')).toEqual([
-      '2026-01-31',
-      '2026-02-28',
-      '2026-03-31',
-      '2026-04-30',
-    ])
+    expect(
+      occurrenceDates(item({ nextOccurrence: '2026-01-31' }), '2026-01-01', '2026-04-30'),
+    ).toEqual(['2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30'])
   })
 
   it('includes both range endpoints', () => {
-    expect(occurrenceDates(item(), '2026-08-20', '2026-09-20')).toEqual(['2026-08-20', '2026-09-20'])
+    expect(occurrenceDates(item(), '2026-08-20', '2026-09-20')).toEqual([
+      '2026-08-20',
+      '2026-09-20',
+    ])
   })
 
   it('returns nothing for an inverted range', () => {
@@ -59,9 +67,8 @@ describe('occurrenceDates', () => {
   })
 
   it('terminates when the anchor is years from the window', () => {
-    expect(occurrenceDates(item({ nextOccurrence: '2019-03-15' }), '2026-08-01', '2026-10-01')).toEqual([
-      '2026-08-15',
-      '2026-09-15',
-    ])
+    expect(
+      occurrenceDates(item({ nextOccurrence: '2019-03-15' }), '2026-08-01', '2026-10-01'),
+    ).toEqual(['2026-08-15', '2026-09-15'])
   })
 })

@@ -13,8 +13,20 @@
  * Both wrappers trap focus, close on Escape, and restore focus to the trigger,
  * which comes from the underlying reka-ui primitives.
  */
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { useIsDesktop } from '@/composables/useIsDesktop'
 
 const props = defineProps<{ open: boolean; title: string; description?: string }>()

@@ -5,6 +5,7 @@ import { Sheet, SheetContent } from '@/components/ui/sheet'
 import SheetDescription from '@/components/ui/sheet/SheetDescription.vue'
 import SheetHeader from '@/components/ui/sheet/SheetHeader.vue'
 import SheetTitle from '@/components/ui/sheet/SheetTitle.vue'
+import { onMounted, ref } from 'vue'
 import { SIDEBAR_WIDTH_MOBILE, useSidebar } from './utils'
 
 defineOptions({
@@ -18,6 +19,25 @@ const props = withDefaults(defineProps<SidebarProps>(), {
 })
 
 const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
+
+/**
+ * Registry component, with one fix: the mobile branch waits for mount.
+ *
+ * `isMobile` comes from `useMediaQuery`, which cannot measure on the server and
+ * so reports `false` there. A mobile client then measures `true` on its first
+ * render and swaps this entire subtree from the desktop `<div>` to a Sheet —
+ * a guaranteed hydration mismatch on every page, on every phone.
+ *
+ * Gating on mount makes the client's first render match the server's (both take
+ * the desktop branch) and defers the swap to after hydration. The desktop branch
+ * is `hidden md:block`, so nothing is visible on a narrow screen in the meantime.
+ *
+ * Re-running `shadcn-vue add sidebar` overwrites this file and reintroduces the bug.
+ */
+const isMounted = ref(false)
+onMounted(() => {
+  isMounted.value = true
+})
 </script>
 
 <template>
@@ -30,7 +50,12 @@ const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
     <slot />
   </div>
 
-  <Sheet v-else-if="isMobile" :open="openMobile" v-bind="$attrs" @update:open="setOpenMobile">
+  <Sheet
+    v-else-if="isMobile && isMounted"
+    :open="openMobile"
+    v-bind="$attrs"
+    @update:open="setOpenMobile"
+  >
     <SheetContent
       data-sidebar="sidebar"
       data-slot="sidebar"

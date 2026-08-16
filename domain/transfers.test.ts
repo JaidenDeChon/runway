@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { toMinorUnits } from './money'
 import { createSeedData } from './seed'
-import { canSubmitTransfer, resolveCounterAccount, sortTransfers, validateTransfer } from './transfers'
+import {
+  canSubmitTransfer,
+  resolveCounterAccount,
+  sortTransfers,
+  validateTransfer,
+} from './transfers'
 import type { Transfer } from './types'
 
 describe('validateTransfer', () => {
@@ -11,7 +16,9 @@ describe('validateTransfer', () => {
   })
 
   it('rejects a transfer to the same account', () => {
-    expect(validateTransfer({ fromAccountId: 'a', toAccountId: 'a', amount: 1 })).toContain('same-account')
+    expect(validateTransfer({ fromAccountId: 'a', toAccountId: 'a', amount: 1 })).toContain(
+      'same-account',
+    )
   })
 
   it('rejects a zero or negative amount', () => {

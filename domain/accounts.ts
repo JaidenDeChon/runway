@@ -7,8 +7,8 @@
  * copies as there are callers.
  */
 
-import { ACCOUNT_COLORS } from './types'
 import type { Account, AccountColor, RecurringItem, Transfer } from './types'
+import { ACCOUNT_COLORS } from './types'
 
 /**
  * Makes `accountId` the sole discretionary source.
@@ -17,10 +17,7 @@ import type { Account, AccountColor, RecurringItem, Transfer } from './types'
  * selection, and modelling it as a boolean per row means the exclusivity has to
  * be re-established on every write.
  */
-export function setDiscretionarySource(
-  accounts: readonly Account[],
-  accountId: string,
-): Account[] {
+export function setDiscretionarySource(accounts: readonly Account[], accountId: string): Account[] {
   return accounts.map((account) => ({
     ...account,
     isDiscretionarySource: account.id === accountId,

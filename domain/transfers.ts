@@ -55,7 +55,5 @@ export function resolveCounterAccount(
  * its date, not by when it happened to be entered.
  */
 export function sortTransfers(transfers: readonly Transfer[]): Transfer[] {
-  return [...transfers].sort(
-    (a, b) => compareDates(b.date, a.date) || b.createdAt - a.createdAt,
-  )
+  return [...transfers].sort((a, b) => compareDates(b.date, a.date) || b.createdAt - a.createdAt)
 }

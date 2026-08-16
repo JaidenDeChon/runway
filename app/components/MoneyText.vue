@@ -7,8 +7,8 @@
  * and nothing else — the value arrives already computed by the domain engine.
  */
 import { computed } from 'vue'
-import { cn } from '@/lib/utils'
 import { describeMoneySigned, formatMoney, formatMoneySigned } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import type { MinorUnits } from '~~/domain/money'
 
 const props = withDefaults(

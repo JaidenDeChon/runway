@@ -14,10 +14,10 @@ import {
   deleteAccount as domainDeleteAccount,
   upsertAccount as domainUpsertAccount,
 } from '~~/domain/accounts'
+import type { MinorUnits } from '~~/domain/money'
 import { resolveAmount } from '~~/domain/prediction'
 import { createSeedData } from '~~/domain/seed'
 import type { Account, RecurringItem, RunwayData, Transfer } from '~~/domain/types'
-import type { MinorUnits } from '~~/domain/money'
 
 /**
  * Ids are generated here rather than in the domain because they are a storage

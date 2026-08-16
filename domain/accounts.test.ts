@@ -36,7 +36,9 @@ describe('upsertAccount', () => {
       [account({ id: 'a', isDiscretionarySource: true }), account({ id: 'b' })],
       account({ id: 'b', isDiscretionarySource: true }),
     )
-    expect(result.filter((entry) => entry.isDiscretionarySource).map((entry) => entry.id)).toEqual(['b'])
+    expect(result.filter((entry) => entry.isDiscretionarySource).map((entry) => entry.id)).toEqual([
+      'b',
+    ])
   })
 
   it('allows no account to hold the flag', () => {
