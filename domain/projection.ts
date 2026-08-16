@@ -8,9 +8,11 @@
  */
 
 import { occurrenceDates } from './cadence'
-import { addDays, compareDates, daysBetween, eachDay, minDate } from './dates'
 import type { IsoDate } from './dates'
+import { addDays, compareDates, daysBetween, eachDay, minDate } from './dates'
 import type { MinorUnits } from './money'
+import type { OccurrenceOverride } from './overrides'
+import { applyOverrides } from './overrides'
 import type { Account, RecurringItem, RunwayData } from './types'
 
 /** $250 of headroom above the cushion is the boundary between Covered and Tight. */
@@ -55,10 +57,24 @@ export interface ProjectionWindow {
   readonly end: IsoDate
   /** Limits the projection to these accounts. Omit for all of them. */
   readonly accountIds?: readonly string[]
+  /**
+   * Occurrence-level edits to apply while expanding, later ones winning.
+   *
+   * The dashboard passes its saved edits and its what-if previews through here
+   * rather than mutating stored data, so a preview is a different *window* onto
+   * the same records and can be dropped by simply not passing it again.
+   */
+  readonly overrides?: readonly OccurrenceOverride[]
 }
 
-/** The signed daily delta for one item's occurrence. */
-function signedAmount(item: RecurringItem): MinorUnits {
+/**
+ * The signed daily delta for one item's occurrence.
+ *
+ * Exported so screens that list items directly (recurring-items) can render
+ * the same sign the projection engine uses, instead of re-deriving it from
+ * `kind` inline in a component.
+ */
+export function signedAmount(item: RecurringItem): MinorUnits {
   return item.kind === 'income' ? item.amount : -item.amount
 }
 
@@ -73,10 +89,7 @@ function accountsFor(data: RunwayData, accountIds: readonly string[] | undefined
  * by date and then by label so same-day ordering is stable rather than
  * dependent on item insertion order.
  */
-export function occurrencesIn(
-  data: RunwayData,
-  window: ProjectionWindow,
-): Occurrence[] {
+export function occurrencesIn(data: RunwayData, window: ProjectionWindow): Occurrence[] {
   const included = new Set(accountsFor(data, window.accountIds).map((account) => account.id))
   const occurrences: Occurrence[] = []
 
@@ -96,10 +109,14 @@ export function occurrencesIn(
     }
   }
 
-  occurrences.sort(
-    (a, b) => compareDates(a.date, b.date) || a.label.localeCompare(b.label),
-  )
-  return occurrences
+  // Overrides land before the sort because one of them can retime an event,
+  // and a list sorted on the pre-edit dates would be out of order afterwards.
+  const applied = window.overrides?.length
+    ? applyOverrides(occurrences, window.overrides)
+    : occurrences
+
+  applied.sort((a, b) => compareDates(a.date, b.date) || a.label.localeCompare(b.label))
+  return applied
 }
 
 /**
@@ -122,15 +139,18 @@ function buildDeltas(
     perAccount.set(date, (perAccount.get(date) ?? 0) + amount)
   }
 
-  for (const occurrence of occurrences) add(occurrence.accountId, occurrence.date, occurrence.amount)
+  for (const occurrence of occurrences)
+    add(occurrence.accountId, occurrence.date, occurrence.amount)
 
   // A transfer is balance-neutral by construction: the two legs are equal and
   // opposite and are written from one record, so the combined series cannot
   // move even if only one side of the pair is in view.
   for (const transfer of data.transfers) {
     if (compareDates(transfer.date, days[0] ?? transfer.date) < 0) continue
-    if (included.has(transfer.fromAccountId)) add(transfer.fromAccountId, transfer.date, -transfer.amount)
-    if (included.has(transfer.toAccountId)) add(transfer.toAccountId, transfer.date, transfer.amount)
+    if (included.has(transfer.fromAccountId))
+      add(transfer.fromAccountId, transfer.date, -transfer.amount)
+    if (included.has(transfer.toAccountId))
+      add(transfer.toAccountId, transfer.date, transfer.amount)
   }
 
   const source = accounts.find((account) => account.isDiscretionarySource)
@@ -187,6 +207,7 @@ export function project(data: RunwayData, window: ProjectionWindow): Projection 
     start: seriesDays[0] ?? window.start,
     end: window.end,
     ...(window.accountIds ? { accountIds: window.accountIds } : {}),
+    ...(window.overrides ? { overrides: window.overrides } : {}),
   })
   const deltas = buildDeltas(data, accounts, seriesDays, occurrences)
 
@@ -237,7 +258,8 @@ export function findLowestPoint(
   for (let i = from; i < points.length; i++) {
     const point = points[i]
     if (!point) continue
-    if (!lowest || point.balance < lowest.balance) lowest = { date: point.date, balance: point.balance }
+    if (!lowest || point.balance < lowest.balance)
+      lowest = { date: point.date, balance: point.balance }
   }
   return lowest
 }
@@ -263,6 +285,14 @@ export interface Verdict {
   readonly margin: MinorUnits
   /** `true` for the shortfall screen's two-outcome question. */
   readonly isCovered: boolean
+  /**
+   * How far the low point falls below the cushion, as a positive magnitude;
+   * `0` when covered.
+   *
+   * `Short by $1,404` is a figure, so it is computed here rather than by a
+   * component flipping the sign of `margin` on its way into a formatter.
+   */
+  readonly shortfall: MinorUnits
 }
 
 export function evaluate(
@@ -272,7 +302,13 @@ export function evaluate(
 ): Verdict {
   const lowest = findLowestPoint(points, options)
   const margin = (lowest?.balance ?? 0) - cushion
-  return { status: classifyMargin(margin), lowest, margin, isCovered: margin >= 0 }
+  return {
+    status: classifyMargin(margin),
+    lowest,
+    margin,
+    isCovered: margin >= 0,
+    shortfall: margin < 0 ? -margin : 0,
+  }
 }
 
 export interface UpcomingBill {

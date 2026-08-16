@@ -107,6 +107,23 @@ export function useRunwayData() {
     data.value = { ...data.value, safetyCushion: Math.max(0, Math.round(cushion)) }
   }
 
+  function setDailyDiscretionarySpend(amount: MinorUnits): void {
+    data.value = {
+      ...data.value,
+      dailyDiscretionarySpend: Math.max(0, Math.round(amount)),
+    }
+  }
+
+  /**
+   * Drops every record, leaving the settings alone.
+   *
+   * Onboarding needs a blank slate to build onto: with seeded data present, the
+   * first-run flow would be adding a second account, not a first one.
+   */
+  function clearRecords(): void {
+    data.value = { ...data.value, accounts: [], recurringItems: [], transfers: [] }
+  }
+
   /** True when the user has nothing to project from — the "skipped onboarding" case. */
   const isEmpty = computed(() => data.value.accounts.length === 0)
 
@@ -125,5 +142,7 @@ export function useRunwayData() {
     removeRecurringItem,
     addTransfer,
     setSafetyCushion,
+    setDailyDiscretionarySpend,
+    clearRecords,
   }
 }

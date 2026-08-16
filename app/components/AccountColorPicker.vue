@@ -9,10 +9,10 @@
  * minimum, with the visible dot smaller inside.
  */
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { cn } from '@/lib/utils'
 import { ACCOUNT_COLOR_CLASSES } from '@/lib/account-colors'
-import { ACCOUNT_COLORS } from '~~/domain/types'
+import { cn } from '@/lib/utils'
 import type { AccountColor } from '~~/domain/types'
+import { ACCOUNT_COLORS } from '~~/domain/types'
 
 const props = defineProps<{ modelValue: AccountColor; name?: string }>()
 const emit = defineEmits<{ 'update:modelValue': [value: AccountColor] }>()

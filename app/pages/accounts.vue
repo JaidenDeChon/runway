@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Landmark, Plus } from '@lucide/vue'
+import AppPage from '@/components/AppPage.vue'
 import AccountEditor from '@/components/accounts/AccountEditor.vue'
 import AccountRow from '@/components/accounts/AccountRow.vue'
-import AppPage from '@/components/AppPage.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'

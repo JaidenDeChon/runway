@@ -7,6 +7,7 @@ import {
   findLowestPoint,
   occurrencesIn,
   project,
+  signedAmount,
   TIGHT_THRESHOLD,
   upcomingBills,
 } from './projection'
@@ -46,6 +47,15 @@ const data = (over: Partial<RunwayData> = {}): RunwayData => ({
   ...over,
 })
 
+describe('signedAmount', () => {
+  it('is positive for income and negative for a bill, both from a positive stored magnitude', () => {
+    expect(signedAmount(item({ kind: 'income', amount: toMinorUnits(500) }))).toBe(
+      toMinorUnits(500),
+    )
+    expect(signedAmount(item({ kind: 'bill', amount: toMinorUnits(500) }))).toBe(toMinorUnits(-500))
+  })
+})
+
 describe('project', () => {
   it('holds the balance flat when nothing is scheduled', () => {
     const result = project(data(), { start: SEED_TODAY, end: addDays(SEED_TODAY, 3) })
@@ -59,10 +69,10 @@ describe('project', () => {
 
   it('treats the as-of reading as already including that day', () => {
     // A bill on the as-of date itself must not be deducted a second time.
-    const result = project(
-      data({ recurringItems: [item({ nextOccurrence: SEED_TODAY })] }),
-      { start: SEED_TODAY, end: SEED_TODAY },
-    )
+    const result = project(data({ recurringItems: [item({ nextOccurrence: SEED_TODAY })] }), {
+      start: SEED_TODAY,
+      end: SEED_TODAY,
+    })
     expect(result.combined[0]?.balance).toBe(toMinorUnits(1000))
   })
 
@@ -71,7 +81,12 @@ describe('project', () => {
       data({
         recurringItems: [
           item({ id: 'bill', nextOccurrence: addDays(SEED_TODAY, 1) }),
-          item({ id: 'pay', kind: 'income', amount: toMinorUnits(250), nextOccurrence: addDays(SEED_TODAY, 2) }),
+          item({
+            id: 'pay',
+            kind: 'income',
+            amount: toMinorUnits(250),
+            nextOccurrence: addDays(SEED_TODAY, 2),
+          }),
         ],
       }),
       { start: SEED_TODAY, end: addDays(SEED_TODAY, 2) },
@@ -86,10 +101,10 @@ describe('project', () => {
   it('integrates backwards for days before the as-of reading', () => {
     // Yesterday's balance must be *higher* than today's when a bill landed
     // today — walking backwards subtracts the delta rather than adding it.
-    const result = project(
-      data({ recurringItems: [item({ nextOccurrence: SEED_TODAY })] }),
-      { start: addDays(SEED_TODAY, -2), end: SEED_TODAY },
-    )
+    const result = project(data({ recurringItems: [item({ nextOccurrence: SEED_TODAY })] }), {
+      start: addDays(SEED_TODAY, -2),
+      end: SEED_TODAY,
+    })
     expect(result.combined.map((point) => point.balance)).toEqual([
       toMinorUnits(1100),
       toMinorUnits(1100),

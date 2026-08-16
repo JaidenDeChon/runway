@@ -7,14 +7,13 @@
  * tech rather than given a colour name nobody needs read aloud.
  */
 import { computed } from 'vue'
-import { cn } from '@/lib/utils'
 import { accountColorClasses } from '@/lib/account-colors'
+import { cn } from '@/lib/utils'
 import type { AccountColor } from '~~/domain/types'
 
-const props = withDefaults(
-  defineProps<{ color: AccountColor; size?: 'sm' | 'base' }>(),
-  { size: 'base' },
-)
+const props = withDefaults(defineProps<{ color: AccountColor; size?: 'sm' | 'base' }>(), {
+  size: 'base',
+})
 
 const classes = computed(() => accountColorClasses(props.color))
 </script>

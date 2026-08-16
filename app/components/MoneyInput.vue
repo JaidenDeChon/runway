@@ -10,8 +10,8 @@
 import { computed, ref, watch } from 'vue'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { toMajorUnits, toMinorUnits } from '~~/domain/money'
 import type { MinorUnits } from '~~/domain/money'
+import { toMajorUnits, toMinorUnits } from '~~/domain/money'
 
 const props = withDefaults(
   defineProps<{
@@ -70,7 +70,7 @@ const describedLabel = computed(() =>
       :placeholder="props.placeholder"
       :disabled="props.disabled"
       :aria-label="describedLabel"
-      class="h-9 border-0 bg-transparent px-0 font-mono tabular-nums shadow-none focus-visible:ring-0"
+      class="h-11 border-0 bg-transparent px-0 font-mono tabular-nums shadow-none focus-visible:ring-0 lg:h-9"
       @update:model-value="onInput"
     />
   </div>
