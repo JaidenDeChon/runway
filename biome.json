@@ -10,7 +10,8 @@
       "!.output",
       "!dist",
       "!app/components/ui",
-      "!bun.lock"
+      "!bun.lock",
+      "!docs/design"
     ]
   },
   "formatter": {

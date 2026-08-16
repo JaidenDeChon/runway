@@ -1,0 +1,10 @@
+/* Real webfonts from the .fig — no local files were provided, so we load the exact families (not substitutes) from the Fontsource CDN mirror. */
+@font-face{font-family:"Geist";src:url("https://cdn.jsdelivr.net/fontsource/fonts/geist-sans@latest/latin-400-normal.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"Geist";src:url("https://cdn.jsdelivr.net/fontsource/fonts/geist-sans@latest/latin-500-normal.woff2") format("woff2");font-weight:500;font-style:normal;font-display:swap}
+@font-face{font-family:"Geist";src:url("https://cdn.jsdelivr.net/fontsource/fonts/geist-sans@latest/latin-600-normal.woff2") format("woff2");font-weight:600;font-style:normal;font-display:swap}
+@font-face{font-family:"Geist";src:url("https://cdn.jsdelivr.net/fontsource/fonts/geist-sans@latest/latin-300-normal.woff2") format("woff2");font-weight:300;font-style:normal;font-display:swap}
+@font-face{font-family:"Geist Mono";src:url("https://cdn.jsdelivr.net/fontsource/fonts/geist-mono@latest/latin-400-normal.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"Geist Mono";src:url("https://cdn.jsdelivr.net/fontsource/fonts/geist-mono@latest/latin-500-normal.woff2") format("woff2");font-weight:500;font-style:normal;font-display:swap}
+@font-face{font-family:"Inter";src:url("https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-400-normal.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"Inter";src:url("https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-500-normal.woff2") format("woff2");font-weight:500;font-style:normal;font-display:swap}
+:root{--font-sans:"Geist",-apple-system,BlinkMacSystemFont,sans-serif;--font-mono:"Geist Mono",ui-monospace,monospace;--font-doc:"Inter",-apple-system,sans-serif}

@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<!--
+  Claude Design export — VISUAL REFERENCE ONLY.
+  Do not port this markup. It is a generated React/DC-runtime prototype;
+  this codebase is Vue 3 + shadcn-vue. See ../README.md.
+
+  Changed from the original export so it renders offline from this directory:
+    - support.js and the _ds/ stylesheets repointed to ../_assets/
+    - vendored React UMD builds injected (the export expects a host-provided React)
+    - cross-screen links repointed to ../<slug>/reference.html
+  Nothing else was touched.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="../_assets/vendor/react.production.min.js"></script>
+<script src="../_assets/vendor/react-dom.production.min.js"></script>
+<script src="../_assets/support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/components/fig-tokens.css" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/components/fig-assets.css" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/tokens/fonts.css" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/tokens/theme.css" />
+  <style>
+    body{margin:0}
+    input[type="date"]{ color-scheme: light dark; }
+    a{ color:var(--general-primary); text-decoration:none; }
+    a:hover{ color:var(--general-primary); text-decoration:underline; }
+    select{ color-scheme: light dark; }
+  </style>
+</helmet>
+<div style="{{ pageStyle }}" className="{{ darkClass }}">
+  <div style="{{ headerStyle }}">
+    <div style="{{ brandRow }}">
+      <div style="{{ wordmark }}">Runway</div>
+    </div>
+    <div style="{{ headerControls }}">
+      <a href="../dashboard/reference.html" style="{{ skipLinkStyle }}">Skip to dashboard</a>
+      <div data-component="Tabs" style="{{ tabsWrap }}">
+        <button style="{{ tabMobileStyle }}" onClick="{{ setViewportMobile }}">Mobile</button>
+        <button style="{{ tabDesktopStyle }}" onClick="{{ setViewportDesktop }}">Desktop</button>
+      </div>
+      <button data-component="Button" aria-label="Toggle theme" style="{{ themeBtnStyle }}" onClick="{{ toggleDark }}">{{ themeIcon }}</button>
+    </div>
+  </div>
+
+  <div style="{{ mainStyle }}">
+
+    <sc-if value="{{ showIntro }}" hint-placeholder-val="{{ true }}">
+      <div style="{{ heroBlock }}">
+        <div style="{{ heroTitle }}">See how far your money goes.</div>
+        <div style="{{ heroSub }}">Add one account and one bill or paycheck, and Runway builds your first projection.</div>
+      </div>
+
+      <div style="{{ previewBox }}">
+        <div style="{{ previewLabel }}">Your runway chart appears here</div>
+        <div style="{{ previewLine }}"></div>
+      </div>
+    </sc-if>
+
+    <div style="{{ progressRow }}">
+      <span style="{{ dot1 }}"></span>
+      <span style="{{ dot2 }}"></span>
+    </div>
+
+    <sc-if value="{{ isStep1 }}" hint-placeholder-val="{{ true }}">
+      <div data-component="Card" style="{{ stepCardStyle }}">
+        <div style="{{ stepLabel }}">Step 1 of 2</div>
+        <div style="{{ stepTitle }}">Add your first account</div>
+        <div style="{{ stepSub }}">Runway needs one account balance to start from.</div>
+
+        <div style="{{ fieldCol }}">
+          <div style="{{ fieldLabel }}">Name</div>
+          <input data-component="Input" type="text" value="{{ accForm.name }}" onChange="{{ onAccNameChange }}" style="{{ textInputStyle }}" placeholder="e.g. Checking" />
+        </div>
+
+        <div style="{{ fieldCol }}">
+          <div style="{{ fieldLabel }}">Line color</div>
+          <div style="{{ colorRow }}">
+            <sc-for list="{{ colorOptions }}" as="c" hint-placeholder-count="3">
+              <button style="{{ c.swatchStyle }}" onClick="{{ c.onSelect }}" aria-label="{{ c.name }}"></button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="{{ fieldRow }}">
+          <div style="{{ fieldCol }}">
+            <div style="{{ fieldLabel }}">Balance</div>
+            <div style="{{ moneyInputWrap }}">
+              <span style="{{ moneyPrefix }}">$</span>
+              <input data-component="Input" type="number" value="{{ accForm.balanceVal }}" onChange="{{ onAccBalanceChange }}" style="{{ moneyInputStyle }}" />
+            </div>
+          </div>
+          <div style="{{ fieldCol }}">
+            <div style="{{ fieldLabel }}">As of</div>
+            <input data-component="Input" type="date" value="{{ accForm.asOf }}" onChange="{{ onAccAsOfChange }}" style="{{ textInputStyle }}" />
+          </div>
+        </div>
+
+        <button data-component="Button" style="{{ primaryBtn }}" onClick="{{ goStep2 }}" disabled="{{ step1Disabled }}">Continue</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isStep2 }}" hint-placeholder-val="{{ false }}">
+      <div data-component="Card" style="{{ stepCardStyle }}">
+        <div style="{{ stepLabel }}">Step 2 of 2</div>
+        <div style="{{ stepTitle }}">Add a bill or paycheck</div>
+        <div style="{{ stepSub }}">One recurring item is enough to see your first projection.</div>
+
+        <div data-component="Tabs" style="{{ typeToggleWrap }}">
+          <button style="{{ typeBillStyle }}" onClick="{{ setTypeBill }}">Bill</button>
+          <button style="{{ typeIncomeStyle }}" onClick="{{ setTypeIncome }}">Income</button>
+        </div>
+
+        <div style="{{ fieldCol }}">
+          <div style="{{ fieldLabel }}">Name</div>
+          <input data-component="Input" type="text" value="{{ itemForm.name }}" onChange="{{ onItemNameChange }}" style="{{ textInputStyle }}" placeholder="{{ namePlaceholder }}" />
+        </div>
+
+        <div style="{{ fieldRow }}">
+          <div style="{{ fieldCol }}">
+            <div style="{{ fieldLabel }}">Amount</div>
+            <div style="{{ moneyInputWrap }}">
+              <span style="{{ moneyPrefix }}">$</span>
+              <input data-component="Input" type="number" value="{{ itemForm.amountVal }}" onChange="{{ onItemAmountChange }}" style="{{ moneyInputStyle }}" />
+            </div>
+          </div>
+          <div style="{{ fieldCol }}">
+            <div style="{{ fieldLabel }}">Cadence</div>
+            <select data-component="Select" value="{{ itemForm.cadence }}" onChange="{{ onCadenceChange }}" style="{{ selectStyle }}">
+              <sc-for list="{{ cadenceOptions }}" as="c" hint-placeholder-count="3">
+                <option value="{{ c.value }}">{{ c.label }}</option>
+              </sc-for>
+            </select>
+          </div>
+        </div>
+
+        <div style="{{ fieldCol }}">
+          <div style="{{ fieldLabel }}">Next occurrence</div>
+          <input data-component="Input" type="date" value="{{ itemForm.nextDate }}" onChange="{{ onItemDateChange }}" style="{{ textInputStyle }}" />
+        </div>
+
+        <div style="{{ stepActionsRow }}">
+          <button data-component="Button" style="{{ backBtn }}" onClick="{{ backStep1 }}">Back</button>
+          <button data-component="Button" style="{{ primaryBtn }}" onClick="{{ finish }}" disabled="{{ step2Disabled }}">Build my runway</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isDone }}" hint-placeholder-val="{{ false }}">
+      <div data-component="Card" style="{{ doneCardStyle }}">
+        <div style="{{ doneTitle }}">You're set.</div>
+        <div style="{{ doneSub }}">{{ doneSummary }}</div>
+        <a href="../dashboard/reference.html" style="{{ doneBtn }}">See your runway</a>
+        <div style="{{ doneFootnote }}">Add more accounts and bills any time from the menu.</div>
+      </div>
+    </sc-if>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+function toISO(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function fmtMoney(n){ const v=Math.round(n); return '$'+Math.abs(v).toLocaleString('en-US'); }
+
+const TODAY=new Date(2026,7,15);
+const COLOR_TOKENS=[
+  {id:'chart-2', var:'var(--chart-colors-chart-2)'},
+  {id:'chart-3', var:'var(--chart-colors-chart-3)'},
+  {id:'chart-4', var:'var(--chart-colors-chart-4)'},
+];
+const CADENCES=[{value:'weekly',label:'Weekly'},{value:'biweekly',label:'Biweekly'},{value:'monthly',label:'Monthly'}];
+
+class Component extends DCLogic {
+  state={
+    dark:false, viewport:'mobile', step:1,
+    accForm:{ name:'', color:COLOR_TOKENS[0].id, balanceVal:0, asOf:toISO(TODAY) },
+    itemForm:{ type:'bill', name:'', amountVal:0, cadence:'monthly', nextDate:toISO(TODAY) },
+  };
+
+  toggleDark=()=>this.setState(s=>({dark:!s.dark}));
+  setViewport=(v)=>this.setState({viewport:v});
+
+  onAccNameChange=(e)=>{ const v=e&&e.target?e.target.value:e; this.setState(s=>({accForm:{...s.accForm,name:v}})); };
+  onAccBalanceChange=(e)=>{ const v=e&&e.target?e.target.value:e; const n=Number(v); this.setState(s=>({accForm:{...s.accForm,balanceVal:isNaN(n)?0:n}})); };
+  onAccAsOfChange=(e)=>{ const v=e&&e.target?e.target.value:e; if(v) this.setState(s=>({accForm:{...s.accForm,asOf:v}})); };
+  setColor=(id)=>this.setState(s=>({accForm:{...s.accForm,color:id}}));
+
+  setTypeBill=()=>this.setState(s=>({itemForm:{...s.itemForm,type:'bill'}}));
+  setTypeIncome=()=>this.setState(s=>({itemForm:{...s.itemForm,type:'income'}}));
+  onItemNameChange=(e)=>{ const v=e&&e.target?e.target.value:e; this.setState(s=>({itemForm:{...s.itemForm,name:v}})); };
+  onItemAmountChange=(e)=>{ const v=e&&e.target?e.target.value:e; const n=Number(v); this.setState(s=>({itemForm:{...s.itemForm,amountVal:isNaN(n)?0:n}})); };
+  onCadenceChange=(e)=>{ const v=e&&e.target?e.target.value:e; this.setState(s=>({itemForm:{...s.itemForm,cadence:v}})); };
+  onItemDateChange=(e)=>{ const v=e&&e.target?e.target.value:e; if(v) this.setState(s=>({itemForm:{...s.itemForm,nextDate:v}})); };
+
+  goStep2=()=>{ if(!this.state.accForm.name.trim()) return; this.setState({step:2}); };
+  backStep1=()=>this.setState({step:1});
+  finish=()=>{ if(!this.state.itemForm.name.trim()) return; this.setState({step:3}); };
+
+  renderVals(){
+    const st=this.state;
+    const isDesktop=st.viewport==='desktop';
+    const af=st.accForm, itf=st.itemForm;
+    const isBill = itf.type==='bill', isIncome = itf.type==='income';
+    const cardBase={ background:'var(--card-card)', border:'1px solid var(--general-border)', borderRadius:'var(--radius)', padding: isDesktop? '22px 24px':'18px 18px', display:'flex', flexDirection:'column', gap:14, boxSizing:'border-box' };
+
+    const colorOptions=COLOR_TOKENS.map(c=>({
+      id:c.id, name:c.id, onSelect:()=>this.setColor(c.id),
+      swatchStyle:{ width:30, height:30, borderRadius:99, background:c.var, border: af.color===c.id? '2.5px solid var(--general-foreground)':'2.5px solid transparent', outline:'1px solid var(--general-border)', outlineOffset:2, cursor:'pointer', padding:0 },
+    }));
+    const cadenceOptions=CADENCES.map(c=>({value:c.value,label:c.label}));
+
+    const step1Disabled = !af.name.trim();
+    const step2Disabled = !itf.name.trim();
+    const amtLabel = fmtMoney(itf.amountVal);
+    const doneSummary = `We'll track ${af.name.trim()||'your account'} against ${itf.name.trim()||'your item'} (${isIncome?'+':'−'}${amtLabel}) starting now.`;
+
+    return {
+      darkClass: st.dark? 'dark':'',
+      pageStyle:{ minHeight:'100vh', background:'var(--general-background)', color:'var(--general-foreground)', fontFamily:'var(--font-sans)', display:'flex', flexDirection:'column', alignItems:'center', boxSizing:'border-box' },
+      headerStyle:{ width:'100%', maxWidth: isDesktop? 640:430, display:'flex', alignItems:'center', justifyContent:'space-between', padding: isDesktop? '24px 0 8px':'20px 16px 4px', boxSizing:'border-box' },
+      brandRow:{ display:'flex', alignItems:'center', gap:8 },
+      wordmark:{ fontSize:16, fontWeight:650, letterSpacing:'-0.01em' },
+      headerControls:{ display:'flex', alignItems:'center', gap:10 },
+      skipLinkStyle:{ fontSize:12.5, fontWeight:500, color:'var(--general-muted-foreground)' },
+      tabsWrap:{ display:'flex', background:'var(--general-accent)', borderRadius:8, padding:3, gap:2 },
+      tabMobileStyle:{ border:'none', cursor:'pointer', fontFamily:'var(--font-sans)', fontSize:12, fontWeight:600, padding:'6px 10px', borderRadius:6, background: !isDesktop? 'var(--card-card)':'transparent', color: !isDesktop? 'var(--general-foreground)':'var(--general-muted-foreground)', boxShadow: !isDesktop? '0 1px 2px rgba(0,0,0,0.08)':'none' },
+      tabDesktopStyle:{ border:'none', cursor:'pointer', fontFamily:'var(--font-sans)', fontSize:12, fontWeight:600, padding:'6px 10px', borderRadius:6, background: isDesktop? 'var(--card-card)':'transparent', color: isDesktop? 'var(--general-foreground)':'var(--general-muted-foreground)', boxShadow: isDesktop? '0 1px 2px rgba(0,0,0,0.08)':'none' },
+      setViewportMobile:()=>this.setViewport('mobile'),
+      setViewportDesktop:()=>this.setViewport('desktop'),
+      themeBtnStyle:{ width:32,height:32, borderRadius:8, border:'1px solid var(--general-border)', background:'var(--card-card)', color:'var(--general-foreground)', cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center' },
+      themeIcon: st.dark? '☀':'☾',
+      toggleDark: this.toggleDark,
+
+      mainStyle:{ display:'flex', flexDirection:'column', gap:20, width:'100%', maxWidth: isDesktop? 480:430, padding: isDesktop? '32px 0 64px':'24px 16px 56px', boxSizing:'border-box' },
+
+      showIntro: st.step===1,
+      heroBlock:{ display:'flex', flexDirection:'column', gap:8, textAlign:'center', padding:'8px 4px 0' },
+      heroTitle:{ fontSize: isDesktop? 28:24, fontWeight:650, letterSpacing:'-0.02em', lineHeight:1.2 },
+      heroSub:{ fontSize: isDesktop? 15:14, color:'var(--general-muted-foreground)', lineHeight:1.5 },
+
+      previewBox:{ border:'1px dashed var(--general-border)', borderRadius:'var(--radius)', padding:'20px 16px', display:'flex', flexDirection:'column', alignItems:'center', gap:10, background:'var(--general-accent)' },
+      previewLabel:{ fontSize:12.5, color:'var(--general-muted-foreground)', fontWeight:500 },
+      previewLine:{ width:'100%', height:2, background:'repeating-linear-gradient(90deg, var(--general-border) 0 6px, transparent 6px 12px)' },
+
+      progressRow:{ display:'flex', justifyContent:'center', gap:6 },
+      dot1:{ width: st.step===1?18:6, height:6, borderRadius:99, background: st.step>=1? 'var(--general-primary)':'var(--general-border)', transition:'width 150ms' },
+      dot2:{ width: st.step===2?18:6, height:6, borderRadius:99, background: st.step>=2? 'var(--general-primary)':'var(--general-border)', transition:'width 150ms' },
+
+      isStep1: st.step===1, isStep2: st.step===2, isDone: st.step===3,
+
+      stepCardStyle:{ ...cardBase },
+      stepLabel:{ fontSize:11.5, fontWeight:650, letterSpacing:'0.04em', textTransform:'uppercase', color:'var(--general-muted-foreground)' },
+      stepTitle:{ fontSize:19, fontWeight:650, marginTop:-6 },
+      stepSub:{ fontSize:13.5, color:'var(--general-muted-foreground)', marginTop:-6, lineHeight:1.4 },
+
+      fieldCol:{ display:'flex', flexDirection:'column', gap:6 },
+      fieldRow:{ display:'flex', gap:12 },
+      fieldLabel:{ fontSize:13, fontWeight:500, color:'var(--general-muted-foreground)' },
+      textInputStyle:{ border:'1px solid var(--general-input)', borderRadius:8, padding:'10px 12px', fontSize:15, fontFamily:'var(--font-sans)', background:'var(--general-background)', color:'var(--general-foreground)', width:'100%', boxSizing:'border-box' },
+      selectStyle:{ border:'1px solid var(--general-input)', borderRadius:8, padding:'10px 12px', fontSize:15, fontFamily:'var(--font-sans)', background:'var(--general-background)', color:'var(--general-foreground)', width:'100%', boxSizing:'border-box' },
+
+      accForm:{ name:af.name, balanceVal:af.balanceVal, asOf:af.asOf },
+      onAccNameChange:this.onAccNameChange, onAccBalanceChange:this.onAccBalanceChange, onAccAsOfChange:this.onAccAsOfChange,
+      colorRow:{ display:'flex', gap:10 },
+      colorOptions,
+
+      moneyInputWrap:{ display:'flex', alignItems:'center', gap:4, border:'1px solid var(--general-input)', borderRadius:8, padding:'8px 12px', background:'var(--general-background)' },
+      moneyPrefix:{ fontSize:14, color:'var(--general-muted-foreground)', fontFamily:'var(--font-mono)' },
+      moneyInputStyle:{ border:'none', outline:'none', background:'transparent', fontSize:15, fontFamily:'var(--font-mono)', color:'var(--general-foreground)', width:'100%' },
+
+      primaryBtn:{ border:'none', borderRadius:8, padding:'11px 0', fontSize:14.5, fontWeight:600, fontFamily:'var(--font-sans)', background:'var(--general-primary)', color:'var(--general-primary-foreground)', cursor:'pointer', marginTop:2 },
+      step1Disabled, goStep2:this.goStep2,
+
+      typeToggleWrap:{ display:'flex', background:'var(--general-accent)', borderRadius:9, padding:3, gap:2 },
+      typeBillStyle:{ flex:1, border:'none', cursor:'pointer', fontFamily:'var(--font-sans)', fontSize:13, fontWeight:600, padding:'8px 6px', borderRadius:7, background: isBill? 'var(--card-card)':'transparent', color: isBill? 'var(--general-foreground)':'var(--general-muted-foreground)', boxShadow: isBill? '0 1px 2px rgba(0,0,0,0.08)':'none' },
+      typeIncomeStyle:{ flex:1, border:'none', cursor:'pointer', fontFamily:'var(--font-sans)', fontSize:13, fontWeight:600, padding:'8px 6px', borderRadius:7, background: isIncome? 'var(--card-card)':'transparent', color: isIncome? 'var(--general-foreground)':'var(--general-muted-foreground)', boxShadow: isIncome? '0 1px 2px rgba(0,0,0,0.08)':'none' },
+      setTypeBill:this.setTypeBill, setTypeIncome:this.setTypeIncome,
+
+      namePlaceholder: isBill? 'e.g. Rent':'e.g. Paycheck',
+      itemForm:{ name:itf.name, amountVal:itf.amountVal, cadence:itf.cadence, nextDate:itf.nextDate },
+      onItemNameChange:this.onItemNameChange, onItemAmountChange:this.onItemAmountChange, onCadenceChange:this.onCadenceChange, onItemDateChange:this.onItemDateChange,
+      cadenceOptions,
+
+      stepActionsRow:{ display:'flex', gap:8, marginTop:2 },
+      backBtn:{ background:'transparent', color:'var(--general-foreground)', border:'1px solid var(--general-border)', borderRadius:8, padding:'11px 16px', fontSize:14.5, fontWeight:600, cursor:'pointer', fontFamily:'var(--font-sans)' },
+      backStep1:this.backStep1,
+      step2Disabled, finish:this.finish,
+
+      doneCardStyle:{ ...cardBase, alignItems:'center', textAlign:'center', padding: isDesktop? '32px 28px':'28px 20px' },
+      doneTitle:{ fontSize:22, fontWeight:650 },
+      doneSub:{ fontSize:14, color:'var(--general-muted-foreground)', lineHeight:1.5, maxWidth:340 },
+      doneSummary,
+      doneBtn:{ display:'block', width:'100%', textAlign:'center', boxSizing:'border-box', border:'none', borderRadius:8, padding:'12px 0', fontSize:15, fontWeight:600, fontFamily:'var(--font-sans)', background:'var(--general-primary)', color:'var(--general-primary-foreground)', textDecoration:'none', marginTop:6 },
+      doneFootnote:{ fontSize:12, color:'var(--general-muted-foreground)', marginTop:2 },
+    };
+  }
+}
+
+</script>
+</body>
+</html>

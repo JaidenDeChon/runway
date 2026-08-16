@@ -1,0 +1,38 @@
+# Runway — agent guide
+
+`CLAUDE.md` and `AGENTS.md` are kept identical. Edit both, or neither.
+
+---
+
+## Design reference
+
+Design artifacts live in `docs/design/<screen-slug>/`. The index is `docs/design/README.md`.
+
+**Before implementing or modifying any UI:**
+
+1. Read `docs/design/<slug>/spec.md`.
+2. View the PNGs in `docs/design/<slug>/screens/` — including the non-default states, not just `default.png`.
+3. Implement against those.
+
+**`reference.html` is a visual reference, not a code source.** It is a generated prototype export, very likely React. This codebase is Vue 3 with `shadcn-vue`. Do not read it in full, do not port its markup, and do not translate its component structure. Open it only to resolve a specific ambiguity the spec and screenshots leave open.
+
+**Tokens come from the repo, never from the design artifacts.** Colors, spacing, typography, radii, and `--chart-1` through `--chart-5` are defined in the Tailwind config and CSS variables. If a design appears to use a value with no corresponding token, raise it — do not hardcode it.
+
+**Precedence when sources disagree:** `spec.md` beats the screenshots; the screenshots beat `reference.html`; the repo's tokens beat all three.
+
+**Deviations get raised, not silently resolved.** If the design can't be built as specified, describe in the PR what was done instead and why. Accessibility standards override the design without discussion — implement to standard and note it.
+
+If a screen has no directory under `docs/design/`, its design hasn't landed yet. Say so before proceeding rather than inventing an interface.
+
+---
+
+## UI conventions
+
+- Vue 3 with `<script setup>` and TypeScript, strict mode
+- `shadcn-vue` components installed via CLI — do not hand-write a component that exists in the registry
+- Tailwind utilities; no separate stylesheets except for token definitions
+- Mobile-first: build at 375px, then adapt upward
+- Both light and dark themes work, always
+- Money is displayed from integer cents, formatted at the edge — never stored or passed as a float
+- Components perform no financial calculation. All projection arithmetic comes from the engine. Arithmetic on balances inside a component is a bug.
+- No balance values in logs, analytics events, or URL parameters

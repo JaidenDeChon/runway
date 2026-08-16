@@ -10,6 +10,15 @@
 @theme inline {
     --font-sans: 'Figtree Variable', sans-serif;
     --font-heading: var(--font-sans);
+    /* Every money figure in the design is set in a mono face so columns of
+       amounts align on the decimal. The design's own choice is Geist Mono;
+       this uses the platform mono stack instead rather than adding a second
+       webfont to a money app's critical path. Pair it with `tabular-nums`. */
+    --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+        'Liberation Mono', monospace;
+    --color-chart-positive: var(--chart-positive);
+    --color-chart-negative: var(--chart-negative);
+    --color-chart-warning: var(--chart-warning);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -64,11 +73,23 @@
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
     --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.809 0.105 251.813);
-    --chart-2: oklch(0.623 0.214 259.815);
-    --chart-3: oklch(0.546 0.245 262.881);
-    --chart-4: oklch(0.488 0.243 264.376);
-    --chart-5: oklch(0.424 0.199 265.638);
+    /* Chart ramp. Roles are fixed across the app and must not be reassigned:
+       --chart-1 is the combined burndown line, --chart-5 is what-if/warning
+       tinting, and only --chart-2/-3/-4 are offered as account line colors.
+       Because those three are a user-facing picker, they are deliberately
+       spread across hue families (green / blue / indigo) so the swatches stay
+       tellable apart — an all-blue ramp makes the picker useless. */
+    --chart-1: oklch(0.723 0.166 152.5);
+    --chart-2: oklch(0.696 0.155 162.5);
+    --chart-3: oklch(0.623 0.171 245.2);
+    --chart-4: oklch(0.548 0.203 276.4);
+    --chart-5: oklch(0.769 0.158 78.4);
+    /* Verdict colors. Money-positive has no counterpart in the base shadcn
+       token set, and the covered/short verdict is the point of the shortfall
+       screen, so it gets a real token rather than a borrowed one. */
+    --chart-positive: oklch(0.548 0.148 152.5);
+    --chart-negative: oklch(0.577 0.245 27.325);
+    --chart-warning: oklch(0.632 0.148 70.1);
     --radius: 0.625rem;
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
@@ -101,11 +122,15 @@
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
     --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.809 0.105 251.813);
-    --chart-2: oklch(0.623 0.214 259.815);
-    --chart-3: oklch(0.546 0.245 262.881);
-    --chart-4: oklch(0.488 0.243 264.376);
-    --chart-5: oklch(0.424 0.199 265.638);
+    /* Same roles as light, lifted for contrast against the dark surface. */
+    --chart-1: oklch(0.792 0.162 152.8);
+    --chart-2: oklch(0.765 0.150 163.0);
+    --chart-3: oklch(0.707 0.152 245.5);
+    --chart-4: oklch(0.652 0.176 276.8);
+    --chart-5: oklch(0.828 0.148 79.0);
+    --chart-positive: oklch(0.792 0.162 152.8);
+    --chart-negative: oklch(0.704 0.191 22.216);
+    --chart-warning: oklch(0.828 0.148 79.0);
     --sidebar: oklch(0.205 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
     --sidebar-primary: oklch(0.623 0.214 259.815);

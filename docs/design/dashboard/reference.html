@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<!--
+  Claude Design export — VISUAL REFERENCE ONLY.
+  Do not port this markup. It is a generated React/DC-runtime prototype;
+  this codebase is Vue 3 + shadcn-vue. See ../README.md.
+
+  Changed from the original export so it renders offline from this directory:
+    - support.js and the _ds/ stylesheets repointed to ../_assets/
+    - vendored React UMD builds injected (the export expects a host-provided React)
+    - cross-screen links repointed to ../<slug>/reference.html
+  Nothing else was touched.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="../_assets/vendor/react.production.min.js"></script>
+<script src="../_assets/vendor/react-dom.production.min.js"></script>
+<script src="../_assets/support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/components/fig-tokens.css" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/components/fig-assets.css" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/tokens/fonts.css" />
+  <link rel="stylesheet" href="../_assets/_ds/runway-design-system-f152bc89-bf47-4491-8e5d-44f0a9ec8df4/tokens/theme.css" />
+  <style>
+    body{margin:0}
+    a{ color:var(--general-primary); text-decoration:none; }
+    a:hover{ color:var(--general-primary); text-decoration:underline; }
+    @keyframes shimmer{0%{background-position:-200px 0}100%{background-position:200px 0}}
+    .rw-skel{background:linear-gradient(90deg, var(--general-accent) 25%, var(--general-border) 37%, var(--general-accent) 63%);background-size:400px 100%;animation:shimmer 1.4s ease infinite}
+  </style>
+</helmet>
+<div style="{{ pageStyle }}" className="{{ darkClass }}">
+  <div style="{{ headerStyle }}">
+    <div style="{{ brandRow }}">
+      <div style="{{ brandDot }}"></div>
+      <div style="{{ brandName }}">Runway</div>
+    </div>
+    <div style="{{ headerControls }}">
+      <div data-component="Tabs" style="{{ tabsWrap }}">
+        <button style="{{ tabMobileStyle }}" onClick="{{ setViewportMobile }}">Mobile</button>
+        <button style="{{ tabDesktopStyle }}" onClick="{{ setViewportDesktop }}">Desktop</button>
+      </div>
+      <button data-component="Button" aria-label="Toggle theme" style="{{ themeBtnStyle }}" onClick="{{ toggleDark }}">{{ themeIcon }}</button>
+    </div>
+  </div>
+
+  <div style="{{ mainStyle }}">
+    <div data-component="Card" style="{{ chartCardStyle }}">
+      <sc-if value="{{ whatIfActive }}" hint-placeholder-val="{{ false }}">
+        <div style="{{ whatIfChartBanner }}">◑ Previewing what-if — not saved</div>
+      </sc-if>
+      <div style="{{ chartHeaderRow }}">
+        <div>
+          <div style="{{ cardTitle }}">Balance forecast</div>
+          <div style="{{ cardSubtitle }}">14 days back · {{ horizonLabel }} ahead</div>
+        </div>
+        <div style="{{ chartHeaderRightCol }}">
+          <div data-component="ToggleGroup" style="{{ toggleGroupWrap }}">
+            <sc-for list="{{ horizonOptions }}" as="opt" hint-placeholder-count="3">
+              <button style="{{ opt.style }}" onClick="{{ opt.onClick }}">{{ opt.label }}</button>
+            </sc-for>
+          </div>
+          <button aria-label="Chart density" style="{{ densityBtnStyle }}" onClick="{{ toggleDensity }}">⚙</button>
+        </div>
+      </div>
+
+      <sc-if value="{{ densityOpen }}" hint-placeholder-val="{{ false }}">
+        <div data-component="Card" style="{{ densityPanel }}">
+          <div style="{{ densityRow }}">
+            <div style="{{ densityLabelRow }}"><span style="{{ densityLabel }}">Line weight</span><span style="{{ densityVal }}">{{ lineWeightVal }}</span></div>
+            <input data-component="Slider" type="range" min="4" max="14" step="1" value="{{ lineWeight }}" onChange="{{ onLineWeightChange }}" style="{{ sliderStyle }}" />
+          </div>
+          <div style="{{ densityRow }}">
+            <div style="{{ densityLabelRow }}"><span style="{{ densityLabel }}">Dash density</span><span style="{{ densityVal }}">{{ dashDensityVal }}</span></div>
+            <input data-component="Slider" type="range" min="3" max="18" step="1" value="{{ dashDensity }}" onChange="{{ onDashDensityChange }}" style="{{ sliderStyle }}" />
+          </div>
+          <div style="{{ densityRow }}">
+            <div style="{{ densityLabelRow }}"><span style="{{ densityLabel }}">Marker size</span><span style="{{ densityVal }}">{{ markerSizeVal }}</span></div>
+            <input data-component="Slider" type="range" min="0.6" max="1.8" step="0.1" value="{{ markerSize }}" onChange="{{ onMarkerSizeChange }}" style="{{ sliderStyle }}" />
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ loading }}" hint-placeholder-val="{{ true }}">
+        <div style="{{ skeletonChartStyle }}" className="rw-skel"></div>
+      </sc-if>
+      <sc-if value="{{ notLoading }}" hint-placeholder-val="{{ false }}">
+        <div data-component="ChartContainer" style="{{ chartContainerStyle }}"
+             onMouseLeave="{{ clearHover }}">
+          <svg viewBox="{{ svgViewBox }}" width="100%" height="{{ svgHeight }}" style="{{ svgStyle }}">
+            <rect x="{{ dangerRect.x }}" y="{{ dangerRect.y }}" width="{{ dangerRect.w }}" height="{{ dangerRect.h }}" fill="var(--chart-negative)" opacity="0.08"></rect>
+
+            <sc-for list="{{ yTicks }}" as="t" hint-placeholder-count="5">
+              <line x1="{{ plotLeft }}" x2="{{ plotRight }}" y1="{{ t.y }}" y2="{{ t.y }}" stroke="var(--general-border)" stroke-width="1.5" opacity="0.6"></line>
+              <text x="6" y="{{ t.ty }}" fill="var(--general-muted-foreground)" font-size="30" font-family="var(--font-sans)">{{ t.label }}</text>
+            </sc-for>
+
+            <sc-for list="{{ xTicks }}" as="t" hint-placeholder-count="6">
+              <text x="{{ t.x }}" y="{{ xAxisY }}" fill="var(--general-muted-foreground)" font-size="28" font-family="var(--font-sans)" text-anchor="middle">{{ t.label }}</text>
+            </sc-for>
+
+            <line x1="{{ todayX }}" x2="{{ todayX }}" y1="{{ plotTop }}" y2="{{ plotBottom }}" stroke="var(--general-foreground)" stroke-width="3" stroke-dasharray="4 7" opacity="0.55"></line>
+            <text x="{{ todayX }}" y="{{ todayLabelY }}" fill="var(--general-foreground)" font-size="28" font-family="var(--font-sans)" text-anchor="middle" opacity="0.7">Today</text>
+
+            <line x1="{{ plotLeft }}" x2="{{ plotRight }}" y1="{{ cushionY }}" y2="{{ cushionY }}" stroke="var(--general-muted-foreground)" stroke-width="2.5" stroke-dasharray="8 8"></line>
+            <text x="{{ plotLeft }}" y="{{ cushionLabelY }}" fill="var(--general-muted-foreground)" font-size="28" font-family="var(--font-sans)" onClick="{{ toggleCushionInfo }}" style="{{ cushionLabelStyle }}">{{ cushionLabel }}</text>
+
+            <sc-for list="{{ lines }}" as="ln" hint-placeholder-count="3">
+              <path d="{{ ln.pastD }}" fill="none" stroke="{{ ln.color }}" stroke-width="{{ ln.width }}" stroke-linejoin="round" stroke-linecap="round"></path>
+              <path d="{{ ln.futureD }}" fill="none" stroke="{{ ln.color }}" stroke-width="{{ ln.width }}" stroke-dasharray="{{ ln.dash }}" stroke-linejoin="round" stroke-linecap="round"></path>
+            </sc-for>
+
+            <sc-for list="{{ eventMarkers }}" as="m" hint-placeholder-count="10">
+              <circle cx="{{ m.x }}" cy="{{ m.y }}" r="{{ m.r }}" fill="{{ m.fill }}" stroke="{{ m.color }}" stroke-width="4"></circle>
+            </sc-for>
+
+            <sc-if value="{{ crosshair.visible }}" hint-placeholder-val="{{ false }}">
+              <line data-component="ChartCrosshair" x1="{{ crosshair.x }}" x2="{{ crosshair.x }}" y1="{{ plotTop }}" y2="{{ plotBottom }}" stroke="var(--general-foreground)" stroke-width="2" opacity="0.5"></line>
+            </sc-if>
+
+            <circle cx="{{ lowestX }}" cy="{{ lowestY }}" r="16" fill="var(--general-background)" stroke="var(--general-destructive)" stroke-width="6"></circle>
+            <text x="{{ lowestLabelX }}" y="{{ lowestLabelY1 }}" fill="var(--general-destructive)" font-size="42" font-weight="600" font-family="var(--font-sans)" text-anchor="{{ lowestAnchor }}">{{ lowestAmountLabel }}</text>
+            <text x="{{ lowestLabelX }}" y="{{ lowestLabelY2 }}" fill="var(--general-muted-foreground)" font-size="26" font-family="var(--font-sans)" text-anchor="{{ lowestAnchor }}">Lowest · {{ lowestDateLabel }}</text>
+
+            <sc-for list="{{ dayRects }}" as="dr" hint-placeholder-count="44">
+              <rect x="{{ dr.x }}" y="{{ plotTop }}" width="{{ dr.w }}" height="{{ dr.h }}" fill="transparent" onMouseEnter="{{ dr.onEnter }}" onClick="{{ dr.onClick }}"></rect>
+            </sc-for>
+          </svg>
+
+          <sc-if value="{{ tooltip.visible }}" hint-placeholder-val="{{ false }}">
+            <div data-component="ChartTooltip" style="{{ tooltip.style }}">
+              <div style="{{ tooltipDate }}">{{ tooltip.date }}</div>
+              <sc-for list="{{ tooltip.lines }}" as="tl" hint-placeholder-count="2">
+                <div style="{{ tooltipLineRow }}"><span style="{{ tooltipLineLabel }}">{{ tl.label }}</span><span style="{{ tooltipLineVal }}">{{ tl.value }}</span></div>
+              </sc-for>
+              <sc-if value="{{ tooltip.hasItems }}" hint-placeholder-val="{{ false }}">
+                <div style="{{ tooltipSep }}"></div>
+                <sc-for list="{{ tooltip.items }}" as="it" hint-placeholder-count="3">
+                  <div style="{{ tooltipItemRow }}">
+                    <span style="{{ tooltipItemLabel }}">{{ it.label }}</span>
+                    <span style="{{ it.amountStyle }}">{{ it.amount }}</span>
+                  </div>
+                </sc-for>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ cushionInfoOpen }}" hint-placeholder-val="{{ false }}">
+            <div data-component="Popover" style="{{ popoverStyle }}">The lowest balance you're comfortable letting your account reach — dips below this are flagged as danger zone.</div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <div style="{{ legendRow }}">
+        <sc-for list="{{ accountRows }}" as="a" hint-placeholder-count="2">
+          <label data-component="Checkbox" style="{{ a.rowStyle }}">
+            <span style="{{ a.boxOuter }}" onClick="{{ a.onToggle }}">
+              <sc-if value="{{ a.checked }}" hint-placeholder-val="{{ true }}">
+                <span style="{{ a.boxInner }}"></span>
+              </sc-if>
+            </span>
+            <span style="{{ a.swatch }}"></span>
+            <span style="{{ a.labelStyle }}">{{ a.name }}</span>
+            <span style="{{ a.balanceStyle }}">{{ a.balanceLabel }}</span>
+          </label>
+        </sc-for>
+        <sc-if value="{{ showCombinedLegend }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ combinedLegendItem }}">
+            <span style="{{ combinedSwatch }}"></span>
+            <span style="{{ combinedLegendLabel }}">Combined</span>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+
+    <div data-component="Card" style="{{ statCardStyle }}">
+      <div style="{{ statTopRow }}">
+        <div style="{{ statEyebrow }}">Lowest projected balance</div>
+        <span data-component="Badge" style="{{ badgeStyle }}">{{ statusLabel }}</span>
+      </div>
+      <div style="{{ statBigNumber }}">{{ lowestAmountLabel }}</div>
+      <div style="{{ statMetaRow }}">
+        <span>{{ lowestDateLabel }}</span>
+        <span style="{{ statDot }}">·</span>
+        <span>{{ daysUntilLabel }}</span>
+      </div>
+      <sc-if value="{{ showAlert }}" hint-placeholder-val="{{ false }}">
+        <div data-component="Alert" style="{{ alertStyle }}">
+          Projected to dip {{ shortByLabel }} below your safety cushion on {{ lowestDateLabel }}.
+        </div>
+      </sc-if>
+      <a href="../shortfall/reference.html" style="{{ willIMakeItLink }}">Will I make it? →</a>
+    </div>
+
+    <div data-component="Card" style="{{ eventsCardStyle }}">
+      <div style="{{ cardTitle }}">Upcoming</div>
+      <div style="{{ cardSubtitleTight }}">Everything hitting your accounts through {{ horizonLabel }}</div>
+      <div data-component="Separator" style="{{ sepStyle }}"></div>
+      <div data-component="Table" style="{{ tableWrap }}">
+        <sc-for list="{{ upcomingRows }}" as="e" hint-placeholder-count="8">
+          <div style="{{ e.rowStyle }}" onClick="{{ e.onClick }}">
+            <div style="{{ e.dateCol }}">{{ e.dateLabel }}</div>
+            <div style="{{ e.labelCol }}">
+              <div style="{{ e.labelText }}">{{ e.label }}</div>
+              <div style="{{ e.accountRow }}"><span style="{{ e.accountDot }}"></span>{{ e.accountName }}</div>
+            </div>
+            <div style="{{ e.amountCol }}">{{ e.amountLabel }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <sc-if value="{{ sheetOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="{{ overlayStyle }}" onClick="{{ closeSheet }}"></div>
+    <div data-component="{{ editorComponentName }}" style="{{ editorStyle }}">
+      <div style="{{ editorHandle }}"></div>
+      <div style="{{ editorHeaderRow }}">
+        <div>
+          <div style="{{ editorTitle }}">{{ sheetHeaderTitle }}</div>
+          <div style="{{ cardSubtitleTight }}">{{ sheetDateLabel }}</div>
+        </div>
+        <button data-component="Button" style="{{ closeBtnStyle }}" onClick="{{ closeSheet }}">✕</button>
+      </div>
+
+      <sc-if value="{{ whatIfBannerVisible }}" hint-placeholder-val="{{ false }}">
+        <div style="{{ whatIfBanner }}">◑ What-if — changes here won't be saved</div>
+      </sc-if>
+
+      <div style="{{ whatIfRow }}">
+        <div style="{{ whatIfLabelCol }}">
+          <div style="{{ whatIfLabel }}">What-if mode</div>
+          <div style="{{ whatIfHelp }}">Try changes and watch the chart react, without saving</div>
+        </div>
+        <button data-component="Switch" style="{{ whatIfSwitchOuter }}" onClick="{{ toggleWhatIf }}">
+          <span style="{{ whatIfSwitchInner }}"></span>
+        </button>
+      </div>
+
+      <div data-component="Separator" style="{{ sepStyle }}"></div>
+
+      <sc-if value="{{ isEditingItem }}" hint-placeholder-val="{{ false }}">
+        <div style="{{ editFormWrap }}">
+          <div style="{{ editFormLabel }}">{{ editForm.label }}</div>
+          <div style="{{ editFieldRow }}">
+            <div style="{{ editFieldCol }}">
+              <div style="{{ fieldLabel }}">Amount</div>
+              <div style="{{ amountInputWrap }}">
+                <span style="{{ amountPrefix }}">$</span>
+                <input data-component="Input" type="number" value="{{ editForm.amountVal }}" onChange="{{ onEditAmountChange }}" style="{{ amountInputStyle }}" />
+              </div>
+            </div>
+            <div style="{{ editFieldCol }}">
+              <div style="{{ fieldLabel }}">Date</div>
+              <input data-component="Input" type="date" value="{{ editForm.dateStr }}" onChange="{{ onEditDateChange }}" style="{{ dateInputStyle }}" />
+            </div>
+          </div>
+          <div style="{{ scopeLabel }}">Applies to</div>
+          <div data-component="ToggleGroup" style="{{ scopeToggleWrap }}">
+            <button style="{{ scopeOnceStyle }}" onClick="{{ setScopeOnce }}">This occurrence only</button>
+            <button style="{{ scopeFutureStyle }}" onClick="{{ setScopeFuture }}">Apply to all future</button>
+          </div>
+          <div style="{{ editActionsRow }}">
+            <button data-component="Button" style="{{ cancelEditBtn }}" onClick="{{ cancelEdit }}">Cancel</button>
+            <button data-component="Button" style="{{ saveEditBtn }}" onClick="{{ saveEdit }}">{{ saveEditLabel }}</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isNotEditingItem }}" hint-placeholder-val="{{ true }}">
+        <sc-if value="{{ sheetHasItems }}" hint-placeholder-val="{{ true }}">
+          <div style="{{ editorList }}">
+            <sc-for list="{{ sheetItems }}" as="it" hint-placeholder-count="2">
+              <div style="{{ it.rowStyle }}" onClick="{{ it.onEdit }}">
+                <div style="{{ it.itemLabelCol }}">
+                  <div style="{{ editorItemLabel }}">{{ it.label }}</div>
+                  <div style="{{ it.accountText }}">{{ it.account }}</div>
+                </div>
+                <div style="{{ it.amountDisplay }}">{{ it.amountLabel }}</div>
+                <span style="{{ chevronStyle }}">›</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-if value="{{ sheetHasNoItems }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ emptyState }}">No scheduled bills or income land on this day.</div>
+        </sc-if>
+        <button data-component="Button" style="{{ editorSaveBtn }}" onClick="{{ closeSheet }}">Done</button>
+      </sc-if>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmtDate(d){ return MONTHS[d.getMonth()]+' '+d.getDate(); }
+function fmtMoney(n){ const v=Math.round(n); const s='$'+Math.abs(v).toLocaleString('en-US'); return v<0?'-'+s:s; }
+function fmtMoneyCompact(n){ const abs=Math.abs(n); let s; if(abs>=1000){ const k=abs/1000; s='$'+(Math.abs(k-Math.round(k))<0.05?Math.round(k):k.toFixed(1))+'k'; } else { s='$'+Math.round(abs); } return n<0?'-'+s:s; }
+function toISO(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+
+const TODAY=new Date(2026,7,15);
+const MS_DAY=86400000;
+const CUSHION=600;
+const ACCOUNTS=[
+  {id:'checking',name:'Checking',color:'var(--chart-colors-chart-3)',start:2140},
+  {id:'savings',name:'Savings',color:'var(--chart-colors-chart-4)',start:3200},
+];
+const MONTHLY=[
+  {day:1,amount:-1650,account:'checking',label:'Rent'},
+  {day:5,amount:-38,account:'checking',label:'Streaming subscriptions'},
+  {day:8,amount:-145,account:'checking',label:'Electric & water'},
+  {day:12,amount:-85,account:'checking',label:'Phone bill'},
+  {day:20,amount:-310,account:'checking',label:'Car payment'},
+  {day:24,amount:-175,account:'checking',label:'Car insurance'},
+  {day:1,amount:4,account:'savings',label:'Savings interest'},
+];
+const PAYCHECK_ANCHOR=new Date(2026,7,7);
+const PAYCHECK_AMOUNT=2450;
+const DISCRETIONARY=-34;
+const OFFSET_MIN=-14, OFFSET_MAX=90;
+
+function buildSeries(overrides){
+  overrides=overrides||[];
+  const evByOffset={};
+  const addEv=(off,ev)=>{ (evByOffset[off]=evByOffset[off]||[]).push(ev); };
+  for(let off=OFFSET_MIN; off<=OFFSET_MAX; off++){
+    const date=new Date(TODAY.getTime()+off*MS_DAY);
+    MONTHLY.forEach(m=>{ if(date.getDate()===m.day) addEv(off,{account:m.account,label:m.label,amount:m.amount}); });
+    const diffDays=Math.round((date-PAYCHECK_ANCHOR)/MS_DAY);
+    const mod=((diffDays%14)+14)%14;
+    if(mod===0) addEv(off,{account:'checking',label:'Paycheck',amount:PAYCHECK_AMOUNT});
+  }
+  overrides.forEach(ov=>{
+    if(ov.scope==='once'){
+      const arr=evByOffset[ov.offset]||[];
+      const idx=arr.findIndex(e=>e.label===ov.label&&e.account===ov.account);
+      if(idx>=0){
+        const ev=arr[idx]; arr.splice(idx,1);
+        const dest=ov.newOffset;
+        if(dest>=OFFSET_MIN && dest<=OFFSET_MAX) (evByOffset[dest]=evByOffset[dest]||[]).push({...ev, amount:ov.amount});
+      }
+    } else {
+      Object.keys(evByOffset).forEach(k=>{
+        const off=Number(k);
+        if(off>=ov.offset) evByOffset[off]=evByOffset[off].map(e=> (e.label===ov.label&&e.account===ov.account)? {...e, amount:ov.amount}: e);
+      });
+    }
+  });
+  let bal={checking:ACCOUNTS[0].start,savings:ACCOUNTS[1].start};
+  const points=[];
+  for(let off=OFFSET_MIN; off<=OFFSET_MAX; off++){
+    const evs=evByOffset[off]||[];
+    evs.forEach(e=>{ bal[e.account]+=e.amount; });
+    bal.checking+=DISCRETIONARY;
+    const date=new Date(TODAY.getTime()+off*MS_DAY);
+    points.push({offset:off,date,checking:bal.checking,savings:bal.savings,combined:bal.checking+bal.savings,events:evs});
+  }
+  return points;
+}
+
+class Component extends DCLogic {
+  state={ dark:false, viewport:'mobile', horizon:30, selected:{checking:true,savings:true}, hoverIdx:null, sheetOpen:false, sheetOffset:null, cushionInfoOpen:false, loading:true, editingIdx:null, editForm:null, whatIf:false, savedOverrides:[], whatIfOverrides:[], densityOpen:false, lineWeight:8, dashDensity:7, markerSize:1 };
+
+  toggleDensity=()=>this.setState(s=>({densityOpen:!s.densityOpen}));
+  onLineWeightChange=(e)=>{ const v=Number(e&&e.target?e.target.value:e); this.setState({lineWeight:v}); };
+  onDashDensityChange=(e)=>{ const v=Number(e&&e.target?e.target.value:e); this.setState({dashDensity:v}); };
+  onMarkerSizeChange=(e)=>{ const v=Number(e&&e.target?e.target.value:e); this.setState({markerSize:v}); };
+
+  componentDidMount(){ setTimeout(()=>this.setState({loading:false}), 550); }
+  toggleDark=()=>this.setState(s=>({dark:!s.dark}));
+  setViewport=(v)=>this.setState({viewport:v, hoverIdx:null});
+  setHorizon=(h)=>this.setState({horizon:h, hoverIdx:null});
+  toggleAccount=(id)=>this.setState(s=>{
+    const sel={...s.selected,[id]:!s.selected[id]};
+    if(!sel.checking && !sel.savings) return {};
+    return {selected:sel, hoverIdx:null};
+  });
+  setHover=(i)=>this.setState({hoverIdx:i});
+  clearHover=()=>this.setState({hoverIdx:null});
+  openSheet=(offset)=>this.setState({sheetOpen:true, sheetOffset:offset, editingIdx:null, editForm:null});
+  closeSheet=()=>this.setState({sheetOpen:false, editingIdx:null, editForm:null, whatIf:false, whatIfOverrides:[]});
+  toggleCushionInfo=()=>this.setState(s=>({cushionInfoOpen:!s.cushionInfoOpen}));
+  openEditItem=(idx,item,offset,date)=>this.setState({editingIdx:idx, editForm:{label:item.label, account:item.account, amountVal:item.amount, dateStr:toISO(date), scope:'once', origOffset:offset}});
+  cancelEdit=()=>this.setState({editingIdx:null, editForm:null});
+  onEditAmountChange=(e)=>{ const v=e&&e.target?e.target.value:e; this.setState(s=>({editForm:{...s.editForm, amountVal:v}})); };
+  onEditDateChange=(e)=>{ const v=e&&e.target?e.target.value:e; this.setState(s=>({editForm:{...s.editForm, dateStr:v}})); };
+  setScopeOnce=()=>this.setState(s=>({editForm:{...s.editForm, scope:'once'}}));
+  setScopeFuture=()=>this.setState(s=>({editForm:{...s.editForm, scope:'future'}}));
+  toggleWhatIf=()=>this.setState(s=>({whatIf:!s.whatIf, whatIfOverrides: s.whatIf? []: s.whatIfOverrides, editingIdx:null, editForm:null}));
+  saveEdit=()=>{
+    const ef=this.state.editForm; if(!ef) return;
+    const amount=Number(ef.amountVal); if(isNaN(amount)) return;
+    const parts=ef.dateStr.split('-').map(Number); const d=new Date(parts[0],parts[1]-1,parts[2]);
+    const newOffset=Math.round((d-TODAY)/MS_DAY);
+    const override={label:ef.label, account:ef.account, scope:ef.scope, offset:ef.origOffset, newOffset, amount};
+    const key=ov=>ov.label+'|'+ov.account+'|'+ov.scope+'|'+ov.offset;
+    this.setState(s=>{
+      const listName = s.whatIf? 'whatIfOverrides':'savedOverrides';
+      const list=s[listName].filter(o=>key(o)!==key(override));
+      list.push(override);
+      return {[listName]:list, editingIdx:null, editForm:null};
+    });
+  };
+
+  renderVals(){
+    const st=this.state;
+    const isDesktop=st.viewport==='desktop';
+    const effectiveOverrides=st.savedOverrides.concat(st.whatIf? st.whatIfOverrides: []);
+    const series=buildSeries(effectiveOverrides);
+    const selectedIds=ACCOUNTS.filter(a=>st.selected[a.id]).map(a=>a.id);
+    const multi=selectedIds.length>1;
+    const visible=series.filter(p=>p.offset>=-14 && p.offset<=st.horizon);
+    const n=visible.length;
+    const VW=1000, VH=isDesktop?460:400;
+    const PAD_L=100, PAD_R=20, PAD_T=60, PAD_B=70;
+    const plotW=VW-PAD_L-PAD_R, plotH=VH-PAD_T-PAD_B;
+    const plotTop=PAD_T, plotBottom=VH-PAD_B, plotLeft=PAD_L, plotRight=VW-PAD_R;
+    const xAt=(i)=> PAD_L + (n<=1?0:(i/(n-1))*plotW);
+
+    let allVals=[];
+    visible.forEach(p=>{ if(multi) allVals.push(p.combined); selectedIds.forEach(id=>allVals.push(p[id])); });
+    allVals.push(CUSHION);
+    const rawMax=Math.max(...allVals), rawMin=Math.min(...allVals);
+    const span=Math.max(rawMax-rawMin,200);
+    const yMax=rawMax+span*0.08, yMin=rawMin-span*0.08;
+    const yAt=(v)=> PAD_T + (1-((v-yMin)/(yMax-yMin)))*plotH;
+
+    const buildPath=(accessor)=>{
+      const past=visible.filter(p=>p.offset<=0), future=visible.filter(p=>p.offset>=0);
+      const toD=(arr)=> arr.map((p)=>{ const i=visible.indexOf(p); const x=xAt(i), y=yAt(accessor(p)); return x.toFixed(1)+','+y.toFixed(1); });
+      const mk=(arr)=>{ const pts=toD(arr); return pts.length? 'M'+pts[0]+' L'+pts.slice(1).join(' L'):''; };
+      return { pastD:mk(past), futureD:mk(future) };
+    };
+
+    const lineWeight = st.lineWeight;
+    const dashDensity = st.dashDensity;
+    const dashArr = dashDensity+' '+Math.max(2,Math.round(dashDensity*0.85));
+    const combinedWeight = lineWeight+2, singleWeight = multi? Math.max(3,lineWeight-2): lineWeight;
+    const lines=[];
+    if(multi){ const {pastD,futureD}=buildPath(p=>p.combined); lines.push({key:'combined',color:'var(--chart-colors-chart-1)',width:combinedWeight,dash:dashArr,pastD,futureD}); }
+    selectedIds.forEach(id=>{ const acc=ACCOUNTS.find(a=>a.id===id); const {pastD,futureD}=buildPath(p=>p[id]); lines.push({key:id,color:acc.color,width:singleWeight,dash:dashArr,pastD,futureD}); });
+
+    const primaryVal=(p)=> multi? p.combined : p[selectedIds[0]];
+    const futurePts=visible.filter(p=>p.offset>=1);
+    let lowestPt=futurePts[0]||visible[visible.length-1];
+    futurePts.forEach(p=>{ if(primaryVal(p)<primaryVal(lowestPt)) lowestPt=p; });
+    const lowestVal=primaryVal(lowestPt);
+    const lowestIdx=visible.indexOf(lowestPt);
+    const lowestX=xAt(lowestIdx), lowestY=yAt(lowestVal);
+    const lowestOnRight = lowestIdx < n*0.6;
+    const lowestAnchor = lowestOnRight? 'start':'end';
+    const lowestLabelX = lowestOnRight? Math.min(lowestX+14, plotRight-4): Math.max(lowestX-14, plotLeft+4);
+
+    const todayIdx=visible.findIndex(p=>p.offset===0);
+    const todayX=xAt(todayIdx<0?0:todayIdx);
+    const cushionY=yAt(CUSHION);
+
+    const margin=lowestVal-CUSHION;
+    let statusLabel, statusVariant;
+    if(margin>=250){ statusLabel='Covered'; statusVariant='covered'; }
+    else if(margin>=0){ statusLabel='Tight'; statusVariant='tight'; }
+    else { statusLabel='Short by '+fmtMoney(Math.abs(margin)); statusVariant='short'; }
+    const daysUntil=lowestPt.offset;
+
+    const yTicks=[]; for(let i=0;i<=4;i++){ const v=yMin+(yMax-yMin)*(i/4); const y=yAt(v); yTicks.push({y, ty:y+11, label:fmtMoneyCompact(v)}); }
+    const step= st.horizon<=30?7: st.horizon<=60?14:21;
+    const xTicks=[];
+    visible.forEach((p,i)=>{ if(p.offset===-14 || (p.offset>0 && p.offset%step===0) || p.offset===st.horizon){ xTicks.push({x:xAt(i), label:fmtDate(p.date)}); } });
+
+    const markerScale = st.markerSize;
+    const eventMarkers=[];
+    visible.forEach((p,i)=>{
+      if(!p.events.length) return;
+      const x=xAt(i);
+      if(multi && p.events.some(e=>selectedIds.includes(e.account))){ eventMarkers.push({x,y:yAt(p.combined),r:Math.round(10*markerScale),color:'var(--general-foreground)',fill:'var(--general-background)'}); }
+      selectedIds.forEach(id=>{ if(p.events.some(e=>e.account===id)){ const acc=ACCOUNTS.find(a=>a.id===id); const hasIncome=p.events.some(e=>e.account===id && e.amount>0); eventMarkers.push({x,y:yAt(p[id]),r:Math.round((multi?9:11)*markerScale),color:acc.color,fill: hasIncome? acc.color:'var(--general-background)'}); } });
+    });
+
+    const hoverIdx=st.hoverIdx;
+    const hoverPt = hoverIdx!=null? visible[hoverIdx]: null;
+    const dayW=plotW/n;
+    const dayRects=visible.map((p,i)=>({ x:PAD_L+i*dayW, w:dayW, h:plotH, onEnter:()=>this.setHover(i), onClick:()=>this.openSheet(p.offset) }));
+
+    const crosshair = hoverPt? {visible:true, x:xAt(hoverIdx)} : {visible:false,x:0};
+    let tooltip={visible:false};
+    if(hoverPt){
+      const hx=xAt(hoverIdx);
+      const leftPct=(hx/VW)*100;
+      const anchorRight = leftPct>60;
+      tooltip={
+        visible:true,
+        style:{position:'absolute', top:10, left: anchorRight? undefined: `calc(${leftPct}% + 14px)`, right: anchorRight? `calc(${100-leftPct}% + 14px)`: undefined,
+          background:'var(--card-card)', border:'1px solid var(--general-border)', borderRadius:10, padding:'10px 12px', minWidth:150, boxShadow:'0 8px 20px -6px rgba(0,0,0,0.25)', fontFamily:'var(--font-sans)', pointerEvents:'none'},
+        date: fmtDate(hoverPt.date)+(hoverPt.offset===0?' · Today':''),
+        lines: (multi? [{label:'Combined', value:fmtMoney(hoverPt.combined)}]:[]).concat(selectedIds.map(id=>({label:ACCOUNTS.find(a=>a.id===id).name, value:fmtMoney(hoverPt[id])}))),
+        hasItems: hoverPt.events.length>0,
+        items: hoverPt.events.filter(e=>selectedIds.includes(e.account)).map(e=>({label:e.label, amount:fmtMoney(e.amount), amountStyle:{fontSize:13,fontWeight:600,color: e.amount>0? 'var(--chart-positive)':'var(--general-foreground)'}}))
+      };
+    }
+
+    const upcoming=[];
+    visible.forEach(p=>{ if(p.offset>=0){ p.events.forEach(e=>{ if(selectedIds.includes(e.account)) upcoming.push({offset:p.offset,date:p.date,...e}); }); } });
+    upcoming.sort((a,b)=>a.offset-b.offset);
+    const upcomingRows=upcoming.slice(0,14).map((e,idx)=>{ const acc=ACCOUNTS.find(a=>a.id===e.account); return {
+      id:idx, dateLabel: fmtDate(e.date)+(e.offset===0?' · Today':''), label:e.label, accountName:acc.name,
+      amountLabel: fmtMoney(e.amount),
+      rowStyle:{display:'grid', gridTemplateColumns:'70px 1fr auto', alignItems:'center', gap:10, padding:'10px 2px', borderBottom:'1px solid var(--general-border)', cursor:'pointer'},
+      dateCol:{fontSize:13, color:'var(--general-muted-foreground)', fontFamily:'var(--font-sans)'},
+      labelCol:{display:'flex', flexDirection:'column', gap:2},
+      labelText:{fontSize:15, color:'var(--general-foreground)', fontFamily:'var(--font-sans)', fontWeight:500},
+      accountRow:{display:'flex', alignItems:'center', gap:6, fontSize:12, color:'var(--general-muted-foreground)', fontFamily:'var(--font-sans)'},
+      accountDot:{width:6,height:6,borderRadius:99, background:acc.color, display:'inline-block'},
+      amountCol:{fontSize:15, fontWeight:600, fontFamily:'var(--font-sans)', color: e.amount>0? 'var(--chart-positive)':'var(--general-foreground)', textAlign:'right'},
+      onClick:()=>this.openSheet(e.offset),
+    };});
+
+    const sheetPt = st.sheetOffset!=null? series.find(p=>p.offset===st.sheetOffset): null;
+    const sheetItems = sheetPt? sheetPt.events.map((e,idx)=>({
+      id:idx, label:e.label, account:ACCOUNTS.find(a=>a.id===e.account).name, amountLabel:fmtMoney(e.amount),
+      onEdit:()=>this.openEditItem(idx, e, st.sheetOffset, sheetPt.date),
+      rowStyle:{display:'flex', alignItems:'center', gap:10, padding:'12px 4px', borderBottom:'1px solid var(--general-border)', cursor:'pointer'},
+      itemLabelCol:{display:'flex', flexDirection:'column', gap:2, flex:1},
+      accountText:{fontSize:12, color:'var(--general-muted-foreground)'},
+      amountDisplay:{fontSize:15, fontWeight:600, fontFamily:'var(--font-mono)', color: e.amount>0?'var(--chart-positive)':'var(--general-foreground)'},
+    })): [];
+    const sheetDateLabel = sheetPt? fmtDate(sheetPt.date): '';
+    const ef2=st.editForm;
+    const editFormVals = ef2? {label:ef2.label, amountVal:ef2.amountVal, dateStr:ef2.dateStr}: {label:'', amountVal:'', dateStr:''};
+    const scope = ef2? ef2.scope: 'once';
+
+    const lastPoint = visible[visible.length-1] || {};
+    const accountRows=ACCOUNTS.map(a=>({
+      id:a.id, name:a.name, checked: !!st.selected[a.id], onToggle:()=>this.toggleAccount(a.id),
+      balanceLabel: fmtMoney(lastPoint[a.id] ?? a.start),
+      rowStyle:{display:'flex', alignItems:'center', gap:8, cursor:'pointer', flex:'1 1 160px'},
+      boxOuter:{width:18,height:18, borderRadius:5, border:'1.5px solid '+(st.selected[a.id]? a.color:'var(--general-input)'), background: st.selected[a.id]? a.color: 'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0},
+      boxInner:{width:8,height:8, borderRadius:2, background:'var(--general-background)'},
+      swatch:{width:10,height:10, borderRadius:99, background:a.color, marginLeft:2},
+      labelStyle:{fontSize:14, fontFamily:'var(--font-sans)', color:'var(--general-foreground)', flex:1},
+      balanceStyle:{fontSize:13, fontFamily:'var(--font-mono)', color:'var(--general-muted-foreground)'},
+    }));
+
+    const horizonOptions=[30,60,90].map(h=>({ value:h, label:h+'d', onClick:()=>this.setHorizon(h),
+      style:{border:'none', background: h===st.horizon? 'var(--general-primary)':'transparent', color: h===st.horizon? 'var(--general-primary-foreground)':'var(--general-muted-foreground)', fontFamily:'var(--font-sans)', fontSize:13, fontWeight:600, padding:'6px 12px', borderRadius:7, cursor:'pointer'} }));
+
+    const cardBase={ background:'var(--card-card)', border:'1px solid var(--general-border)', borderRadius:'var(--radius)', boxShadow:'0 1px 3px 0 rgba(0,0,0,0.06), 0 1px 2px -1px rgba(0,0,0,0.06)', padding: isDesktop? '22px 24px':'18px 16px', display:'flex', flexDirection:'column', boxSizing:'border-box' };
+
+    return {
+      darkClass: st.dark? 'dark':'',
+      pageStyle:{ minHeight:'100vh', background:'var(--general-background)', color:'var(--general-foreground)', fontFamily:'var(--font-sans)', display:'flex', flexDirection:'column', alignItems:'center', boxSizing:'border-box' },
+      headerStyle:{ width:'100%', maxWidth: isDesktop? 1160:430, display:'flex', alignItems:'center', justifyContent:'space-between', padding: isDesktop? '24px 40px 8px':'20px 16px 4px', boxSizing:'border-box' },
+      brandRow:{ display:'flex', alignItems:'center', gap:8 },
+      brandDot:{ width:10, height:10, borderRadius:99, background:'var(--chart-colors-chart-1)' },
+      brandName:{ fontSize:17, fontWeight:600, letterSpacing:'-0.01em' },
+      headerControls:{ display:'flex', alignItems:'center', gap:10 },
+      tabsWrap:{ display:'flex', background:'var(--general-accent)', borderRadius:8, padding:3, gap:2 },
+      tabMobileStyle:{ border:'none', cursor:'pointer', fontFamily:'var(--font-sans)', fontSize:12, fontWeight:600, padding:'6px 10px', borderRadius:6, background: !isDesktop? 'var(--card-card)':'transparent', color: !isDesktop? 'var(--general-foreground)':'var(--general-muted-foreground)', boxShadow: !isDesktop? '0 1px 2px rgba(0,0,0,0.08)':'none' },
+      tabDesktopStyle:{ border:'none', cursor:'pointer', fontFamily:'var(--font-sans)', fontSize:12, fontWeight:600, padding:'6px 10px', borderRadius:6, background: isDesktop? 'var(--card-card)':'transparent', color: isDesktop? 'var(--general-foreground)':'var(--general-muted-foreground)', boxShadow: isDesktop? '0 1px 2px rgba(0,0,0,0.08)':'none' },
+      setViewportMobile:()=>this.setViewport('mobile'),
+      setViewportDesktop:()=>this.setViewport('desktop'),
+      themeBtnStyle:{ width:32,height:32, borderRadius:8, border:'1px solid var(--general-border)', background:'var(--card-card)', color:'var(--general-foreground)', cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center' },
+      themeIcon: st.dark? '☀':'☾',
+      toggleDark: this.toggleDark,
+
+      mainStyle: isDesktop? { display:'grid', gridTemplateColumns:'1fr 340px', gridTemplateAreas:'"chart stat" "events events"', gap:20, width:'100%', maxWidth:1160, padding:'12px 40px 48px', boxSizing:'border-box' } : { display:'flex', flexDirection:'column', gap:14, width:'100%', maxWidth:430, padding:'12px 16px 48px', boxSizing:'border-box' },
+
+      chartCardStyle:{ ...cardBase, gridArea: isDesktop? 'chart':'auto', border: st.whatIf? '1.5px dashed var(--chart-colors-chart-5)': cardBase.border },
+      whatIfActive: st.whatIf,
+      whatIfChartBanner:{ display:'flex', alignItems:'center', gap:6, background:'color-mix(in srgb, var(--chart-colors-chart-5) 14%, transparent)', border:'1px dashed var(--chart-colors-chart-5)', color:'var(--chart-colors-chart-5)', fontSize:12.5, fontWeight:600, borderRadius:8, padding:'8px 10px', marginBottom:12 },
+      statCardStyle:{ ...cardBase, gridArea: isDesktop? 'stat':'auto', gap:8 },
+      eventsCardStyle:{ ...cardBase, gridArea: isDesktop? 'events':'auto' },
+
+      chartHeaderRow:{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:14, gap:10 },
+      cardTitle:{ fontSize:16, fontWeight:600, color:'var(--general-foreground)' },
+      cardSubtitle:{ fontSize:12.5, color:'var(--general-muted-foreground)', marginTop:2 },
+      cardSubtitleTight:{ fontSize:12.5, color:'var(--general-muted-foreground)', marginTop:-4, marginBottom:10 },
+      horizonLabel: st.horizon+' days',
+      chartHeaderRightCol:{ display:'flex', alignItems:'center', gap:8 },
+      toggleGroupWrap:{ display:'flex', background:'var(--general-accent)', borderRadius:9, padding:3, gap:2 },
+      horizonOptions,
+      densityBtnStyle:{ width:30, height:30, borderRadius:8, border:'1px solid var(--general-border)', background: st.densityOpen? 'var(--general-accent)':'var(--card-card)', color:'var(--general-foreground)', cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 },
+      toggleDensity:this.toggleDensity, densityOpen: st.densityOpen,
+      densityPanel:{ background:'var(--general-accent)', border:'1px solid var(--general-border)', borderRadius:10, padding:'12px 14px', display:'flex', flexDirection:'column', gap:12, marginBottom:14 },
+      densityRow:{ display:'flex', flexDirection:'column', gap:5 },
+      densityLabelRow:{ display:'flex', justifyContent:'space-between', fontSize:12.5 },
+      densityLabel:{ color:'var(--general-muted-foreground)', fontWeight:500 },
+      densityVal:{ color:'var(--general-foreground)', fontFamily:'var(--font-mono)', fontWeight:600 },
+      sliderStyle:{ width:'100%', accentColor:'var(--general-primary)', cursor:'pointer' },
+      lineWeight, dashDensity, markerSize: st.markerSize,
+      lineWeightVal: lineWeight, dashDensityVal: dashDensity, markerSizeVal: st.markerSize.toFixed(1),
+      onLineWeightChange:this.onLineWeightChange, onDashDensityChange:this.onDashDensityChange, onMarkerSizeChange:this.onMarkerSizeChange,
+
+      skeletonChartStyle:{ height: isDesktop?460:400, borderRadius:10 },
+      loading: st.loading, notLoading: !st.loading,
+
+      chartContainerStyle:{ position:'relative', width:'100%' },
+      svgViewBox:`0 0 ${VW} ${VH}`, svgHeight:VH,
+      svgStyle:{ display:'block', width:'100%', touchAction:'none' },
+      plotLeft, plotRight, plotTop, plotBottom, xAxisY: plotBottom+46,
+      dangerRect:{ x:plotLeft, y:cushionY, w:plotRight-plotLeft, h:plotBottom-cushionY },
+      yTicks, xTicks,
+      todayX, todayLabelY: plotTop-22,
+      cushionY, cushionLabelY: cushionY-16,
+      cushionLabel:'Safety cushion · '+fmtMoney(CUSHION),
+      cushionLabelStyle:{ cursor:'pointer' },
+      toggleCushionInfo:this.toggleCushionInfo,
+      cushionInfoOpen: st.cushionInfoOpen,
+      popoverStyle:{ position:'absolute', left:'8%', right:'8%', top: cushionY/VH*100+'%', transform:'translateY(-110%)', background:'var(--card-card)', border:'1px solid var(--general-border)', borderRadius:10, padding:'10px 12px', fontSize:12.5, color:'var(--general-foreground)', boxShadow:'0 8px 20px -6px rgba(0,0,0,0.3)', fontFamily:'var(--font-sans)', zIndex:2 },
+      lines, eventMarkers,
+      crosshair, tooltip,
+      lowestX, lowestY, lowestLabelX, lowestLabelY1: lowestY-30, lowestLabelY2: lowestY+16, lowestAnchor,
+      lowestAmountLabel: fmtMoney(lowestVal), lowestDateLabel: fmtDate(lowestPt.date),
+
+      legendRow:{ display:'flex', flexWrap:'wrap', gap:14, marginTop:16, paddingTop:14, borderTop:'1px solid var(--general-border)', alignItems:'center' },
+      accountRows,
+      showCombinedLegend: multi,
+      combinedLegendItem:{ display:'flex', alignItems:'center', gap:6 },
+      combinedSwatch:{ width:14,height:3, borderRadius:2, background:'var(--chart-colors-chart-1)' },
+      combinedLegendLabel:{ fontSize:13, color:'var(--general-muted-foreground)', fontFamily:'var(--font-sans)' },
+
+      statTopRow:{ display:'flex', alignItems:'center', justifyContent:'space-between' },
+      statEyebrow:{ fontSize:12.5, fontWeight:600, color:'var(--general-muted-foreground)', textTransform:'uppercase', letterSpacing:'0.04em' },
+      badgeStyle:{ fontSize:12, fontWeight:600, padding:'3px 9px', borderRadius:99, fontFamily:'var(--font-sans)',
+        background: statusVariant==='covered'? 'color-mix(in srgb, var(--chart-positive) 16%, transparent)': statusVariant==='tight'? 'color-mix(in srgb, var(--chart-colors-chart-5) 20%, transparent)':'color-mix(in srgb, var(--general-destructive) 16%, transparent)',
+        color: statusVariant==='covered'? 'var(--chart-positive)': statusVariant==='tight'? 'var(--chart-colors-chart-5)':'var(--general-destructive)' },
+      statusLabel,
+      statBigNumber:{ fontSize:38, fontWeight:650, letterSpacing:'-0.02em', fontFamily:'var(--font-sans)', color: statusVariant==='short'? 'var(--general-destructive)':'var(--general-foreground)' },
+      statMetaRow:{ display:'flex', alignItems:'center', gap:6, fontSize:13.5, color:'var(--general-muted-foreground)' },
+      statDot:{ opacity:0.6 },
+      daysUntilLabel: daysUntil<=0? 'projected today' : `in ${daysUntil} day${daysUntil===1?'':'s'}`,
+      showAlert: statusVariant==='short',
+      shortByLabel: fmtMoney(Math.abs(margin)),
+      willIMakeItLink:{ marginTop:12, fontSize:13, fontWeight:600, color:'var(--general-primary)', textDecoration:'none' },
+      alertStyle:{ marginTop:10, background:'color-mix(in srgb, var(--general-destructive) 10%, transparent)', border:'1px solid color-mix(in srgb, var(--general-destructive) 30%, transparent)', color:'var(--general-destructive)', fontSize:13, borderRadius:8, padding:'10px 12px', lineHeight:1.4 },
+
+      sepStyle:{ height:1, background:'var(--general-border)', width:'100%' },
+      tableWrap:{ display:'flex', flexDirection:'column' },
+      upcomingRows,
+
+      overlayStyle:{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:10 },
+      editorComponentName: isDesktop? 'Dialog':'Sheet',
+      editorStyle: isDesktop? { position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:400, background:'var(--card-card)', border:'1px solid var(--general-border)', borderRadius:12, padding:20, zIndex:11, boxShadow:'0 20px 40px -12px rgba(0,0,0,0.35)', display:'flex', flexDirection:'column', gap:12 }
+        : { position:'fixed', left:0, right:0, bottom:0, background:'var(--card-card)', borderTopLeftRadius:16, borderTopRightRadius:16, border:'1px solid var(--general-border)', padding:'10px 18px 22px', zIndex:11, boxShadow:'0 -12px 30px -10px rgba(0,0,0,0.3)', display:'flex', flexDirection:'column', gap:12, maxHeight:'80vh' },
+      editorHandle: isDesktop? {display:'none'} : { width:36, height:4, borderRadius:99, background:'var(--general-border)', margin:'2px auto 4px' },
+      editorHeaderRow:{ display:'flex', alignItems:'center', justifyContent:'space-between' },
+      editorTitle:{ fontSize:16, fontWeight:600 },
+      closeBtnStyle:{ width:28,height:28, borderRadius:7, border:'1px solid var(--general-border)', background:'transparent', color:'var(--general-muted-foreground)', cursor:'pointer', fontSize:12 },
+      sheetOpen: st.sheetOpen, closeSheet:this.closeSheet, sheetDateLabel,
+      sheetHeaderTitle: st.editingIdx!=null? 'Edit occurrence':'Day detail',
+      sheetHasItems: sheetItems.length>0, sheetHasNoItems: sheetItems.length===0,
+      sheetItems,
+      isEditingItem: st.editingIdx!=null, isNotEditingItem: st.editingIdx==null,
+      editForm: editFormVals,
+      onEditAmountChange: this.onEditAmountChange, onEditDateChange: this.onEditDateChange,
+      setScopeOnce: this.setScopeOnce, setScopeFuture: this.setScopeFuture,
+      cancelEdit: this.cancelEdit, saveEdit: this.saveEdit,
+      saveEditLabel: st.whatIf? 'Preview change':'Save change',
+      chevronStyle:{ color:'var(--general-muted-foreground)', fontSize:18 },
+      editFormWrap:{ display:'flex', flexDirection:'column', gap:14, padding:'4px 0 2px' },
+      editFormLabel:{ fontSize:15, fontWeight:600 },
+      editFieldRow:{ display:'flex', gap:10 },
+      editFieldCol:{ display:'flex', flexDirection:'column', gap:6, flex:1 },
+      fieldLabel:{ fontSize:12.5, fontWeight:500, color:'var(--general-muted-foreground)' },
+      amountInputWrap:{ display:'flex', alignItems:'center', gap:4, border:'1px solid var(--general-input)', borderRadius:8, padding:'8px 10px', background:'var(--general-background)' },
+      amountPrefix:{ fontSize:14, color:'var(--general-muted-foreground)', fontFamily:'var(--font-mono)' },
+      amountInputStyle:{ border:'none', outline:'none', background:'transparent', fontSize:15, fontFamily:'var(--font-mono)', color:'var(--general-foreground)', width:'100%' },
+      dateInputStyle:{ border:'1px solid var(--general-input)', borderRadius:8, padding:'8px 10px', fontSize:14, fontFamily:'var(--font-mono)', background:'var(--general-background)', color:'var(--general-foreground)', width:'100%', boxSizing:'border-box' },
+      scopeLabel:{ fontSize:12.5, fontWeight:500, color:'var(--general-muted-foreground)' },
+      scopeToggleWrap:{ display:'flex', background:'var(--general-accent)', borderRadius:9, padding:3, gap:2 },
+      scopeOnceStyle:{ flex:1, border:'none', cursor:'pointer', fontFamily:'var(--font-sans)', fontSize:12.5, fontWeight:600, padding:'8px 6px', borderRadius:7, background: scope==='once'? 'var(--card-card)':'transparent', color: scope==='once'? 'var(--general-foreground)':'var(--general-muted-foreground)', boxShadow: scope==='once'? '0 1px 2px rgba(0,0,0,0.08)':'none' },
+      scopeFutureStyle:{ flex:1, border:'none', cursor:'pointer', fontFamily:'var(--font-sans)', fontSize:12.5, fontWeight:600, padding:'8px 6px', borderRadius:7, background: scope==='future'? 'var(--card-card)':'transparent', color: scope==='future'? 'var(--general-foreground)':'var(--general-muted-foreground)', boxShadow: scope==='future'? '0 1px 2px rgba(0,0,0,0.08)':'none' },
+      editActionsRow:{ display:'flex', gap:8, marginTop:4 },
+      cancelEditBtn:{ flex:1, background:'transparent', color:'var(--general-foreground)', border:'1px solid var(--general-border)', borderRadius:8, padding:'10px 0', fontSize:14, fontWeight:600, cursor:'pointer' },
+      saveEditBtn:{ flex:1, background: st.whatIf? 'var(--chart-colors-chart-5)':'var(--general-primary)', color: st.whatIf? 'var(--general-foreground)':'var(--general-primary-foreground)', border:'none', borderRadius:8, padding:'10px 0', fontSize:14, fontWeight:600, cursor:'pointer' },
+      whatIfBannerVisible: st.whatIf,
+      whatIfBanner:{ display:'flex', alignItems:'center', gap:6, background:'color-mix(in srgb, var(--chart-colors-chart-5) 16%, transparent)', border:'1px dashed var(--chart-colors-chart-5)', color:'var(--chart-colors-chart-5)', fontSize:12.5, fontWeight:600, borderRadius:8, padding:'8px 10px' },
+      whatIfRow:{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 },
+      whatIfLabelCol:{ display:'flex', flexDirection:'column', gap:2 },
+      whatIfLabel:{ fontSize:14, fontWeight:500 },
+      whatIfHelp:{ fontSize:12, color:'var(--general-muted-foreground)', lineHeight:1.4, maxWidth:220 },
+      toggleWhatIf: this.toggleWhatIf,
+      whatIfSwitchOuter:{ width:40, height:23, borderRadius:99, background: st.whatIf? 'var(--chart-colors-chart-5)':'var(--general-input)', border:'none', cursor:'pointer', padding:2, display:'flex', alignItems:'center', justifyContent: st.whatIf? 'flex-end':'flex-start', flexShrink:0 },
+      whatIfSwitchInner:{ width:19, height:19, borderRadius:99, background:'#fff', boxShadow:'0 1px 3px rgba(0,0,0,0.3)' },
+      emptyState:{ fontSize:13.5, color:'var(--general-muted-foreground)', padding:'8px 0' },
+      editorList:{ display:'flex', flexDirection:'column', overflowY:'auto' },
+      editorItemLabel:{ fontSize:14.5, fontWeight:500 },
+      editorSaveBtn:{ marginTop:4, background:'var(--general-primary)', color:'var(--general-primary-foreground)', border:'none', borderRadius:8, padding:'10px 0', fontSize:14, fontWeight:600, cursor:'pointer' },
+
+      tooltipDate:{ fontSize:12, fontWeight:600, color:'var(--general-muted-foreground)', marginBottom:6 },
+      tooltipLineRow:{ display:'flex', justifyContent:'space-between', gap:12, fontSize:13.5, fontFamily:'var(--font-mono)', padding:'1px 0' },
+      tooltipLineLabel:{ color:'var(--general-muted-foreground)' },
+      tooltipLineVal:{ color:'var(--general-foreground)', fontWeight:600 },
+      tooltipSep:{ height:1, background:'var(--general-border)', margin:'6px 0' },
+      tooltipItemRow:{ display:'flex', justifyContent:'space-between', gap:12, fontSize:12.5, padding:'1px 0' },
+      tooltipItemLabel:{ color:'var(--general-muted-foreground)' },
+    };
+  }
+}
+
+</script>
+</body>
+</html>
