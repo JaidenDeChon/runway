@@ -21,7 +21,8 @@ const props = withDefaults(defineProps<SidebarProps>(), {
 const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
 
 /**
- * Registry component, with one fix: the mobile branch waits for mount.
+ * Registry component, with two local changes. The first: the mobile branch
+ * waits for mount.
  *
  * `isMobile` comes from `useMediaQuery`, which cannot measure on the server and
  * so reports `false` there. A mobile client then measures `true` on its first
@@ -38,6 +39,28 @@ const isMounted = ref(false)
 onMounted(() => {
   isMounted.value = true
 })
+
+/**
+ * Second local change: the mobile menu's open/close animation.
+ *
+ * SheetContent's stock travel is `slide-in-from-left-10` — 2.5rem on an 18rem
+ * panel, so almost all of the motion is the accompanying opacity fade and the
+ * menu reads as appearing in place rather than arriving from the edge. These
+ * override to a full-width translate over 300ms, which shows the panel coming
+ * from off-screen without dragging.
+ *
+ * `!` is required: tailwind-merge does not recognise tw-animate-css utilities,
+ * so it keeps both the stock and the override class, and the winner would
+ * otherwise come down to stylesheet order. Scoped here rather than edited into
+ * SheetContent.vue so ResponsiveEditor's bottom sheet keeps its own timing.
+ */
+const MOBILE_SHEET_ANIMATION = [
+  'duration-300 ease-out',
+  'data-[side=left]:data-open:slide-in-from-left-full!',
+  'data-[side=left]:data-closed:slide-out-to-left-full!',
+  'data-[side=right]:data-open:slide-in-from-right-full!',
+  'data-[side=right]:data-closed:slide-out-to-right-full!',
+].join(' ')
 </script>
 
 <template>
@@ -61,7 +84,12 @@ onMounted(() => {
       data-slot="sidebar"
       data-mobile="true"
       :side="side"
-      class="bg-sidebar text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:hidden"
+      :class="
+        cn(
+          'bg-sidebar text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:hidden',
+          MOBILE_SHEET_ANIMATION,
+        )
+      "
       :style="{
         '--sidebar-width': SIDEBAR_WIDTH_MOBILE,
       }"

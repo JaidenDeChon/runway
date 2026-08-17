@@ -128,12 +128,27 @@ function onSubmit(): void {
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-2">
-        <div class="flex flex-col gap-2">
+      <!--
+        Two things keep the date field inside its card.
+
+        `min-w-0` on both columns: a grid item's default `min-width: auto` floors
+        the column at its content's intrinsic width, and a native date input is
+        intrinsically wide enough to push the field past the card's padding. The
+        Input itself already carries `w-full min-w-0`.
+
+        The uneven column ratio: `min-w-0` lets the column shrink, but a date
+        input clips its own value internally rather than scrolling, so an equal
+        split silently ate the year at 375px and the month at 320px. `$ 0` needs
+        far less room than `08/16/2026` plus a picker indicator, so the space is
+        split to match. Widening the field is preferable to shrinking the text —
+        16px is the threshold below which iOS zooms on focus.
+      -->
+      <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] gap-2">
+        <div class="flex min-w-0 flex-col gap-2">
           <Label for="transfer-amount">Amount</Label>
           <MoneyInput id="transfer-amount" v-model="amount" aria-label="Amount" />
         </div>
-        <div class="flex flex-col gap-2">
+        <div class="flex min-w-0 flex-col gap-2">
           <Label for="transfer-date">Date</Label>
           <Input
             id="transfer-date"
