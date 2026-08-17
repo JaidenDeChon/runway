@@ -2,8 +2,10 @@
 /**
  * The ⚙ panel: three live sliders that change how the chart is drawn.
  *
- * Presentation only — nothing here touches the projection, and nothing is
- * persisted. The values echo beside their labels because that is the only place
+ * Presentation only — nothing here touches the projection. The parent owns the
+ * value and its persistence; this component just edits it. Slider ranges come
+ * from `DENSITY_BOUNDS` so they cannot drift from the bounds a restored value is
+ * screened against. The values echo beside their labels because that is the only place
  * they are readable; see the note in the parent about the slider thumb's
  * accessible name, which this component cannot reach.
  */
@@ -11,6 +13,7 @@ import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import type { ChartDensity } from '@/lib/burndown'
+import { DENSITY_BOUNDS } from '@/lib/burndown'
 
 const props = defineProps<{ density: ChartDensity }>()
 const emit = defineEmits<{ 'update:density': [value: ChartDensity] }>()
@@ -34,9 +37,9 @@ function update(key: keyof ChartDensity, value: number[] | undefined): void {
         <Slider
           thumb-id="density-line-weight"
           :model-value="[props.density.lineWeight]"
-          :min="4"
-          :max="14"
-          :step="1"
+          :min="DENSITY_BOUNDS.lineWeight.min"
+          :max="DENSITY_BOUNDS.lineWeight.max"
+          :step="DENSITY_BOUNDS.lineWeight.step"
           thumb-label="Line weight"
           @update:model-value="(value) => update('lineWeight', value)"
         />
@@ -50,9 +53,9 @@ function update(key: keyof ChartDensity, value: number[] | undefined): void {
         <Slider
           thumb-id="density-dash"
           :model-value="[props.density.dashDensity]"
-          :min="3"
-          :max="18"
-          :step="1"
+          :min="DENSITY_BOUNDS.dashDensity.min"
+          :max="DENSITY_BOUNDS.dashDensity.max"
+          :step="DENSITY_BOUNDS.dashDensity.step"
           thumb-label="Dash density"
           @update:model-value="(value) => update('dashDensity', value)"
         />
@@ -68,9 +71,9 @@ function update(key: keyof ChartDensity, value: number[] | undefined): void {
         <Slider
           thumb-id="density-marker"
           :model-value="[props.density.markerSize]"
-          :min="0.6"
-          :max="1.8"
-          :step="0.1"
+          :min="DENSITY_BOUNDS.markerSize.min"
+          :max="DENSITY_BOUNDS.markerSize.max"
+          :step="DENSITY_BOUNDS.markerSize.step"
           thumb-label="Marker size"
           :thumb-value-text="props.density.markerSize.toFixed(1)"
           @update:model-value="(value) => update('markerSize', value)"

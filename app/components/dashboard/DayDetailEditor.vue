@@ -27,6 +27,7 @@ import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { formatDateLong } from '@/lib/format'
+import { SEGMENTED_SEGMENT, SEGMENTED_TRACK } from '@/lib/segmented-control'
 import { cn } from '@/lib/utils'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
@@ -196,18 +197,18 @@ const subtitle = computed(() => (props.date ? formatDateLong(props.date) : ''))
             :model-value="form.scope"
             type="single"
             aria-labelledby="occurrence-scope-label"
-            class="w-full rounded-lg bg-accent p-0.5"
+            :class="cn(SEGMENTED_TRACK, 'w-full')"
             @update:model-value="setScope"
           >
             <ToggleGroupItem
               value="once"
-              class="h-11 flex-1 data-[state=on]:bg-card lg:h-9"
+              :class="cn(SEGMENTED_SEGMENT, 'h-11 flex-1 lg:h-9')"
             >
               This occurrence only
             </ToggleGroupItem>
             <ToggleGroupItem
               value="future"
-              class="h-11 flex-1 data-[state=on]:bg-card lg:h-9"
+              :class="cn(SEGMENTED_SEGMENT, 'h-11 flex-1 lg:h-9')"
             >
               Apply to all future
             </ToggleGroupItem>

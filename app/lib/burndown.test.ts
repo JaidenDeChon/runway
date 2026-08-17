@@ -4,11 +4,13 @@ import type { DayPoint } from '~~/domain/projection'
 import type { ChartLayout } from './burndown'
 import {
   DEFAULT_DENSITY,
+  DENSITY_BOUNDS,
   dashArrayFor,
   dayBand,
   gridLineYs,
   linePath,
   MOBILE_LAYOUT,
+  normalizeDensity,
   percentOf,
   plotHeight,
   plotWidth,
@@ -123,8 +125,8 @@ describe('gridLineYs', () => {
 describe('dashArrayFor', () => {
   it('leaves the first line solid and patterns the rest', () => {
     expect(dashArrayFor(0, DEFAULT_DENSITY)).toBeUndefined()
-    expect(dashArrayFor(1, DEFAULT_DENSITY)).toBe('7 7')
-    expect(dashArrayFor(2, DEFAULT_DENSITY)).toBe('21 7')
+    expect(dashArrayFor(1, DEFAULT_DENSITY)).toBe('10 10')
+    expect(dashArrayFor(2, DEFAULT_DENSITY)).toBe('30 10')
   })
 
   it('follows the density slider', () => {
@@ -135,5 +137,48 @@ describe('dashArrayFor', () => {
 describe('percentOf', () => {
   it('maps a viewBox coordinate onto its container', () => {
     expect(percentOf(scaleX(0, 2, MOBILE_LAYOUT), MOBILE_LAYOUT.width)).toBeCloseTo(3.06, 1)
+  })
+})
+
+describe('normalizeDensity', () => {
+  it('accepts a well-formed density unchanged', () => {
+    const value = { lineWeight: 9, dashDensity: 5, markerSize: 1.2 }
+    expect(normalizeDensity(value)).toEqual(value)
+  })
+
+  it('accepts the default', () => {
+    expect(normalizeDensity(DEFAULT_DENSITY)).toEqual(DEFAULT_DENSITY)
+  })
+
+  it('clamps numbers that are out of range rather than discarding the object', () => {
+    expect(normalizeDensity({ lineWeight: 999, dashDensity: -4, markerSize: 12 })).toEqual({
+      lineWeight: DENSITY_BOUNDS.lineWeight.max,
+      dashDensity: DENSITY_BOUNDS.dashDensity.min,
+      markerSize: DENSITY_BOUNDS.markerSize.max,
+    })
+  })
+
+  it('rejects anything not shaped like a density', () => {
+    expect(normalizeDensity(null)).toBeNull()
+    expect(normalizeDensity('8')).toBeNull()
+    expect(normalizeDensity({})).toBeNull()
+    expect(normalizeDensity({ lineWeight: 8, dashDensity: 7 })).toBeNull()
+    expect(normalizeDensity({ lineWeight: '8', dashDensity: 7, markerSize: 1 })).toBeNull()
+  })
+
+  it('rejects non-finite numbers, which clamping would otherwise let through', () => {
+    expect(normalizeDensity({ lineWeight: Number.NaN, dashDensity: 7, markerSize: 1 })).toBeNull()
+    expect(
+      normalizeDensity({ lineWeight: Number.POSITIVE_INFINITY, dashDensity: 7, markerSize: 1 }),
+    ).toBeNull()
+  })
+})
+
+describe('DEFAULT_DENSITY', () => {
+  it('sits within the bounds the sliders offer', () => {
+    for (const key of ['lineWeight', 'dashDensity', 'markerSize'] as const) {
+      expect(DEFAULT_DENSITY[key]).toBeGreaterThanOrEqual(DENSITY_BOUNDS[key].min)
+      expect(DEFAULT_DENSITY[key]).toBeLessThanOrEqual(DENSITY_BOUNDS[key].max)
+    }
   })
 })
