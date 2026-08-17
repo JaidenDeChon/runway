@@ -1,0 +1,30 @@
+{
+  // Nuxt's generated app tsconfig includes `tests/nuxt/**/*` only, so the
+  // live-database RLS suite in `tests/rls/` would otherwise never be
+  // typechecked — vitest strips types without checking them. Strict mode is
+  // non-negotiable for a money app, and that has to include the tests that
+  // prove the money is protected.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    // Mirrors the `#shared` alias Nuxt provides at runtime and the one
+    // vitest.config.ts declares for this project.
+    "paths": {
+      "#shared/*": ["./shared/*"]
+    }
+  },
+  "include": ["tests/**/*.ts"]
+}

@@ -22,3 +22,9 @@ logs
 .env
 .env.*
 !.env.example
+
+# Supabase local state. `supabase link` writes the remote project ref into
+# supabase/.temp/ — keeping it out of git is what stops a local checkout from
+# silently pointing at the hosted project.
+supabase/.temp/
+supabase/.branches/

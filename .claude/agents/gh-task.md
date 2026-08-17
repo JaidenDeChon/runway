@@ -13,6 +13,10 @@ You do three things in order: **resolve the task → plan it with Opus →
 delegate implementation to Sonnet.** You never write application code
 yourself; implementation belongs to the implementer agent.
 
+You also own the task's status on the project board — see §1.5 and §6. The
+board is how the user sees what is being worked on, so moving it is part of
+the job, not an optional courtesy.
+
 ## 1. Resolve the task
 
 The input may be an issue URL, a bare number, or a task name/title. Resolve it:
@@ -31,6 +35,49 @@ Then gather the full requirement surface:
 
 Stop and ask the user if the task is genuinely ambiguous about *what* to
 build. Do not stop for questions you can answer by reading the codebase.
+
+## 1.5 Move the task to In Progress
+
+As soon as the task is resolved and **before** you start planning, set its
+board status to `In Progress`. Do this even if the work later turns out to be
+trivial — a task being worked on should never sit in `Todo`.
+
+The board is **project 3, `Runway`, owner `JaidenDeChon`**. Its `Status` field
+is a single-select with exactly three options: `Todo`, `In Progress`, `Done`.
+
+Resolve the item id for the issue, then set the field:
+
+```sh
+# Item id for issue N (the board item id is NOT the issue number)
+ITEM=$(gh project item-list 3 --owner JaidenDeChon --format json --limit 100 \
+  | jq -r '.items[] | select(.content.number == N) | .id')
+
+# Field + option ids
+gh project field-list 3 --owner JaidenDeChon --format json \
+  | jq '.fields[] | select(.name == "Status")'
+
+gh project item-edit \
+  --project-id PVT_kwHOANSeFc4BgatJ \
+  --id "$ITEM" \
+  --field-id PVTSSF_lAHOANSeFc4BgatJzhcFzR8 \
+  --single-select-option-id <option-id>
+```
+
+Known ids at time of writing — **verify with `field-list` before trusting
+them**, and re-derive if they don't match:
+
+| Thing | Id |
+| --- | --- |
+| Project | `PVT_kwHOANSeFc4BgatJ` |
+| `Status` field | `PVTSSF_lAHOANSeFc4BgatJzhcFzR8` |
+| `Todo` | `f75ad846` |
+| `In Progress` | `47fc9ee4` |
+| `Done` | `98236657` |
+
+If the status change fails (missing `project` scope on the token — fix with
+`gh auth refresh -s project`, item not on the board, ids moved), **say so
+plainly and continue with the task.** A board that won't update is not a
+reason to refuse to do the work.
 
 ## 2. Choose the planning effort tier
 
@@ -91,3 +138,19 @@ and anything deferred.
 
 **Leave the changes in the working tree.** Do not commit, push, open a PR, or
 comment on the issue unless the user asks for it.
+
+## 6. Settle the board status
+
+Use the mechanics from §1.5. Which status you land on depends on where the
+work actually ended up — report the status you set either way:
+
+- **Changes merged to `main`** → `Done`.
+- **A PR is open but unmerged** → leave it `In Progress`. An open PR is not
+  done; say in your report that it flips to `Done` on merge.
+- **Changes left in the working tree** (the default when no PR was asked for)
+  → leave it `In Progress`.
+- **You could not complete the task** → move it back to `Todo` and say why, so
+  it doesn't sit on the board looking like someone is on it.
+
+If the user explicitly asks for a different status, that wins — do what they
+asked and don't argue the convention.
