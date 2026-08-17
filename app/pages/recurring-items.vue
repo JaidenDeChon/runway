@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useRunwayData } from '@/composables/useRunwayData'
+import { SEGMENTED_SEGMENT, SEGMENTED_TRACK } from '@/lib/segmented-control'
+import { cn } from '@/lib/utils'
 import { compareDates } from '~~/domain/dates'
 import type { RecurringItem, RecurringKind } from '~~/domain/types'
 
@@ -57,27 +59,26 @@ function openAdd(): void {
 
     <ToggleGroup
       type="single"
-      variant="outline"
-      class="w-fit gap-0 rounded-full bg-accent p-1"
+      :class="cn(SEGMENTED_TRACK, 'w-fit gap-0')"
       :model-value="filter"
       aria-label="Filter recurring items"
       @update:model-value="(value) => value && (filter = value as Filter)"
     >
       <ToggleGroupItem
         value="all"
-        class="h-11 rounded-full border-0 bg-transparent px-4 text-sm font-medium data-[state=on]:bg-card data-[state=on]:text-foreground data-[state=on]:shadow-sm"
+        :class="cn(SEGMENTED_SEGMENT, 'h-11 px-4 text-sm font-medium')"
       >
         All
       </ToggleGroupItem>
       <ToggleGroupItem
         value="bill"
-        class="h-11 rounded-full border-0 bg-transparent px-4 text-sm font-medium data-[state=on]:bg-card data-[state=on]:text-foreground data-[state=on]:shadow-sm"
+        :class="cn(SEGMENTED_SEGMENT, 'h-11 px-4 text-sm font-medium')"
       >
         Bills
       </ToggleGroupItem>
       <ToggleGroupItem
         value="income"
-        class="h-11 rounded-full border-0 bg-transparent px-4 text-sm font-medium data-[state=on]:bg-card data-[state=on]:text-foreground data-[state=on]:shadow-sm"
+        :class="cn(SEGMENTED_SEGMENT, 'h-11 px-4 text-sm font-medium')"
       >
         Income
       </ToggleGroupItem>

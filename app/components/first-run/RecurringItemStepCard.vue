@@ -4,10 +4,11 @@
  *
  * Always a fixed amount: onboarding never offers the "predicted from
  * deposits" source the recurring-items screen has, per the spec's step-2
- * notes. The Bill/Income switch is `ToggleGroup variant="outline"` rather
- * than `Tabs` — the export tags it `Tabs` but styles a segmented control, and
- * the spec asks for whichever control the recurring-items screen uses for the
- * same choice; that screen uses `ToggleGroup variant="outline"` too.
+ * notes. The Bill/Income switch is a `ToggleGroup` rather than `Tabs` — the
+ * export tags it `Tabs` but styles a segmented control, and the spec asks for
+ * whichever control the recurring-items screen uses for the same choice; that
+ * screen uses a `ToggleGroup` too. Its look comes from `SEGMENTED_*`, shared
+ * with every other segmented control in the app.
  */
 import { computed } from 'vue'
 import MoneyInput from '@/components/MoneyInput.vue'
@@ -24,6 +25,8 @@ import {
 } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { formatCadence } from '@/lib/format'
+import { SEGMENTED_SEGMENT, SEGMENTED_TRACK } from '@/lib/segmented-control'
+import { cn } from '@/lib/utils'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
 import type { Cadence, RecurringKind } from '~~/domain/types'
@@ -75,14 +78,17 @@ function onBuild(): void {
     <CardContent class="flex flex-col gap-4">
       <ToggleGroup
         type="single"
-        variant="outline"
         :model-value="props.kind"
-        class="w-full"
+        :class="cn(SEGMENTED_TRACK, 'w-full')"
         aria-label="Bill or income"
         @update:model-value="onKindChange"
       >
-        <ToggleGroupItem value="bill" class="flex-1">Bill</ToggleGroupItem>
-        <ToggleGroupItem value="income" class="flex-1">Income</ToggleGroupItem>
+        <ToggleGroupItem value="bill" :class="cn(SEGMENTED_SEGMENT, 'h-11 flex-1 lg:h-9')">
+          Bill
+        </ToggleGroupItem>
+        <ToggleGroupItem value="income" :class="cn(SEGMENTED_SEGMENT, 'h-11 flex-1 lg:h-9')">
+          Income
+        </ToggleGroupItem>
       </ToggleGroup>
 
       <div class="flex flex-col gap-2">

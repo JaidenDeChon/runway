@@ -24,12 +24,12 @@ import DayDetailEditor from '@/components/dashboard/DayDetailEditor.vue'
 import LowestBalanceCard from '@/components/dashboard/LowestBalanceCard.vue'
 import UpcomingCard from '@/components/dashboard/UpcomingCard.vue'
 import { Card } from '@/components/ui/card'
+import { useChartDensity } from '@/composables/useChartDensity'
 import { useIsDesktop } from '@/composables/useIsDesktop'
 import { useRunwayData } from '@/composables/useRunwayData'
 import { useToday } from '@/composables/useToday'
 import { accountColorVar } from '@/lib/account-colors'
-import type { ChartDensity, ChartSeries, LegendEntry } from '@/lib/burndown'
-import { DEFAULT_DENSITY } from '@/lib/burndown'
+import type { ChartSeries, LegendEntry } from '@/lib/burndown'
 import type { IsoDate } from '~~/domain/dates'
 import { addDays, compareDates, daysBetween } from '~~/domain/dates'
 import type { OccurrenceOverride } from '~~/domain/overrides'
@@ -50,7 +50,8 @@ const today = useToday()
 const isDesktop = useIsDesktop()
 
 const horizonDays = ref(30)
-const density = ref<ChartDensity>(DEFAULT_DENSITY)
+// Persisted in the browser for signed-out visitors, which is everyone today.
+const density = useChartDensity()
 const densityOpen = ref(false)
 const loading = ref(true)
 

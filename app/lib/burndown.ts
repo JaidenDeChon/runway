@@ -85,7 +85,45 @@ export interface ChartDensity {
   readonly markerSize: number
 }
 
-export const DEFAULT_DENSITY: ChartDensity = { lineWeight: 8, dashDensity: 7, markerSize: 1 }
+/**
+ * The range each density setting is allowed to take.
+ *
+ * The sliders and the validator that screens restored values both read these,
+ * so a bound can never be widened in one place and not the other.
+ */
+export const DENSITY_BOUNDS = {
+  lineWeight: { min: 4, max: 14, step: 1 },
+  dashDensity: { min: 3, max: 18, step: 1 },
+  markerSize: { min: 0.6, max: 1.8, step: 0.1 },
+} as const
+
+export const DEFAULT_DENSITY: ChartDensity = { lineWeight: 4, dashDensity: 10, markerSize: 0.9 }
+
+/**
+ * Screen a value that claims to be a `ChartDensity` — in practice whatever came
+ * back from browser storage, which the user can edit and an older build may have
+ * written in a different shape.
+ *
+ * Returns `null` for anything not shaped like a density so the caller can fall
+ * back to the default, and clamps numbers that are the right type but out of
+ * range rather than rejecting the whole object over one bad field.
+ */
+export function normalizeDensity(value: unknown): ChartDensity | null {
+  if (typeof value !== 'object' || value === null) return null
+
+  const source = value as Record<string, unknown>
+  const keys = ['lineWeight', 'dashDensity', 'markerSize'] as const
+  const result = {} as { -readonly [K in (typeof keys)[number]]: number }
+
+  for (const key of keys) {
+    const raw = source[key]
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) return null
+    const { min, max } = DENSITY_BOUNDS[key]
+    result[key] = Math.min(max, Math.max(min, raw))
+  }
+
+  return result
+}
 
 /**
  * The dash pattern for the nth account line.

@@ -36,6 +36,8 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useRunwayData } from '@/composables/useRunwayData'
 import { useToday } from '@/composables/useToday'
 import { formatCadence } from '@/lib/format'
+import { SEGMENTED_SEGMENT, SEGMENTED_TRACK } from '@/lib/segmented-control'
+import { cn } from '@/lib/utils'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
 import { canPredict, MIN_DEPOSITS_FOR_PREDICTION, resolveAmount } from '~~/domain/prediction'
@@ -165,9 +167,9 @@ function onDelete(): void {
         :model-value="form.type"
         @update:model-value="(value) => value && (form.type = value as RecurringKind)"
       >
-        <TabsList class="h-11 w-full">
-          <TabsTrigger value="bill" class="flex-1">Bill</TabsTrigger>
-          <TabsTrigger value="income" class="flex-1">Income</TabsTrigger>
+        <TabsList :class="cn(SEGMENTED_TRACK, 'h-11 w-full')">
+          <TabsTrigger value="bill" :class="cn(SEGMENTED_SEGMENT, 'flex-1')">Bill</TabsTrigger>
+          <TabsTrigger value="income" :class="cn(SEGMENTED_SEGMENT, 'flex-1')">Income</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -220,15 +222,14 @@ function onDelete(): void {
         <Label>Amount source</Label>
         <ToggleGroup
           type="single"
-          variant="outline"
-          class="w-full gap-0 rounded-full bg-accent p-1"
+          :class="cn(SEGMENTED_TRACK, 'w-full gap-0')"
           :model-value="form.amountSource"
           aria-label="Amount source"
           @update:model-value="(value) => value && (form.amountSource = value as AmountSource)"
         >
           <ToggleGroupItem
             value="fixed"
-            class="h-11 flex-1 rounded-full border-0 bg-transparent text-sm font-medium data-[state=on]:bg-card data-[state=on]:text-foreground data-[state=on]:shadow-sm"
+            :class="cn(SEGMENTED_SEGMENT, 'h-11 flex-1 text-sm font-medium')"
           >
             Fixed amount
           </ToggleGroupItem>
@@ -236,7 +237,7 @@ function onDelete(): void {
             value="predicted"
             :disabled="!canPredictHistory"
             :title="canPredictHistory ? undefined : 'Not enough deposit history yet'"
-            class="h-11 flex-1 rounded-full border-0 bg-transparent text-sm font-medium data-[state=on]:bg-card data-[state=on]:text-foreground data-[state=on]:shadow-sm"
+            :class="cn(SEGMENTED_SEGMENT, 'h-11 flex-1 text-sm font-medium')"
           >
             Predict from deposits
           </ToggleGroupItem>
