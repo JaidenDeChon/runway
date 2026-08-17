@@ -46,7 +46,8 @@ const sidebarOpen = useCookie<boolean>('sidebar_state', { default: () => true })
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-          <AppThemeToggle class="ml-auto" />
+          <span class="ml-auto shrink-0 text-sm font-semibold tracking-tight">Runway</span>
+          <AppThemeToggle />
         </div>
       </header>
       <div class="flex flex-1 flex-col gap-4 p-4">

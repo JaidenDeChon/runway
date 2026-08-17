@@ -13,10 +13,16 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  useSidebar,
 } from '@/components/ui/sidebar'
 import { navGroups } from '@/lib/navigation'
 
 const route = useRoute()
+
+// On mobile the sidebar is an overlay Sheet, so navigating without closing it
+// leaves the destination hidden behind the menu. Desktop has no overlay and
+// `openMobile` is inert there, so this needs no `isMobile` guard.
+const { setOpenMobile } = useSidebar()
 </script>
 
 <template>
@@ -25,7 +31,7 @@ const route = useRoute()
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton size="lg" as-child tooltip="Runway">
-            <NuxtLink to="/">
+            <NuxtLink to="/" @click="setOpenMobile(false)">
               <div
                 class="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground"
               >
@@ -48,7 +54,7 @@ const route = useRoute()
           <SidebarMenu>
             <SidebarMenuItem v-for="item in group.items" :key="item.id">
               <SidebarMenuButton as-child :tooltip="item.title" :is-active="route.path === item.path">
-                <NuxtLink :to="item.path">
+                <NuxtLink :to="item.path" @click="setOpenMobile(false)">
                   <component :is="item.icon" />
                   <span>{{ item.title }}</span>
                 </NuxtLink>

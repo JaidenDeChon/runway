@@ -60,16 +60,31 @@ function onDateInput(value: string | number): void {
         class="w-full gap-4 lg:w-fit lg:self-center"
         @update:model-value="(value) => emit('update:mode', value as 'bill' | 'date')"
       >
-        <TabsList class="w-full bg-accent lg:w-fit">
+        <!--
+          Two deliberate departures from spec.md here, both requested:
+
+          Radius — the triggers take the track's `rounded-4xl` rather than the
+          registry's default `rounded-xl` (14px here). Against a 32px-radius pill
+          track, a 14px child reads as a square sitting inside a rounded box
+          rather than part of it.
+
+          Fill — spec.md line 166 calls for an active fill of `--primary`. The
+          active tab is instead the registry's raised treatment: `--background`
+          with a shadow in light, a lighter translucent fill in dark, on a
+          `--muted` track. This makes the control consistent with the dashboard's
+          horizon selector, and resolves spec open question 3, which flagged the
+          primary-filled tab as a brand inconsistency between the two themes.
+        -->
+        <TabsList class="w-full lg:w-fit">
           <TabsTrigger
             value="bill"
-            class="flex-1 data-active:bg-primary data-active:text-primary-foreground lg:flex-none dark:data-active:bg-primary dark:data-active:text-primary-foreground"
+            class="flex-1 rounded-4xl data-active:shadow-sm lg:flex-none"
           >
             Upcoming bill
           </TabsTrigger>
           <TabsTrigger
             value="date"
-            class="flex-1 data-active:bg-primary data-active:text-primary-foreground lg:flex-none dark:data-active:bg-primary dark:data-active:text-primary-foreground"
+            class="flex-1 rounded-4xl data-active:shadow-sm lg:flex-none"
           >
             Pick a date
           </TabsTrigger>

@@ -79,18 +79,34 @@ function setHorizon(value: unknown): void {
       </div>
 
       <div class="flex items-center gap-2">
+        <!--
+          `rounded-md!` on the items is deliberate. ToggleGroupItem ships
+          `group-data-[spacing=0]/toggle-group:rounded-none`, whose descendant
+          selector outranks a plain `rounded-md` on specificity, so every segment
+          squares off against this rounded track. The registry's compensating
+          `first:rounded-l-*`/`last:rounded-r-*` rules are gated behind
+          `group-data-horizontal/toggle-group` and never match, because no
+          `orientation` prop is passed. `md` is the correct inner radius here:
+          `lg` (10px) minus the 2px `p-0.5` track padding is `md` (8px).
+
+          `shadow-sm!` needs the bang for the same reason — the registry's
+          `group-data-[spacing=0]/toggle-group:shadow-none` would otherwise win.
+          The raised `--background` pill matches the mode tabs on Will I Make It.
+          `--input` carries the active fill in dark, where `--background` would
+          sit darker than its own track and read as recessed rather than raised.
+        -->
         <ToggleGroup
           :model-value="String(props.horizonDays)"
           type="single"
           aria-label="Forecast horizon"
-          class="rounded-lg bg-accent p-0.5"
+          class="rounded-lg bg-muted p-0.5"
           @update:model-value="setHorizon"
         >
           <ToggleGroupItem
             v-for="horizon in HORIZONS"
             :key="horizon"
             :value="String(horizon)"
-            class="h-11 rounded-md px-3.5 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground lg:h-9"
+            class="h-11 rounded-md! border border-transparent px-3.5 data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm! lg:h-9 dark:data-[state=on]:border-input dark:data-[state=on]:bg-input/30"
           >
             {{ horizon }}d
           </ToggleGroupItem>
