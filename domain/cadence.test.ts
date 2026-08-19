@@ -71,4 +71,77 @@ describe('occurrenceDates', () => {
       occurrenceDates(item({ nextOccurrence: '2019-03-15' }), '2026-08-01', '2026-10-01'),
     ).toEqual(['2026-08-15', '2026-09-15'])
   })
+
+  it('expands annual across a multi-year window', () => {
+    expect(
+      occurrenceDates(
+        item({ cadence: 'annual', nextOccurrence: '2026-03-15' }),
+        '2026-01-01',
+        '2029-12-31',
+      ),
+    ).toEqual(['2026-03-15', '2027-03-15', '2028-03-15', '2029-03-15'])
+  })
+
+  it('clamps an annual Feb-29 anchor to Feb 28 in non-leap years, without the clamp sticking', () => {
+    expect(
+      occurrenceDates(
+        item({ cadence: 'annual', nextOccurrence: '2024-02-29' }),
+        '2024-01-01',
+        '2028-12-31',
+      ),
+    ).toEqual(['2024-02-29', '2025-02-28', '2026-02-28', '2027-02-28', '2028-02-29'])
+  })
+
+  it('suppresses occurrences before startsOn, inclusive of the boundary', () => {
+    expect(occurrenceDates(item({ startsOn: '2026-09-20' }), '2026-08-01', '2026-11-30')).toEqual([
+      '2026-09-20',
+      '2026-10-20',
+      '2026-11-20',
+    ])
+  })
+
+  it('suppresses occurrences after endsOn, inclusive of the boundary', () => {
+    expect(occurrenceDates(item({ endsOn: '2026-10-20' }), '2026-08-01', '2026-11-30')).toEqual([
+      '2026-08-20',
+      '2026-09-20',
+      '2026-10-20',
+    ])
+  })
+
+  it('behaves exactly as before when the rule carries no window (look-back regression guard)', () => {
+    expect(
+      occurrenceDates(
+        item({ cadence: 'weekly', nextOccurrence: '2026-08-20' }),
+        '2026-08-01',
+        '2026-08-20',
+      ),
+    ).toEqual(['2026-08-06', '2026-08-13', '2026-08-20'])
+  })
+
+  it('splits a rule at a change date: old rule ends, new rule starts, no gap or overlap', () => {
+    const oldRule = item({
+      name: 'Rent',
+      cadence: 'monthly',
+      nextOccurrence: '2026-08-01',
+      amount: toMinorUnits(1650),
+      endsOn: '2026-08-31',
+    })
+    const newRule = item({
+      name: 'Rent',
+      cadence: 'monthly',
+      nextOccurrence: '2026-09-01',
+      amount: toMinorUnits(1750),
+      startsOn: '2026-09-01',
+    })
+
+    const oldDates = occurrenceDates(oldRule, '2026-06-01', '2026-12-31')
+    const newDates = occurrenceDates(newRule, '2026-06-01', '2026-12-31')
+
+    expect(oldDates).toEqual(['2026-06-01', '2026-07-01', '2026-08-01'])
+    expect(newDates).toEqual(['2026-09-01', '2026-10-01', '2026-11-01', '2026-12-01'])
+
+    const combined = [...oldDates, ...newDates]
+    expect(combined).toEqual([...new Set(combined)]) // no duplicate on the boundary
+    expect(combined).toEqual([...combined].sort()) // strictly ascending, no gap month
+  })
 })

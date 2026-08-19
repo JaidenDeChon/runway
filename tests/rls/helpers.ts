@@ -36,7 +36,13 @@ export const USER_B = {
   password: 'runway-local-b',
 } as const
 
-/** The fixture table the suite exercises. Not a domain table — see issue #3. */
+/**
+ * The fixture table the suite exercises. Not a domain table — issue #3 kept it
+ * deliberately: the negative control needs a table whose policies can be
+ * loosened and restored mid-suite, and doing that to a real domain table like
+ * `accounts` would mean mutating its policy set while other assertions run
+ * against it. See docs/database/schema.md for the decision.
+ */
 export const FIXTURE_TABLE = 'rls_fixture_items'
 
 let cached: LocalStack | null | undefined

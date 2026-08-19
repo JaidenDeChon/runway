@@ -40,7 +40,9 @@ Studio is at <http://127.0.0.1:54323>. Sent email lands in Mailpit at
 
 ## Changing the schema
 
-Migrations are forward-only and applied exactly once, in filename order.
+Migrations are forward-only and applied exactly once, in filename order. For
+what the tables actually are — columns, invariants, the entity diagram — see
+[`schema.md`](./schema.md); the shape itself is `schema.md`, not this file.
 
 ```sh
 supabase migration new describe_the_change   # creates supabase/migrations/<ts>_describe_the_change.sql

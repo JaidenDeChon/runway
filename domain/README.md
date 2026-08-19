@@ -24,4 +24,7 @@ runtime APIs.
 
 - `money.ts` — integer minor-units money helpers (issue #1's seed file, so this directory has at
   least one real module).
-- Issue #3 (data model), #4 (projection engine) and #9 (occurrence materialization) land here too.
+- Issue #3 landed the rule window (`startsOn`/`endsOn`) and `annual` cadence on `RecurringItem`,
+  plus `discretionary.ts`, which converts the schema's stored monthly discretionary figure into
+  the flat daily rate `projection.ts` already drains.
+- Issue #4 (projection engine) and #9 (occurrence materialization) land here too.

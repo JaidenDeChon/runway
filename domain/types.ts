@@ -39,8 +39,17 @@ export interface Account {
   readonly isDiscretionarySource: boolean
 }
 
-export type Cadence = 'weekly' | 'biweekly' | 'monthly'
+export type Cadence = 'weekly' | 'biweekly' | 'monthly' | 'annual'
 
+/**
+ * The cadences the recurring-item editor offers.
+ *
+ * Deliberately three, not four: `docs/design/recurring-items/spec.md` line 187
+ * enumerates exactly Weekly / Biweekly / Monthly, so adding `annual` here is a
+ * design decision, not a schema consequence. The schema and `occurrenceDates`
+ * already support `annual` — see `domain/cadence.ts` — the picker just doesn't
+ * offer it yet.
+ */
 export const CADENCES: readonly Cadence[] = ['weekly', 'biweekly', 'monthly'] as const
 
 export type RecurringKind = 'bill' | 'income'
@@ -53,6 +62,15 @@ export type RecurringKind = 'bill' | 'income'
  */
 export type AmountSource = 'fixed' | 'predicted'
 
+/**
+ * A bill or income rule, expanded into individual occurrences by
+ * `occurrenceDates`.
+ *
+ * Apply-to-future is a **split**, never a bulk occurrence edit: close this
+ * rule with `endsOn` and open a new rule from the change date forward via
+ * `startsOn`. Bulk-updating occurrence rows loses history and breaks
+ * reconciliation — see `docs/database/schema.md`.
+ */
 export interface RecurringItem {
   readonly id: string
   readonly name: string
@@ -73,6 +91,10 @@ export interface RecurringItem {
    * presentation marker — the stored amount is still what projection uses.
    */
   readonly isVariable: boolean
+  /** Inclusive window bound. `undefined` means unbounded in that direction. */
+  readonly startsOn?: IsoDate
+  /** Inclusive window bound. `undefined` means unbounded in that direction. */
+  readonly endsOn?: IsoDate
 }
 
 /**

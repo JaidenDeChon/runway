@@ -29,7 +29,7 @@ If a screen has no directory under `docs/design/`, its design hasn't landed yet.
 ## Database
 
 Docs live in `docs/database/`. Local workflow is `local-development.md`; the
-security posture is `rls.md`.
+security posture is `rls.md`; the shape itself is `schema.md`.
 
 **Before creating or altering any table:** read `docs/database/rls.md` and copy
 the canonical policy pattern. Do not improvise one. Every domain table carries
