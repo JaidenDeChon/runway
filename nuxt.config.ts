@@ -31,4 +31,22 @@ export default defineNuxtConfig({
   vite: {
     plugins: [tailwindcss()],
   },
+
+  // Supabase credentials arrive from the environment at RUNTIME, not build time.
+  // Nuxt binds NUXT_PUBLIC_SUPABASE_URL -> public.supabase.url and
+  // NUXT_SUPABASE_SERVICE_ROLE_KEY -> supabase.serviceRoleKey automatically, so
+  // nothing here reads process.env: a `process.env` read at config-eval time
+  // bakes the value into the build and defeats Netlify's runtime environment.
+  // Keys inside `public` reach the browser. Keys outside it never do.
+  runtimeConfig: {
+    supabase: {
+      serviceRoleKey: '',
+    },
+    public: {
+      supabase: {
+        url: '',
+        anonKey: '',
+      },
+    },
+  },
 })

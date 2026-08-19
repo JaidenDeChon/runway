@@ -10,6 +10,7 @@
       "!.output",
       "!dist",
       "!app/components/ui",
+      "!shared/supabase/database.types.ts",
       "!bun.lock",
       "!docs/design"
     ]

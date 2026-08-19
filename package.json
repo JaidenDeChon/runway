@@ -3,6 +3,7 @@
   "dependencies": {
     "@lucide/vue": "1.31.0",
     "@nuxtjs/color-mode": "4.0.1",
+    "@supabase/supabase-js": "2.112.3",
     "@vueuse/core": "14.4.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
@@ -24,16 +25,23 @@
     "lint": "biome ci .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "typecheck": "nuxt typecheck && tsc -p tsconfig.domain.json",
+    "typecheck": "nuxt typecheck && tsc -p tsconfig.domain.json && tsc -p tsconfig.tests.json",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
     "test:watch": "vitest",
-    "ui:add": "shadcn-vue add"
+    "ui:add": "shadcn-vue add",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset",
+    "db:types": "supabase gen types typescript --local --schema public > shared/supabase/database.types.ts",
+    "test:rls": "vitest run --project rls"
   },
   "type": "module",
   "devDependencies": {
     "@biomejs/biome": "2.5.8",
     "@tailwindcss/vite": "4.3.3",
+    "@types/node": "22",
+    "postgres": "3.4.9",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3",
     "vitest": "4.1.10",
