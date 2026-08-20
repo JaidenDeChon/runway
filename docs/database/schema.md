@@ -75,7 +75,7 @@ for instance). This is deliberately not a general-purpose RRULE engine — "the
 |---|---|---|
 | `id` | `uuid` | PK |
 | `user_id`, `account_id` | `uuid` | composite FK → `accounts (user_id, id)`, cascade delete. Denormalized from the rule so the projection index needs no join. |
-| `user_id`, `rule_id` | `uuid` | composite FK → `recurring_rules (user_id, id)`, cascade delete |
+| `user_id`, `rule_id`, `account_id` | `uuid` | composite FK → `recurring_rules (user_id, id, account_id)`, cascade delete. Includes `account_id` so the denormalized copy cannot disagree with its source — see [Why the rule FK carries account_id](#why-the-rule-fk-carries-account_id) |
 | `projected_date` | `date` | written by generation, never by a user — see [The regeneration contract](#the-regeneration-contract) |
 | `projected_amount_cents` | `bigint` | signed: income positive, bills negative |
 | `actual_date`, `actual_amount_cents` | `date`, `bigint`, both nullable | supersede the projection once the user edits this instance or it happens; a null `actual_date` means "on `projected_date`" |
@@ -128,6 +128,26 @@ provably so, even from a connection that holds `BYPASSRLS`. See
 
 Cost: one extra unique index per parent table, which doubles as its
 RLS-predicate index rather than sitting alongside a separate one.
+
+### Why the rule FK carries `account_id`
+
+`occurrences.account_id` is denormalized from the owning rule so the projection
+index can be `(user_id, account_id, projected_date)` without a join. A copied
+value can drift from its source, so the foreign key includes it:
+`(user_id, rule_id, account_id)` references
+`recurring_rules (user_id, id, account_id)`, backed by a matching unique key on
+the parent.
+
+Without it, reassigning a rule to another account — an ordinary edit — would
+leave every existing occurrence pointing at the old account with no error, and
+the projection would bill the wrong account while the rule read correctly. With
+it, that reassignment is rejected while occurrences exist. Moving a rule between
+accounts is a rule split, the same shape as apply-to-future: close the old rule,
+open a new one on the new account.
+
+This is the schema's general stance — an invariant a reader has to remember is
+not an invariant. Everything else here is structural, and the one denormalized
+value is too.
 
 ### One row, not two legs
 

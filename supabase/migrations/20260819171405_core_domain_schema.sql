@@ -82,6 +82,9 @@ create table public.recurring_rules (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint recurring_rules_user_id_id_key unique (user_id, id),
+  -- Target for occurrences_rule_fk: lets a child reference the rule *and* the
+  -- account it belongs to as one unit, so the two cannot drift apart.
+  constraint recurring_rules_user_id_id_account_id_key unique (user_id, id, account_id),
   constraint recurring_rules_account_fk
     foreign key (user_id, account_id)
     references public.accounts (user_id, id) on delete cascade,
@@ -121,9 +124,15 @@ create table public.occurrences (
   constraint occurrences_account_fk
     foreign key (user_id, account_id)
     references public.accounts (user_id, id) on delete cascade,
+  -- Includes account_id on purpose. account_id is denormalised from the rule,
+  -- and this is what stops the copy disagreeing with its source: an occurrence
+  -- whose account is not its rule's account has no parent row to reference.
+  -- Reassigning a live rule to another account is therefore rejected rather
+  -- than silently leaving its occurrences behind — like apply-to-future, that
+  -- change is a rule split, not an in-place edit.
   constraint occurrences_rule_fk
-    foreign key (user_id, rule_id)
-    references public.recurring_rules (user_id, id) on delete cascade,
+    foreign key (user_id, rule_id, account_id)
+    references public.recurring_rules (user_id, id, account_id) on delete cascade,
   constraint occurrences_confirmed_has_actual_ck
     check (status <> 'confirmed' or actual_amount_cents is not null)
 );

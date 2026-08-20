@@ -17,7 +17,14 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { adminSql, LOCAL_STACK, signedInClient, USER_A, USER_B } from './helpers'
+import {
+  adminSql,
+  asUserInRolledBackTx,
+  LOCAL_STACK,
+  signedInClient,
+  USER_A,
+  USER_B,
+} from './helpers'
 
 const PROBE_PREFIX = 'probe:isolation:'
 
@@ -271,7 +278,7 @@ describe.skipIf(LOCAL_STACK === null)('domain table isolation', () => {
             from public.${sql(probe.table)}
             where ${sql(probe.pk)} = ${probe.probeIdForB()}
           `
-          expect(row?.value).not.toBe(probe.updateValue)
+          expect(String(row?.value)).not.toBe(String(probe.updateValue))
         } finally {
           await sql.end()
         }
@@ -298,6 +305,61 @@ describe.skipIf(LOCAL_STACK === null)('domain table isolation', () => {
         // The WITH CHECK clause rejects this outright — a violation, not a
         // no-op.
         expect(error).not.toBeNull()
+      })
+
+      // ── The three below reach policies the probes above cannot ────────────
+      //
+      // A filtered write (`?id=eq.X`) is masked by the SELECT policy: it
+      // matches zero rows, so the UPDATE/DELETE policy is never consulted and
+      // the assertion passes whatever that policy says. These issue unfiltered
+      // statements inside a rolled-back transaction instead, which is the one
+      // shape that reaches the write policy on its own.
+
+      it("will not let A update B's row with an unfiltered write", async () => {
+        await asUserInRolledBackTx(USER_A.id, async (tx, asAdmin) => {
+          await tx`update public.${tx(probe.table)} set ${tx(probe.updateColumn)} = ${probe.updateValue}`
+          await asAdmin()
+          const [row] = await tx<{ value: unknown }[]>`
+            select ${tx(probe.updateColumn)} as value
+            from public.${tx(probe.table)}
+            where ${tx(probe.pk)} = ${probe.probeIdForB()}
+          `
+          // Compared as strings on purpose: bigint columns come back from
+          // postgres.js as strings, so `'999999' !== 999999` would make this
+          // assertion pass regardless of what the policy did.
+          expect(String(row?.value)).not.toBe(String(probe.updateValue))
+        })
+      })
+
+      it("will not let A delete B's row with an unfiltered delete", async () => {
+        await asUserInRolledBackTx(USER_A.id, async (tx, asAdmin) => {
+          await tx`delete from public.${tx(probe.table)}`
+          await asAdmin()
+          const [row] = await tx<{ count: string }[]>`
+            select count(*)::text as count
+            from public.${tx(probe.table)}
+            where ${tx(probe.pk)} = ${probe.probeIdForB()}
+          `
+          expect(row?.count).toBe('1')
+        })
+      })
+
+      it('rejects a planted row with a policy violation, not a key collision', async () => {
+        await asUserInRolledBackTx(USER_A.id, async (tx, asAdmin, asAuthenticated) => {
+          // Clear anything the payload could collide with first. On
+          // user_settings, user_id is the primary key and B already has a
+          // row, so without this the insert fails on a duplicate key and the
+          // policy is never consulted — the test would pass while the
+          // WITH CHECK clause was wide open.
+          await asAdmin()
+          await tx`delete from public.${tx(probe.table)} where ${tx(probe.pk)} = ${probe.probeIdForB()}`
+          await asAuthenticated()
+
+          // 42501 is insufficient_privilege — the RLS violation itself.
+          await expect(
+            tx`insert into public.${tx(probe.table)} ${tx(probe.plantPayload())}`,
+          ).rejects.toMatchObject({ code: '42501' })
+        })
       })
     })
   }

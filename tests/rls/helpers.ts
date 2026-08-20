@@ -156,6 +156,58 @@ export function adminSql() {
  * Throws when user A can see any row it does not own. Returns the number of
  * rows A legitimately sees.
  */
+/**
+ * Runs `fn` inside a transaction that is ALWAYS rolled back, with the
+ * connection acting as `authenticated` for `userId` — the role and JWT claim
+ * that RLS actually reads.
+ *
+ * This exists because a filtered write cannot test an UPDATE or DELETE policy.
+ * PostgreSQL applies SELECT policies *in addition* to UPDATE/DELETE ones
+ * whenever the statement references relation columns, so `PATCH ...?id=eq.X`
+ * matches zero rows via the SELECT policy and the write policy is never
+ * reached. Only an unfiltered statement reaches it — and an unfiltered
+ * statement would clobber the caller's own rows, hence the rollback.
+ *
+ * `asAdmin()` drops back to the superuser inside the same transaction so a
+ * test can assert what the write did without asking the mechanism under test.
+ */
+const ROLLBACK = Symbol('rollback')
+
+export async function asUserInRolledBackTx<T>(
+  userId: string,
+  fn: (
+    tx: postgres.TransactionSql,
+    asAdmin: () => Promise<void>,
+    asAuthenticated: () => Promise<void>,
+  ) => Promise<T>,
+): Promise<T> {
+  const sql = adminSql()
+  let result: T | undefined
+  try {
+    await sql.begin(async (tx) => {
+      const asAuthenticated = async () => {
+        await tx`select set_config('request.jwt.claims', ${JSON.stringify({
+          sub: userId,
+          role: 'authenticated',
+        })}, true)`
+        await tx`select set_config('role', 'authenticated', true)`
+      }
+      const asAdmin = async () => {
+        await tx`select set_config('role', 'postgres', true)`
+      }
+      await asAuthenticated()
+      result = await fn(tx as postgres.TransactionSql, asAdmin, asAuthenticated)
+      // Nothing this helper does is allowed to survive.
+      throw ROLLBACK
+    })
+  } catch (err) {
+    if (err !== ROLLBACK) throw err
+  } finally {
+    await sql.end()
+  }
+  return result as T
+}
+
 export async function assertUserAOnlySeesOwnRows(): Promise<number> {
   const client = await signedInClient(USER_A)
   const { data, error } = await client.from(FIXTURE_TABLE).select('id, user_id')
