@@ -9,7 +9,7 @@
 
 import { occurrenceDates } from './cadence'
 import type { IsoDate } from './dates'
-import { addDays, compareDates, daysBetween, eachDay, minDate } from './dates'
+import { addDays, compareDates, daysBetween, eachDay, maxDate, minDate } from './dates'
 import { dailyDiscretionary } from './discretionary'
 import type { MinorUnits } from './money'
 import type { OccurrenceOverride } from './overrides'
@@ -374,6 +374,73 @@ export function evaluate(summary: SeriesSummary, cushion: MinorUnits): Verdict {
     margin,
     isCovered: margin >= 0,
     shortfall: margin < 0 ? -margin : 0,
+  }
+}
+
+export interface ShortfallQuestion {
+  /** The day the window opens on, and the first day the cushion has to hold. */
+  readonly today: IsoDate
+  /**
+   * The day being asked about — a bill's due date, or a date the user picked.
+   *
+   * Raised to `today` if it precedes it, so a stale selection asks a
+   * degenerate question ("does the cushion hold today?") rather than an
+   * inverted one.
+   */
+  readonly through: IsoDate
+  /** The balance the user is unwilling to drop below. */
+  readonly cushion: MinorUnits
+  /** Limits the question to these accounts. Omit for all of them. */
+  readonly accountIds?: readonly string[]
+  readonly overrides?: readonly OccurrenceOverride[]
+}
+
+export interface ShortfallAnswer extends Verdict {
+  /** The target the answer is about, after the raise-to-today rule above. */
+  readonly through: IsoDate
+  /** The combined balance on `today` — the figure the screen shows beside it. */
+  readonly startingBalance: MinorUnits
+  /** The combined balance on `through`. */
+  readonly endingBalance: MinorUnits
+}
+
+/**
+ * Whether the cushion survives to a given day, and by how much it misses.
+ *
+ * The shortfall is what it takes to hold the **running minimum** at or above
+ * the cushion for every day in `[today, through]` — not what it takes to end
+ * the window above it. Those are different numbers whenever a bill lands before
+ * the paycheck that covers it, which is the exact situation this screen exists
+ * for: a window can close $2,000 up and still bounce a payment in the middle.
+ * Reading the endpoint alone would answer "yes, you make it" on a window the
+ * user does not make it through.
+ *
+ * ```ts
+ * const answer = shortfallThrough(data, { today, through: rent.date, cushion })
+ * answer.isCovered  // false
+ * answer.shortfall  // 140_400 — $1,404 short, on answer.lowest.date
+ * ```
+ *
+ * This walks the projection once, through `project`. There is no second scan
+ * and no separate shortfall arithmetic: the number comes from the same summary
+ * the dashboard's verdict reads.
+ */
+export function shortfallThrough(data: RunwayData, question: ShortfallQuestion): ShortfallAnswer {
+  const through = maxDate(question.today, question.through)
+  const projection = project(data, {
+    start: question.today,
+    end: through,
+    // Explicit rather than defaulted: this screen's promise is about the whole
+    // span *including* today, unlike the dashboard's forward-looking verdict.
+    verdictFrom: question.today,
+    ...(question.accountIds ? { accountIds: question.accountIds } : {}),
+    ...(question.overrides ? { overrides: question.overrides } : {}),
+  })
+  return {
+    ...evaluate(projection.combinedSummary, question.cushion),
+    through,
+    startingBalance: projection.combined[0]?.balance ?? 0,
+    endingBalance: projection.combinedSummary.ending,
   }
 }
 

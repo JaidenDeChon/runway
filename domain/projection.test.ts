@@ -6,6 +6,7 @@ import {
   evaluate,
   occurrencesIn,
   project,
+  shortfallThrough,
   signedAmount,
   TIGHT_THRESHOLD,
   upcomingBills,
@@ -324,5 +325,87 @@ describe('upcomingBills', () => {
   it('is sorted by date ascending', () => {
     const dates = upcomingBills(seeded, SEED_TODAY).map((bill) => bill.date)
     expect([...dates].sort()).toEqual(dates)
+  })
+})
+
+describe('shortfallThrough', () => {
+  /** A one-off event: a monthly rule whose window is a single day. */
+  const onceOn = (date: string, over: Partial<RecurringItem>): RecurringItem =>
+    item({ nextOccurrence: date, startsOn: date, endsOn: date, ...over })
+
+  // Rent on the 18th empties the account; the paycheck on the 25th refills it.
+  // Ask about the 30th and the closing balance looks healthy — but the 18th
+  // through the 24th are spent under the cushion.
+  const dipping = data({
+    accounts: [account({ balance: toMinorUnits(2000) })],
+    recurringItems: [
+      onceOn('2026-08-18', { id: 'rent', name: 'Rent', amount: toMinorUnits(1800) }),
+      onceOn('2026-08-25', {
+        id: 'pay',
+        name: 'Paycheck',
+        kind: 'income',
+        amount: toMinorUnits(2500),
+      }),
+    ],
+  })
+
+  it('reports a mid-window dip the endpoint balance hides', () => {
+    const answer = shortfallThrough(dipping, {
+      today: SEED_TODAY,
+      through: '2026-08-30',
+      cushion: toMinorUnits(600),
+    })
+    // $2,700 on the last day — comfortably above a $600 cushion.
+    expect(answer.endingBalance).toBe(toMinorUnits(2700))
+    // And yet.
+    expect(answer.isCovered).toBe(false)
+    expect(answer.lowest).toEqual({ date: '2026-08-18', balance: toMinorUnits(200) })
+    expect(answer.shortfall).toBe(toMinorUnits(400))
+  })
+
+  it('is the amount that would actually fix the dip', () => {
+    const question = { today: SEED_TODAY, through: '2026-08-30', cushion: toMinorUnits(600) }
+    const short = shortfallThrough(dipping, question)
+    const topped = data({
+      ...dipping,
+      accounts: [account({ balance: toMinorUnits(2000) + short.shortfall })],
+    })
+    const after = shortfallThrough(topped, question)
+    expect(after.isCovered).toBe(true)
+    expect(after.shortfall).toBe(0)
+    // Exactly enough, not more: the low point now sits *on* the cushion.
+    expect(after.lowest?.balance).toBe(toMinorUnits(600))
+  })
+
+  it('counts today, unlike the dashboard verdict', () => {
+    const answer = shortfallThrough(data({ accounts: [account({ balance: toMinorUnits(100) })] }), {
+      today: SEED_TODAY,
+      through: '2026-08-30',
+      cushion: toMinorUnits(600),
+    })
+    expect(answer.lowest?.date).toBe(SEED_TODAY)
+    expect(answer.startingBalance).toBe(toMinorUnits(100))
+  })
+
+  it('raises a target in the past to today rather than inverting the window', () => {
+    const answer = shortfallThrough(data(), {
+      today: SEED_TODAY,
+      through: '2026-01-01',
+      cushion: toMinorUnits(600),
+    })
+    expect(answer.through).toBe(SEED_TODAY)
+    expect(answer.lowest).toEqual({ date: SEED_TODAY, balance: toMinorUnits(1000) })
+    expect(answer.isCovered).toBe(true)
+  })
+
+  it('is covered when nothing is scheduled and the balance already clears', () => {
+    const answer = shortfallThrough(data(), {
+      today: SEED_TODAY,
+      through: addDays(SEED_TODAY, 90),
+      cushion: toMinorUnits(600),
+    })
+    expect(answer.status).toBe('covered')
+    expect(answer.shortfall).toBe(0)
+    expect(answer.endingBalance).toBe(toMinorUnits(1000))
   })
 })

@@ -17,7 +17,7 @@ import { useToday } from '@/composables/useToday'
 import type { IsoDate } from '~~/domain/dates'
 import { addDays } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
-import { evaluate, project, upcomingBills } from '~~/domain/projection'
+import { shortfallThrough, upcomingBills } from '~~/domain/projection'
 
 useHead({ title: 'Will I Make It? - Runway' })
 
@@ -49,14 +49,17 @@ const targetDate = computed<IsoDate>(() => {
   return bill?.date ?? selectedDate.value
 })
 
-const projection = computed(() =>
-  project(data.value, { start: today.value, end: targetDate.value }),
+// One engine call answers the whole screen. The shortfall is measured against
+// the running minimum over `[today, target]` inclusive, not the closing balance
+// — a window can end comfortably up and still dip below the cushion in the
+// middle, and that dip is the thing this page exists to catch.
+const answer = computed(() =>
+  shortfallThrough(data.value, {
+    today: today.value,
+    through: targetDate.value,
+    cushion: cushion.value,
+  }),
 )
-// The window opens on today, and `verdictFrom` defaults to the window's start,
-// so the low point is searched over `[today, target]` inclusive — matching this
-// screen's own copy, and unlike the dashboard's forward-looking verdict.
-const verdict = computed(() => evaluate(projection.value.combinedSummary, cushion.value))
-const todayBalance = computed<MinorUnits>(() => projection.value.combined[0]?.balance ?? 0)
 </script>
 
 <template>
@@ -78,8 +81,8 @@ const todayBalance = computed<MinorUnits>(() => projection.value.combined[0]?.ba
       @update:cushion="cushion = $event"
     />
     <VerdictCard
-      :verdict="verdict"
-      :today-balance="todayBalance"
+      :verdict="answer"
+      :today-balance="answer.startingBalance"
       :target-date="targetDate"
       :cushion="cushion"
       :today="today"
