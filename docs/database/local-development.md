@@ -139,10 +139,12 @@ it exists to catch, both of which had already happened:
   the clamp forward, where `addMonthsClamped` returns to Mar 31. The seed steps
   over month starts and applies the day afterwards, which has no stickiness — so a
   rule anchored on the 29th, 30th or 31st is now safe to seed.
-- **The stored monthly discretionary figure has to survive the round trip.**
-  `dailyFromMonthly` is `round(monthly * 12 / 365)`, so `$1,034.00` comes back as
-  `$33.99` where the fixture says `$34.00` — a cent that then compounds on every
-  day of the burndown. Only `103402`–`103431` land on `$34.00`.
+- **The stored monthly discretionary figure has to match the fixture exactly.**
+  The engine divides the monthly figure by the length of the month each day falls
+  in, so the number crosses the boundary unconverted and the seed can simply hold
+  what `domain/seed.ts` holds. (It used to be converted — `round(monthly * 12 /
+  365)` — and the seed carried an odd `103417` chosen to survive that rounding.
+  Issue #4 removed the conversion; the odd number went with it.)
 
 One thing the seed deliberately does **not** cover: a *short* scenario. Both users
 are comfortably covered at every horizon, so the shortfall UI has no seeded data

@@ -163,7 +163,7 @@ export function createSeedData(): RunwayData {
     accounts: [...seedAccounts],
     recurringItems: [...seedRecurringItems],
     transfers: [...seedTransfers],
-    dailyDiscretionarySpend: toMinorUnits(34),
+    monthlyDiscretionarySpend: toMinorUnits(1034),
     safetyCushion: toMinorUnits(600),
   }
 }
@@ -174,7 +174,7 @@ export function createEmptyData(): RunwayData {
     accounts: [],
     recurringItems: [],
     transfers: [],
-    dailyDiscretionarySpend: 0,
+    monthlyDiscretionarySpend: 0,
     safetyCushion: toMinorUnits(600),
   }
 }

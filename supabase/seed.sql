@@ -111,11 +111,11 @@ insert into public.accounts (id, user_id, name, color, balance_cents, balance_as
 insert into public.user_settings (
   user_id, cushion_cents, monthly_discretionary_cents, discretionary_account_id, default_horizon_days
 ) values
-  -- 103417, not a rounder 103400: domain/discretionary.ts dailyFromMonthly is
-  -- round(monthly * 12 / 365), and only 103402..103431 land on the $34.00/day
-  -- that domain/seed.ts and the design both use. 103400 gives $33.99, and that
-  -- cent compounds every single day of the burndown.
-  ('00000000-0000-4000-8000-00000000000a', 60000, 103417,
+  -- 103400 is $1,034.00/month, exactly what domain/seed.ts holds: the engine
+  -- divides the monthly figure by the length of the month it falls in, so the
+  -- figure crosses the boundary unconverted and this is a plain equality rather
+  -- than a round trip that has to be checked for lost cents.
+  ('00000000-0000-4000-8000-00000000000a', 60000, 103400,
    '10000000-0000-4000-8000-00000000000a', 30),
   ('00000000-0000-4000-8000-00000000000b', 30000, 50000,
    '10000000-0000-4000-8000-00000000000b', 60);

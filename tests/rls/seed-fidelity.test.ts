@@ -20,7 +20,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { occurrenceDates } from '~~/domain/cadence'
 import { maxDate } from '~~/domain/dates'
-import { dailyFromMonthly } from '~~/domain/discretionary'
 import { createSeedData, seedAccounts, seedRecurringItems, seedTransfers } from '~~/domain/seed'
 import type { RecurringItem } from '~~/domain/types'
 import { adminSql, LOCAL_STACK, USER_A } from './helpers'
@@ -188,11 +187,12 @@ describe.skipIf(LOCAL_STACK === null)('the seed and the domain fixture agree', (
     expect(strangers).toEqual([])
   })
 
-  it('stores a monthly discretionary figure that round-trips to the fixture’s daily rate', async () => {
-    // $34.00/day is the design's number and what domain/seed.ts holds; the schema
-    // stores the monthly figure. dailyFromMonthly rounds, so not every monthly
-    // value that looks right survives the trip — $1,034.00 comes back as $33.99,
-    // and that cent compounds on every day of the burndown.
+  it('stores the same monthly discretionary figure the fixture does', async () => {
+    // The engine consumes the monthly figure directly and divides it by the
+    // length of each month, so this is an equality and not a conversion. It
+    // still has to be asserted: a seed that drifts from domain/seed.ts makes
+    // every screenshot taken against the local stack a picture of different data
+    // than the unit tests describe.
     const sql = adminSql()
     try {
       const [settings] = await sql<
@@ -200,9 +200,7 @@ describe.skipIf(LOCAL_STACK === null)('the seed and the domain fixture agree', (
       >`select cushion_cents, monthly_discretionary_cents from public.user_settings where user_id = ${USER_A.id}`
       const fixture = createSeedData()
       expect(Number(settings?.cushion_cents)).toBe(fixture.safetyCushion)
-      expect(dailyFromMonthly(Number(settings?.monthly_discretionary_cents))).toBe(
-        fixture.dailyDiscretionarySpend,
-      )
+      expect(Number(settings?.monthly_discretionary_cents)).toBe(fixture.monthlyDiscretionarySpend)
     } finally {
       await sql.end()
     }

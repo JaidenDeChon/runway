@@ -42,7 +42,7 @@ const data = (over: Partial<RunwayData> = {}): RunwayData => ({
   accounts: [account()],
   recurringItems: [],
   transfers: [],
-  dailyDiscretionarySpend: 0,
+  monthlyDiscretionarySpend: 0,
   safetyCushion: 0,
   ...over,
 })
@@ -113,13 +113,15 @@ describe('project', () => {
   })
 
   it('drains the daily discretionary spend from the source account only', () => {
+    // $310 across a 31-day August is exactly $10 a day, which is the only reason
+    // the expected balances below are round numbers.
     const result = project(
       data({
         accounts: [
           account({ id: 'a', isDiscretionarySource: true }),
           account({ id: 'b', balance: toMinorUnits(500) }),
         ],
-        dailyDiscretionarySpend: toMinorUnits(10),
+        monthlyDiscretionarySpend: toMinorUnits(310),
       }),
       { start: SEED_TODAY, end: addDays(SEED_TODAY, 2) },
     )

@@ -107,10 +107,10 @@ export function useRunwayData() {
     data.value = { ...data.value, safetyCushion: Math.max(0, Math.round(cushion)) }
   }
 
-  function setDailyDiscretionarySpend(amount: MinorUnits): void {
+  function setMonthlyDiscretionarySpend(amount: MinorUnits): void {
     data.value = {
       ...data.value,
-      dailyDiscretionarySpend: Math.max(0, Math.round(amount)),
+      monthlyDiscretionarySpend: Math.max(0, Math.round(amount)),
     }
   }
 
@@ -142,7 +142,7 @@ export function useRunwayData() {
     removeRecurringItem,
     addTransfer,
     setSafetyCushion,
-    setDailyDiscretionarySpend,
+    setMonthlyDiscretionarySpend,
     clearRecords,
   }
 }

@@ -312,7 +312,7 @@ The table `domain/*` code should consult when wiring a store to this schema:
 | `Transfer.date` | `transfers.occurs_on` | |
 | `Transfer.createdAt` | `transfers.created_at` | epoch ms at the mapping edge; only ever a same-day tie-breaker |
 | `RunwayData.safetyCushion` | `user_settings.cushion_cents` | |
-| `RunwayData.dailyDiscretionarySpend` | *derived* | `dailyFromMonthly(monthly_discretionary_cents)` — see `domain/discretionary.ts` |
+| `RunwayData.monthlyDiscretionarySpend` | `user_settings.monthly_discretionary_cents` | carried across unconverted; the engine divides it by the length of each month — see `domain/discretionary.ts` |
 | `Occurrence.date` / `.amount` | *derived* | `coalesce(actual_*, projected_*)` |
 | `OccurrenceOverride` scope `once` | `actual_*` + `is_overridden = true` | |
 | `OccurrenceOverride` scope `future` | **a rule split**, not an occurrence write | |

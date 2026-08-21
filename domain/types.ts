@@ -156,8 +156,17 @@ export interface RunwayData {
   readonly accounts: readonly Account[]
   readonly recurringItems: readonly RecurringItem[]
   readonly transfers: readonly Transfer[]
-  /** Flat per-day spend drawn from the discretionary-source account. */
-  readonly dailyDiscretionarySpend: MinorUnits
+  /**
+   * What discretionary spending costs per month, drawn from the account flagged
+   * `isDiscretionarySource`.
+   *
+   * Held monthly rather than daily because that is the figure a person can
+   * actually state about themselves, and because a month is what it is divided
+   * by — see `domain/discretionary.ts`. It mirrors
+   * `user_settings.monthly_discretionary_cents` one-to-one, with no conversion
+   * in between.
+   */
+  readonly monthlyDiscretionarySpend: MinorUnits
   /** The lowest balance the user is willing to see. Drives the covered/short verdict. */
   readonly safetyCushion: MinorUnits
 }

@@ -10,6 +10,7 @@
 import { occurrenceDates } from './cadence'
 import type { IsoDate } from './dates'
 import { addDays, compareDates, daysBetween, eachDay, minDate } from './dates'
+import { dailyDiscretionary } from './discretionary'
 import type { MinorUnits } from './money'
 import type { OccurrenceOverride } from './overrides'
 import { applyOverrides } from './overrides'
@@ -153,9 +154,12 @@ function buildDeltas(
       add(transfer.toAccountId, transfer.date, transfer.amount)
   }
 
+  // Divided by the length of the month each day falls in, so a month costs
+  // exactly what the user said it costs — see `domain/discretionary.ts`.
   const source = accounts.find((account) => account.isDiscretionarySource)
-  if (source && data.dailyDiscretionarySpend > 0) {
-    for (const date of days) add(source.id, date, -data.dailyDiscretionarySpend)
+  if (source && data.monthlyDiscretionarySpend > 0) {
+    for (const date of days)
+      add(source.id, date, -dailyDiscretionary(data.monthlyDiscretionarySpend, date))
   }
 
   return deltas
