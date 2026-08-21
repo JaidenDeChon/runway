@@ -26,8 +26,16 @@ How to work:
 4. Add only what the plan calls for. No speculative abstractions, no unrelated refactors, no drive-by reformatting.
 5. Verify: run `bun run build` (and any tests the plan names). If it fails, fix it. If you cannot, report the failure verbatim.
 
-Do not commit, push, open a PR, or comment on the issue. Leave changes in the
-working tree.
+**Commit each phase of the plan as that phase completes.** You are already on the
+branch the orchestrator cut for this task; work lands in git as it is finished,
+not in one lump at the end, because a session that runs out of budget mid-task
+leaves behind exactly what has been committed and nothing else. Read
+`git log --oneline -10` before your first commit and match the house style —
+messages here explain *why* the change is shaped as it is, since the diff
+already shows what changed.
+
+Do not push, do not open a PR, do not comment on the issue, and do not touch
+`main`. Shipping is the orchestrator's job.
 
 Return, as your final message: the files you changed and what changed in each,
 each acceptance criterion with whether it is met, verification output
