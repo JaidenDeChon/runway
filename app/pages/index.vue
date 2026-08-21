@@ -94,6 +94,9 @@ const projection = computed(() =>
     end: windowEnd.value,
     accountIds: selectedAccountIds.value,
     overrides: overrides.value,
+    // A dip that has already happened is history, not a forecast, so the
+    // verdict starts the day after today even though the chart opens earlier.
+    verdictFrom: addDays(today.value, 1),
   }),
 )
 
@@ -135,16 +138,11 @@ const series = computed<ChartSeries[]>(() =>
   }),
 )
 
-/** The line the verdict is read from: combined when there is one, else the only account. */
-const verdictPoints = computed<readonly DayPoint[]>(
-  () => combined.value ?? series.value[0]?.points ?? [],
-)
-
-const verdict = computed(() =>
-  // `from` is the day after today: a dip that has already happened is history,
-  // not a forecast.
-  evaluate(verdictPoints.value, safetyCushion.value, { from: todayIndex.value + 1 }),
-)
+// The projection is already narrowed to the selected accounts, so its combined
+// line *is* the single account's line when only one is selected — the verdict
+// reads one summary either way, and the engine found that low point in the same
+// pass that built the series.
+const verdict = computed(() => evaluate(projection.value.combinedSummary, safetyCushion.value))
 
 const occurrencesByDay = computed(() => {
   const byDay = new Map<IsoDate, Occurrence[]>()

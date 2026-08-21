@@ -4,7 +4,6 @@ import { toMinorUnits } from './money'
 import {
   classifyMargin,
   evaluate,
-  findLowestPoint,
   occurrencesIn,
   project,
   signedAmount,
@@ -203,28 +202,69 @@ describe('transfers are balance-neutral', () => {
   })
 })
 
-describe('findLowestPoint', () => {
-  const points = [
-    { date: '2026-08-15', balance: 10 },
-    { date: '2026-08-16', balance: 50 },
-    { date: '2026-08-17', balance: 30 },
-    { date: '2026-08-18', balance: 30 },
-  ]
+describe('the low point, found in the same walk as the series', () => {
+  /** A one-off event: a monthly rule whose window is a single day. */
+  const onceOn = (date: string, over: Partial<RecurringItem>): RecurringItem =>
+    item({ nextOccurrence: date, startsOn: date, endsOn: date, ...over })
 
-  it('ignores today by default, because the verdict is about what is coming', () => {
-    expect(findLowestPoint(points)).toEqual({ date: '2026-08-17', balance: 30 })
+  // 15th: $1,000. 16th: +$400. 17th: −$200. 18th: flat.
+  //   -> 1000, 1400, 1200, 1200
+  const dipping = data({
+    recurringItems: [
+      onceOn('2026-08-16', { id: 'up', kind: 'income', amount: toMinorUnits(400) }),
+      onceOn('2026-08-17', { id: 'down', kind: 'bill', amount: toMinorUnits(200) }),
+    ],
+  })
+  const window = { start: SEED_TODAY, end: '2026-08-18' }
+
+  it('searches the whole window when verdictFrom is left to default', () => {
+    const { combinedSummary } = project(dipping, window)
+    expect(combinedSummary.lowest).toEqual({ date: SEED_TODAY, balance: toMinorUnits(1000) })
   })
 
-  it('includes today when explicitly asked', () => {
-    expect(findLowestPoint(points, { from: 0 })).toEqual({ date: '2026-08-15', balance: 10 })
+  it('ignores days before verdictFrom, because a past dip is not a forecast', () => {
+    const { combinedSummary } = project(dipping, { ...window, verdictFrom: '2026-08-16' })
+    expect(combinedSummary.lowest).toEqual({ date: '2026-08-17', balance: toMinorUnits(1200) })
   })
 
-  it('resolves ties to the earliest date', () => {
-    expect(findLowestPoint(points)?.date).toBe('2026-08-17')
+  it('resolves ties to the earliest date, the one still worth acting on', () => {
+    const { combinedSummary } = project(dipping, { ...window, verdictFrom: '2026-08-16' })
+    // The 17th and the 18th are both $1,200; the 17th wins.
+    expect(combinedSummary.lowest?.date).toBe('2026-08-17')
   })
 
-  it('returns null when there is no future to search', () => {
-    expect(findLowestPoint([{ date: '2026-08-15', balance: 1 }])).toBeNull()
+  it('has no low point when verdictFrom leaves no future to search', () => {
+    const { combinedSummary } = project(dipping, {
+      start: SEED_TODAY,
+      end: SEED_TODAY,
+      verdictFrom: addDays(SEED_TODAY, 1),
+    })
+    expect(combinedSummary.lowest).toBeNull()
+  })
+
+  it('reports the closing balance alongside it, from that same walk', () => {
+    const { combinedSummary, byAccount } = project(dipping, window)
+    expect(combinedSummary.ending).toBe(toMinorUnits(1200))
+    expect(byAccount[0]?.summary.ending).toBe(toMinorUnits(1200))
+  })
+
+  it('finds the combined low point on a day no single account bottoms out', () => {
+    // A dips on the 16th, B on the 17th; together they are lowest on neither.
+    const two = data({
+      accounts: [
+        account({ id: 'a', balance: toMinorUnits(1000) }),
+        account({ id: 'b', balance: toMinorUnits(1000) }),
+      ],
+      recurringItems: [
+        onceOn('2026-08-16', { id: 'a-bill', accountId: 'a', amount: toMinorUnits(300) }),
+        onceOn('2026-08-17', { id: 'b-bill', accountId: 'b', amount: toMinorUnits(300) }),
+      ],
+    })
+    const { byAccount, combinedSummary } = project(two, window)
+    expect(byAccount[0]?.summary.lowest?.date).toBe('2026-08-16')
+    expect(byAccount[1]?.summary.lowest?.date).toBe('2026-08-17')
+    // Both bills have landed by the 17th: 2000 − 300 − 300.
+    expect(combinedSummary.lowest).toEqual({ date: '2026-08-17', balance: toMinorUnits(1400) })
   })
 })
 
@@ -243,15 +283,20 @@ describe('classifyMargin', () => {
 describe('evaluate', () => {
   it('reports the shortfall as a negative margin', () => {
     const verdict = evaluate(
-      [
-        { date: '2026-08-15', balance: toMinorUnits(5000) },
-        { date: '2026-08-16', balance: toMinorUnits(4886) },
-      ],
+      { lowest: { date: '2026-08-16', balance: toMinorUnits(4886) }, ending: toMinorUnits(4886) },
       toMinorUnits(6000),
     )
     expect(verdict.status).toBe('short')
     expect(verdict.isCovered).toBe(false)
     expect(verdict.margin).toBe(toMinorUnits(-1114))
+  })
+
+  it('treats a window with no future in it as meeting nothing but zero', () => {
+    // No low point is not the same as a low point of zero, but the verdict has
+    // to say something: with nothing ahead, the margin is the cushion itself.
+    const verdict = evaluate({ lowest: null, ending: toMinorUnits(5000) }, toMinorUnits(600))
+    expect(verdict.lowest).toBeNull()
+    expect(verdict.margin).toBe(toMinorUnits(-600))
   })
 })
 

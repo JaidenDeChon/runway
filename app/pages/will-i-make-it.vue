@@ -52,10 +52,10 @@ const targetDate = computed<IsoDate>(() => {
 const projection = computed(() =>
   project(data.value, { start: today.value, end: targetDate.value }),
 )
-// `from: 0` includes today in the search window, matching the spec's "lowest
-// point in [today, target]" — unlike the dashboard's forward-looking verdict,
-// this screen's own copy states the window is inclusive of today.
-const verdict = computed(() => evaluate(projection.value.combined, cushion.value, { from: 0 }))
+// The window opens on today, and `verdictFrom` defaults to the window's start,
+// so the low point is searched over `[today, target]` inclusive — matching this
+// screen's own copy, and unlike the dashboard's forward-looking verdict.
+const verdict = computed(() => evaluate(projection.value.combinedSummary, cushion.value))
 const todayBalance = computed<MinorUnits>(() => projection.value.combined[0]?.balance ?? 0)
 </script>
 

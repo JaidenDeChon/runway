@@ -4,7 +4,7 @@ import type { OccurrenceOverride } from './overrides'
 import { applyOverrides, withOverride } from './overrides'
 import type { Occurrence } from './projection'
 import { evaluate, occurrencesIn, project } from './projection'
-import { createSeedData, SEED_TODAY } from './seed'
+import { createSeedData } from './seed'
 import type { RunwayData } from './types'
 
 const occurrence = (over: Partial<Occurrence> = {}): Occurrence => ({
@@ -144,16 +144,16 @@ describe('project with overrides', () => {
 })
 
 describe('evaluate shortfall', () => {
-  const points = [
-    { date: SEED_TODAY, balance: toMinorUnits(1000) },
-    { date: '2026-08-16', balance: toMinorUnits(-804) },
-  ]
+  const summary = {
+    lowest: { date: '2026-08-16', balance: toMinorUnits(-804) },
+    ending: toMinorUnits(-804),
+  }
 
   it('reports the gap below the cushion as a positive magnitude', () => {
-    expect(evaluate(points, toMinorUnits(600)).shortfall).toBe(toMinorUnits(1404))
+    expect(evaluate(summary, toMinorUnits(600)).shortfall).toBe(toMinorUnits(1404))
   })
 
   it('is zero whenever the cushion holds', () => {
-    expect(evaluate(points, toMinorUnits(-2000)).shortfall).toBe(0)
+    expect(evaluate(summary, toMinorUnits(-2000)).shortfall).toBe(0)
   })
 })
