@@ -169,4 +169,20 @@ export interface RunwayData {
   readonly monthlyDiscretionarySpend: MinorUnits
   /** The lowest balance the user is willing to see. Drives the covered/short verdict. */
   readonly safetyCushion: MinorUnits
+  /**
+   * The IANA timezone the user's calendar days are measured in, or `null` to
+   * follow whatever device they are on.
+   *
+   * `null` is the default and the right one for almost everybody: "what day is
+   * it" should follow the device you are holding. The field exists for the
+   * cases where it should not — somebody working abroad who still budgets on
+   * home dates — and because the answer has to be storable to survive the move
+   * from browser storage to an account. A device-derived zone is not user data;
+   * an override is.
+   *
+   * The engine never reads this directly. It is resolved to a concrete zone at
+   * the app edge and handed to `todayIn`, because the domain does not know what
+   * device it is running on — see `domain/dates.ts`.
+   */
+  readonly timeZone: string | null
 }

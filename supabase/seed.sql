@@ -108,17 +108,21 @@ insert into public.accounts (id, user_id, name, color, balance_cents, balance_as
    'B Savings', 'chart-4', 150000, '2026-08-15');
 
 -- user_settings — one row per user, discretionary source pinned to Checking.
+-- time_zone is null for user A because domain/seed.ts holds null, and A must
+-- mirror the fixture row for row. User B carries a real zone so the column is
+-- exercised by something rather than only ever being null in every test.
 insert into public.user_settings (
-  user_id, cushion_cents, monthly_discretionary_cents, discretionary_account_id, default_horizon_days
+  user_id, cushion_cents, monthly_discretionary_cents, discretionary_account_id,
+  default_horizon_days, time_zone
 ) values
   -- 103400 is $1,034.00/month, exactly what domain/seed.ts holds: the engine
   -- divides the monthly figure by the length of the month it falls in, so the
   -- figure crosses the boundary unconverted and this is a plain equality rather
   -- than a round trip that has to be checked for lost cents.
   ('00000000-0000-4000-8000-00000000000a', 60000, 103400,
-   '10000000-0000-4000-8000-00000000000a', 30),
+   '10000000-0000-4000-8000-00000000000a', 30, null),
   ('00000000-0000-4000-8000-00000000000b', 30000, 50000,
-   '10000000-0000-4000-8000-00000000000b', 60);
+   '10000000-0000-4000-8000-00000000000b', 60, 'America/Chicago');
 
 -- recurring_rules.
 --

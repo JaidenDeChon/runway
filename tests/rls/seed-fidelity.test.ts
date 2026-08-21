@@ -196,10 +196,14 @@ describe.skipIf(LOCAL_STACK === null)('the seed and the domain fixture agree', (
     const sql = adminSql()
     try {
       const [settings] = await sql<
-        { cushion_cents: string; monthly_discretionary_cents: string }[]
-      >`select cushion_cents, monthly_discretionary_cents from public.user_settings where user_id = ${USER_A.id}`
+        { cushion_cents: string; monthly_discretionary_cents: string; time_zone: string | null }[]
+      >`select cushion_cents, monthly_discretionary_cents, time_zone
+          from public.user_settings where user_id = ${USER_A.id}`
       const fixture = createSeedData()
       expect(Number(settings?.cushion_cents)).toBe(fixture.safetyCushion)
+      // Null, and deliberately so: the fixture follows the device, and a
+      // browser-resolved zone is never written into the user's data.
+      expect(settings?.time_zone ?? null).toBe(fixture.timeZone)
       expect(Number(settings?.monthly_discretionary_cents)).toBe(fixture.monthlyDiscretionarySpend)
     } finally {
       await sql.end()

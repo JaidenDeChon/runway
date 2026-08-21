@@ -4,6 +4,43 @@
 
 ---
 
+## What Runway is, and where it runs
+
+Runway answers one question: *given what is coming, when does my balance dip
+lowest, and does it clear my cushion?* Every screen is a view onto `domain/`'s
+projection of that.
+
+**Today it is a local-only app.** A user's data lives in their browser. There
+are no accounts, no sign-in, and nothing leaves the device. That is the current
+architecture, not a gap to be filled opportunistically.
+
+**Supabase exists in this repo ahead of the app needing it**, deliberately. The
+schema, the deny-by-default RLS posture and the migrations are built and tested
+(`docs/database/`) so that the day accounts land, it is a change of *storage*
+rather than a redesign. Nothing under `app/` reads or writes Supabase yet.
+
+What that means while writing code:
+
+- **The domain shapes map to the schema one-to-one, on purpose.** `RunwayData`
+  is what `user_settings` and the user's rows will deserialize into. Add a field
+  to one and you add it to the other, and to the mapping table in
+  `docs/database/schema.md`. A field that exists only in the browser is a field
+  that gets lost the day sign-in ships.
+- **`app/composables/useRunwayData.ts` is the seam.** It holds all state and
+  every mutation. Replacing browser storage with Supabase should mean changing
+  that file and nothing downstream of it, so screens must not reach around it.
+- **Per-user isolation is already the model.** Every domain table carries
+  `user_id`; do not write code that assumes a single user just because there is
+  currently exactly one.
+- **Device-derived facts are not user data.** The browser's timezone, viewport
+  and colour-scheme preference belong to the device and are re-derived there.
+  What the *user* chose is data and gets stored. Keeping those apart is what
+  lets the same account behave correctly on a second device.
+- **No real financial data, ever.** Seeds and fixtures are synthetic, and that
+  does not change when storage does.
+
+---
+
 ## Design reference
 
 Design artifacts live in `docs/design/<screen-slug>/`. The index is `docs/design/README.md`.

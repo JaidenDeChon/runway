@@ -41,6 +41,12 @@ export function useRunwayData() {
   const recurringItems = computed(() => data.value.recurringItems)
   const transfers = computed(() => data.value.transfers)
   const safetyCushion = computed(() => data.value.safetyCushion)
+  /**
+   * The user's stored timezone *override*, not their effective zone. `null`
+   * means "follow the device", which `useTimeZone` resolves — a device-derived
+   * zone is a fact about a device and does not belong in the user's data.
+   */
+  const timeZoneOverride = computed(() => data.value.timeZone)
 
   const accountsById = computed(
     () => new Map(data.value.accounts.map((account) => [account.id, account])),
@@ -107,6 +113,11 @@ export function useRunwayData() {
     data.value = { ...data.value, safetyCushion: Math.max(0, Math.round(cushion)) }
   }
 
+  /** Pass `null` to go back to following the device. */
+  function setTimeZoneOverride(timeZone: string | null): void {
+    data.value = { ...data.value, timeZone: timeZone?.trim() || null }
+  }
+
   function setMonthlyDiscretionarySpend(amount: MinorUnits): void {
     data.value = {
       ...data.value,
@@ -134,6 +145,7 @@ export function useRunwayData() {
     recurringItems,
     transfers,
     safetyCushion,
+    timeZoneOverride,
     isEmpty,
     accountName,
     saveAccount,
@@ -142,6 +154,7 @@ export function useRunwayData() {
     removeRecurringItem,
     addTransfer,
     setSafetyCushion,
+    setTimeZoneOverride,
     setMonthlyDiscretionarySpend,
     clearRecords,
   }

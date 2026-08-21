@@ -111,6 +111,7 @@ positive amount — see [One row, not two legs](#one-row-not-two-legs).
 | `user_id` | `uuid` | PK **and** FK → `auth.users`, cascade delete — one row per user, structurally |
 | `cushion_cents` | `bigint` | default `60000` |
 | `monthly_discretionary_cents` | `bigint` | default `0` |
+| `time_zone` | `text`, nullable | IANA zone **override**. Null — the default — means follow the device. A browser-resolved zone is never written here; see the migration for why |
 | `discretionary_account_id` | `uuid`, nullable | composite FK → `accounts (user_id, id)`, `on delete set null (discretionary_account_id)` — deleting the account nulls only this column, never `user_id` |
 | `default_horizon_days` | `smallint` | default `30`; `check` is a sanity range, `1`–`730`. The dashboard's toggle offering 30/60/90 is a fact about that screen, not about the data — see [The horizon is not a menu](#the-horizon-is-not-a-menu) |
 
@@ -312,6 +313,7 @@ The table `domain/*` code should consult when wiring a store to this schema:
 | `Transfer.date` | `transfers.occurs_on` | |
 | `Transfer.createdAt` | `transfers.created_at` | epoch ms at the mapping edge; only ever a same-day tie-breaker |
 | `RunwayData.safetyCushion` | `user_settings.cushion_cents` | |
+| `RunwayData.timeZone` | `user_settings.time_zone` | an override, not the effective zone. `app/composables/useTimeZone.ts` resolves `override ?? device ?? UTC` |
 | `RunwayData.monthlyDiscretionarySpend` | `user_settings.monthly_discretionary_cents` | carried across unconverted; the engine divides it by the length of each month — see `domain/discretionary.ts` |
 | `Occurrence.date` / `.amount` | *derived* | `coalesce(actual_*, projected_*)` |
 | `OccurrenceOverride` scope `once` | `actual_*` + `is_overridden = true` | |

@@ -165,6 +165,7 @@ export function createSeedData(): RunwayData {
     transfers: [...seedTransfers],
     monthlyDiscretionarySpend: toMinorUnits(1034),
     safetyCushion: toMinorUnits(600),
+    timeZone: null,
   }
 }
 
@@ -176,5 +177,6 @@ export function createEmptyData(): RunwayData {
     transfers: [],
     monthlyDiscretionarySpend: 0,
     safetyCushion: toMinorUnits(600),
+    timeZone: null,
   }
 }

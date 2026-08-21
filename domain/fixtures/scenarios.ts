@@ -71,6 +71,7 @@ const data = (over: Partial<RunwayData>): RunwayData => ({
   transfers: [],
   monthlyDiscretionarySpend: 0,
   safetyCushion: 60_000,
+  timeZone: null,
   ...over,
 })
 

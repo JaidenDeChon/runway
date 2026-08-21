@@ -125,6 +125,7 @@ const dataArb: fc.Arbitrary<RunwayData> = accountsArb.chain((accounts) => {
       transfers: listOf(transferArb, ids, 4),
       monthlyDiscretionarySpend: fc.integer({ min: 0, max: 300_000 }),
       safetyCushion: fc.integer({ min: 0, max: 200_000 }),
+      timeZone: fc.constant(null),
     })
     .map((rest) => ({ accounts, ...rest }))
 })

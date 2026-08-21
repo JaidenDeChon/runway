@@ -243,6 +243,7 @@ export type Database = {
           default_horizon_days: number
           discretionary_account_id: string | null
           monthly_discretionary_cents: number
+          time_zone: string | null
           updated_at: string
           user_id: string
         }
@@ -252,6 +253,7 @@ export type Database = {
           default_horizon_days?: number
           discretionary_account_id?: string | null
           monthly_discretionary_cents?: number
+          time_zone?: string | null
           updated_at?: string
           user_id: string
         }
@@ -261,6 +263,7 @@ export type Database = {
           default_horizon_days?: number
           discretionary_account_id?: string | null
           monthly_discretionary_cents?: number
+          time_zone?: string | null
           updated_at?: string
           user_id?: string
         }
