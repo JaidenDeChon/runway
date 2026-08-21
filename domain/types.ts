@@ -48,9 +48,20 @@ export type Cadence = 'weekly' | 'biweekly' | 'monthly' | 'annual'
  * enumerates exactly Weekly / Biweekly / Monthly, so adding `annual` here is a
  * design decision, not a schema consequence. The schema and `occurrenceDates`
  * already support `annual` — see `domain/cadence.ts` — the picker just doesn't
- * offer it yet.
+ * offer it yet. The same is true of `daysOfMonth` / `daysOfWeek` below: an item
+ * can be semi-monthly in the database and in the engine, but no screen offers a
+ * way to say so until the recurring-items work lands.
  */
 export const CADENCES: readonly Cadence[] = ['weekly', 'biweekly', 'monthly'] as const
+
+/**
+ * The `daysOfMonth` value meaning "the last day of whatever month this is".
+ *
+ * A month-end bill is a real, common thing, and `31` only means month-end in
+ * seven months of the year. Storing the intent separately from the number keeps
+ * "the 31st, clamped" distinguishable from "month end, whenever that falls".
+ */
+export const LAST_DAY_OF_MONTH = -1
 
 export type RecurringKind = 'bill' | 'income'
 
@@ -81,6 +92,29 @@ export interface RecurringItem {
    */
   readonly amount: MinorUnits
   readonly cadence: Cadence
+  /**
+   * Extra days of the month a `monthly` item lands on. Omitted — the usual
+   * case — means the single day `nextOccurrence` falls on.
+   *
+   * `[1, 15]` is semi-monthly, which is how most paychecks arrive; any other
+   * combination works the same way, and `LAST_DAY_OF_MONTH` (-1) means month
+   * end. A day the month does not have clamps to that month's last day, so
+   * `[30, 31]` produces one occurrence in February, not two.
+   *
+   * Ignored for every cadence but `monthly`.
+   */
+  readonly daysOfMonth?: readonly number[]
+  /**
+   * Extra weekdays a `weekly` or `biweekly` item lands on, ISO-numbered —
+   * 1 = Monday through 7 = Sunday. Omitted means the weekday `nextOccurrence`
+   * falls on.
+   *
+   * Biweekly still takes its phase from `nextOccurrence`: the week containing
+   * it, then every other week.
+   *
+   * Ignored for every cadence but `weekly` and `biweekly`.
+   */
+  readonly daysOfWeek?: readonly number[]
   readonly accountId: string
   readonly nextOccurrence: IsoDate
   readonly amountSource: AmountSource

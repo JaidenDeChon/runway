@@ -38,6 +38,33 @@ point the Nuxt app at the hosted project.
 Studio is at <http://127.0.0.1:54323>. Sent email lands in Mailpit at
 <http://127.0.0.1:54324> — nothing is delivered externally.
 
+## The same stack runs in CI
+
+The `database` job in `.github/workflows/ci.yml` does on every pull request what
+you do locally: brings a stack up from nothing, applies every migration, loads
+the seed, and runs the suite. Three things about it are worth knowing.
+
+- **It runs `bun run test`, not `bun run test:rls`** — the full Vitest run,
+  every project. It is the only job with a database, so it is where any
+  integration or E2E project added later runs, with no workflow edit.
+- **It sets `RUNWAY_RLS_REQUIRE_STACK=1`.** Locally, the RLS project skips
+  itself when the stack is down so that someone without Docker still gets a
+  green `bun run test`. In CI that would be a green run proving nothing, so the
+  variable turns a missing stack into a hard failure. Set it locally too if you
+  want the same strictness: `RUNWAY_RLS_REQUIRE_STACK=1 bun run test`.
+- **It fails when `shared/supabase/database.types.ts` is stale**, by
+  regenerating it and diffing. The CLI version is pinned in the workflow to the
+  one named under [Prerequisites](#prerequisites) above, because `supabase gen
+  types` output moves between CLI versions. **Upgrade one and you must upgrade
+  the other**, in the same commit as the regenerated file.
+
+To reproduce the CI run locally, use its exact container set:
+
+```sh
+supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,mailpit,storage-api,realtime
+RUNWAY_RLS_REQUIRE_STACK=1 bun run test
+```
+
 ## Changing the schema
 
 Migrations are forward-only and applied exactly once, in filename order. For

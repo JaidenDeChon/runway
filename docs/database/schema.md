@@ -57,17 +57,25 @@ below. It also serves as the RLS-predicate index, so no separate
 | `amount_source` | `recurring_amount_source` enum | `fixed` \| `predicted` — `predicted` is income-only |
 | `is_variable` | `boolean` | bill-only presentation marker (a utility bill); the stored amount is still what projection uses |
 | `cadence` | `recurring_cadence` enum | `weekly` \| `biweekly` \| `monthly` \| `annual` |
-| `anchor_date` | `date` | the single source of cadence alignment — weekday for weekly/biweekly, day-of-month for monthly, month+day for annual |
+| `anchor_date` | `date` | the cadence's phase — which week a biweekly rule falls in, which month-and-day an annual one lands on, and, absent a day set, the weekday or day-of-month everything else aligns to |
+| `days_of_month` | `smallint[]`, nullable | monthly only. Days the rule lands on each month; `[1, 15]` is semi-monthly. `-1` is month end. `null` ≠ `{}` — `null` means "the day `anchor_date` names", and the empty array is rejected |
+| `days_of_week` | `smallint[]`, nullable | weekly and biweekly only. ISO weekdays, `1` = Monday … `7` = Sunday. Biweekly keeps taking its phase from `anchor_date` |
 | `starts_on`, `ends_on` | `date`, nullable | inclusive window bounds; `null` = unbounded in that direction |
 
 Deleting the account a rule belongs to cascades to the rule, and from there to
 its occurrences — see [Deletion cascades](#deletion-cascades).
 
-**Cadence is enum + anchor, nothing else.** There is no `day_of_month`,
-`interval_count`, or `weekday` column. Every column that isn't added is a
-combination that can't contradict another (`weekly` with `day_of_month = 15`,
-for instance). This is deliberately not a general-purpose RRULE engine — "the
-2nd Tuesday of the month" is out of scope, by the issue's own words.
+**Cadence is a cycle plus the days inside it.** `cadence` and `anchor_date`
+give the cycle — every week, every other week counted from the anchor's week,
+every month, every twelfth month. `days_of_month` / `days_of_week` give the days
+within it, and are null in the ordinary case, where the anchor names the only
+day. There is still no `interval_count` or scalar `weekday` column, and a day
+set that does not belong to its cadence is a check violation rather than a
+combination the reader has to know to ignore — see [A set of days, not a longer
+enum](#a-set-of-days-not-a-longer-enum).
+
+This is still not a general-purpose RRULE engine — "the 2nd Tuesday of the
+month" is out of scope, by the issue's own words.
 
 ### `occurrences`
 
@@ -104,7 +112,7 @@ positive amount — see [One row, not two legs](#one-row-not-two-legs).
 | `cushion_cents` | `bigint` | default `60000` |
 | `monthly_discretionary_cents` | `bigint` | default `0` |
 | `discretionary_account_id` | `uuid`, nullable | composite FK → `accounts (user_id, id)`, `on delete set null (discretionary_account_id)` — deleting the account nulls only this column, never `user_id` |
-| `default_horizon_days` | `smallint` | `30` \| `60` \| `90`, matching the dashboard's horizon toggle |
+| `default_horizon_days` | `smallint` | default `30`; `check` is a sanity range, `1`–`730`. The dashboard's toggle offering 30/60/90 is a fact about that screen, not about the data — see [The horizon is not a menu](#the-horizon-is-not-a-menu) |
 
 `user_id` being the primary key is itself the RLS-predicate index — no
 separate `user_settings_user_id_idx`.
@@ -151,6 +159,9 @@ value is too.
 
 ### One row, not two legs
 
+**Settled 2026-08-20.** Issue #3 worded transfers as "two linked legs that net
+to zero"; this is the deliberate departure, confirmed rather than assumed.
+
 A transfer is one row — `from_account_id`, `to_account_id`, one positive
 `amount_cents` — rather than a parent row plus two signed leg rows. Net-zero
 is structural: there is exactly one amount, and the two legs are derived from
@@ -158,10 +169,81 @@ it at read time. "Exactly two legs that sum to zero" is not expressible as a
 table constraint on a two-row design without a deferred constraint or a
 trigger, and is violable between statements even then.
 
+What settled it is what a transfer *is* here. Runway never moves money — it
+does not connect to a bank, initiate an ACH, or make anything happen. A
+transfer is a **classification**: the user telling Runway that an outflow from
+one of their accounts and an inflow to another are the same event, so the
+projection must not read it as spending on one side or income on the other.
+That is a single fact about a single event, and a single fact belongs in a
+single row. Two rows would be two facts that can disagree.
+
+The classification has nowhere else to live today: there is no general
+transaction table to tag. `occurrences` are rule-derived bill and income rows,
+and a transfer is neither. So `transfers` being its own table *is* the tag, and
+keeping it separate is what keeps the projection balance-neutral by
+construction rather than by a filter somebody has to remember to apply.
+
 `domain/types.ts`'s `Transfer` made the same call, for the same reason — "the
-pair can never drift apart." If a leg ever needs independent state (one side
-cleared, the other still pending), that is reconciliation, and it is out of
-scope here.
+pair can never drift apart" — and `docs/design/transfers/spec.md` draws it that
+way: one list row per transfer, one `TransferLegs` from-swatch → arrow →
+to-swatch, one "Transfer" badge.
+
+If a leg ever needs independent state (one side cleared, the other still
+pending), that is reconciliation — and it arrives with imported bank
+transactions, which is when a general transaction table exists to hold it. Out
+of scope here.
+
+### A set of days, not a longer enum
+
+Issue #3's cadence list — weekly, biweekly, monthly, annual — has no room for a
+semi-monthly paycheck, and semi-monthly is how a large share of people are
+actually paid. The 1st and the 15th is not a cadence the four values can
+express, and neither is the 5th and the 20th, or the 1st and month end.
+
+Adding `semimonthly` to the enum would fix exactly one of those. The next
+arrangement would be another enum value, another migration, another branch in
+the engine — and the enum would slowly become a list of the arrangements
+somebody happened to ask for.
+
+So the day set is data instead. `cadence` stays four values and describes the
+**cycle**; `days_of_month` / `days_of_week` describe the **days inside it**, and
+one rule covers every arrangement of them. `[1, 15]` is semi-monthly with no
+vocabulary for it, and `[5, 20]` needs nothing new at all.
+
+Three details make the column safe to read:
+
+- **`null` is not the empty set.** `null` means "the day `anchor_date` names",
+  which is the common case and keeps every existing rule correct without a
+  backfill. `{}` is rejected: it would mean "no days", which is not a rule.
+  The check uses `cardinality`, not `array_length` — `array_length('{}', 1)` is
+  `null`, and a check constraint whose expression is `null` **passes**.
+- **Order and repetition are not data.** A `before insert or update` trigger
+  sorts and de-duplicates, so `{15,1}` and `{1,15,15}` are one stored value.
+  A check constraint cannot do this (no subqueries, and `unnest`/`array_agg` is
+  the only way to sort an array), hence a trigger.
+- **A day set belongs to its cadence.** `days_of_month` on a weekly rule is a
+  check violation, not a field the engine quietly ignores.
+
+`-1` means the last day of the month. `31` clamps to month end in the seven
+months that have fewer days, but "the 31st, clamped" and "month end, whenever
+that falls" are different intents, and only one of them survives being read back.
+Days that clamp onto the same date collapse: `[30, 31]` in February is one
+occurrence, which is also the only thing `occurrences`' unique key on
+`(rule_id, projected_date)` will store. `domain/cadence.ts` does the same, and
+`domain/cadence.test.ts` pins it.
+
+### The horizon is not a menu
+
+`default_horizon_days` is bounded at `1`–`730` rather than restricted to the
+`(30, 60, 90)` the dashboard toggle offers.
+
+Three enumerated values would encode one screen's current control into the
+database, where widening it — a 14-day view, a "rest of the year" view, a
+remembered custom horizon — costs a migration and a redeploy. The schema gains
+nothing for that price: nothing downstream is made safe by 45 being rejected,
+and the toggle constrains its own values in the UI regardless. The range that
+remains is a sanity bound, catching `0` and `32767` while staying out of the
+way of any horizon a person might actually want.
 
 ### The regeneration contract
 
@@ -225,6 +307,7 @@ The table `domain/*` code should consult when wiring a store to this schema:
 | `Account.balance` | `accounts.balance_cents` | |
 | `Account.isDiscretionarySource` | *derived* | `user_settings.discretionary_account_id = accounts.id` |
 | `RecurringItem.nextOccurrence` | `recurring_rules.anchor_date` | **names differ deliberately**: the domain expands in both directions from it, so it is an anchor, not a "next" |
+| `RecurringItem.daysOfMonth` / `.daysOfWeek` | `recurring_rules.days_of_month` / `.days_of_week` | same numbering on both sides, `-1` = month end, ISO weekdays. Optional in the domain, nullable here — both mean "the day the anchor names" |
 | `RecurringItem.depositHistory` | *derived* | `occurrences.actual_amount_cents where status = 'confirmed'`, ordered by `projected_date`. No array column — this is why occurrences are materialized |
 | `Transfer.date` | `transfers.occurs_on` | |
 | `Transfer.createdAt` | `transfers.created_at` | epoch ms at the mapping edge; only ever a same-day tie-breaker |

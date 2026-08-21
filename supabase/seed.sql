@@ -119,46 +119,56 @@ insert into public.user_settings (
 -- recurring_rules — every monthly anchor's day-of-month is <= 28, so
 -- generate_series' sticky month-stepping below agrees with
 -- domain/dates.ts addMonthsClamped, which is not sticky.
+--
+-- days_of_month is null on all but one rule, which is the point: null means
+-- "the day anchor_date names". The exception is the semi-monthly salary, the
+-- shape a large share of paychecks actually take — see docs/database/schema.md.
 insert into public.recurring_rules (
   id, user_id, account_id, name, kind, amount_cents, amount_source, is_variable,
-  cadence, anchor_date, starts_on, ends_on
+  cadence, anchor_date, starts_on, ends_on, days_of_month
 ) values
   ('20000000-0000-4000-8000-00000000000a', '00000000-0000-4000-8000-00000000000a',
    '10000000-0000-4000-8000-00000000000a', 'Car payment', 'bill', 31000, 'fixed', false,
-   'monthly', '2026-08-20', null, null),
+   'monthly', '2026-08-20', null, null, null),
   ('20000000-0000-4000-8001-00000000000a', '00000000-0000-4000-8000-00000000000a',
    '10000000-0000-4000-8000-00000000000a', 'Paycheck', 'income', 245000, 'predicted', false,
-   'biweekly', '2026-08-21', null, null),
+   'biweekly', '2026-08-21', null, null, null),
   ('20000000-0000-4000-8002-00000000000a', '00000000-0000-4000-8000-00000000000a',
    '10000000-0000-4000-8000-00000000000a', 'Car insurance', 'bill', 17500, 'fixed', false,
-   'monthly', '2026-08-24', null, null),
+   'monthly', '2026-08-24', null, null, null),
   ('20000000-0000-4000-8003-00000000000a', '00000000-0000-4000-8000-00000000000a',
    '10000000-0000-4000-8000-00000000000a', 'Electric & water', 'bill', 14000, 'fixed', true,
-   'monthly', '2026-08-28', null, null),
+   'monthly', '2026-08-28', null, null, null),
   ('20000000-0000-4000-8004-00000000000a', '00000000-0000-4000-8000-00000000000a',
    '10000000-0000-4000-8001-00000000000a', 'Side work', 'income', 40000, 'fixed', false,
-   'monthly', '2026-08-27', null, null),
+   'monthly', '2026-08-27', null, null, null),
   ('20000000-0000-4000-8005-00000000000a', '00000000-0000-4000-8000-00000000000a',
    '10000000-0000-4000-8000-00000000000a', 'Phone', 'bill', 5500, 'fixed', false,
-   'monthly', '2026-09-03', null, null),
+   'monthly', '2026-09-03', null, null, null),
   ('20000000-0000-4000-8006-00000000000a', '00000000-0000-4000-8000-00000000000a',
    '10000000-0000-4000-8001-00000000000a', 'Streaming', 'bill', 1800, 'fixed', false,
-   'monthly', '2026-09-08', null, null),
+   'monthly', '2026-09-08', null, null, null),
   -- The split pair: the August rule closes with ends_on, the September rule
   -- opens with starts_on == anchor_date. Apply-to-future is this split, never
   -- a bulk occurrence edit — see docs/database/schema.md.
   ('20000000-0000-4000-8007-00000000000a', '00000000-0000-4000-8000-00000000000a',
    '10000000-0000-4000-8000-00000000000a', 'Rent', 'bill', 165000, 'fixed', false,
-   'monthly', '2026-08-01', null, '2026-08-31'),
+   'monthly', '2026-08-01', null, '2026-08-31', null),
   ('20000000-0000-4000-8008-00000000000a', '00000000-0000-4000-8000-00000000000a',
    '10000000-0000-4000-8000-00000000000a', 'Rent', 'bill', 175000, 'fixed', false,
-   'monthly', '2026-09-01', '2026-09-01', null),
+   'monthly', '2026-09-01', '2026-09-01', null, null),
   ('20000000-0000-4000-8000-00000000000b', '00000000-0000-4000-8000-00000000000b',
    '10000000-0000-4000-8000-00000000000b', 'B Rent', 'bill', 90000, 'fixed', false,
-   'monthly', '2026-09-01', null, null),
+   'monthly', '2026-09-01', null, null, null),
   ('20000000-0000-4000-8001-00000000000b', '00000000-0000-4000-8000-00000000000b',
    '10000000-0000-4000-8000-00000000000b', 'B Paycheck', 'income', 120000, 'fixed', false,
-   'biweekly', '2026-08-14', null, null);
+   'biweekly', '2026-08-14', null, null, null),
+  -- Semi-monthly, the 1st and the 15th. Written unsorted on purpose: the
+  -- normalising trigger stores it as {1,15}, and `db:reset` failing to do that
+  -- is something worth noticing here rather than in a projection.
+  ('20000000-0000-4000-8009-00000000000a', '00000000-0000-4000-8000-00000000000a',
+   '10000000-0000-4000-8001-00000000000a', 'Salary', 'income', 118000, 'fixed', false,
+   'monthly', '2026-08-01', null, null, '{15,1}');
 
 -- occurrences — materialized from every rule above, from its effective start
 -- (anchor, or starts_on if later) through 2026-12-31.
@@ -175,7 +185,36 @@ cross join lateral generate_series(
     when 'monthly'  then interval '1 month'
     when 'annual'   then interval '1 year'
   end
-) as d;
+) as d
+where r.days_of_month is null;
+
+-- Day-set rules land on several days per month, so one series of month starts,
+-- expanded by the days themselves. `least(..., month end)` is the clamp
+-- domain/cadence.ts performs, and `distinct` collapses days that clamp onto the
+-- same date — `occurrences` is unique on (rule_id, projected_date), so a
+-- collision here would be an error rather than a duplicate row.
+insert into public.occurrences (user_id, account_id, rule_id, projected_date, projected_amount_cents)
+select distinct r.user_id, r.account_id, r.id, occurrence.occurs_on,
+       case when r.kind = 'income' then r.amount_cents else -r.amount_cents end
+from public.recurring_rules r
+cross join lateral generate_series(
+  date_trunc('month', greatest(r.anchor_date, coalesce(r.starts_on, r.anchor_date))),
+  date_trunc('month', least(coalesce(r.ends_on, date '2026-12-31'), date '2026-12-31')),
+  interval '1 month'
+) as month_start
+cross join lateral unnest(r.days_of_month) as wanted_day
+cross join lateral (
+  select case
+    when wanted_day = -1 then (month_start + interval '1 month - 1 day')::date
+    else least(
+      month_start::date + (wanted_day - 1),
+      (month_start + interval '1 month - 1 day')::date
+    )
+  end as occurs_on
+) as occurrence
+where r.days_of_month is not null
+  and occurrence.occurs_on >= greatest(r.anchor_date, coalesce(r.starts_on, r.anchor_date))
+  and occurrence.occurs_on <= least(coalesce(r.ends_on, date '2026-12-31'), date '2026-12-31');
 
 -- occurrence state demonstrations — one of each of the three states, on dates
 -- the generator above actually produced (verified by querying after

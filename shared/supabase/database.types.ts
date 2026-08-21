@@ -95,10 +95,10 @@ export type Database = {
           },
           {
             foreignKeyName: "occurrences_rule_fk"
-            columns: ["user_id", "rule_id"]
+            columns: ["user_id", "rule_id", "account_id"]
             isOneToOne: false
             referencedRelation: "recurring_rules"
-            referencedColumns: ["user_id", "id"]
+            referencedColumns: ["user_id", "id", "account_id"]
           },
         ]
       }
@@ -110,6 +110,8 @@ export type Database = {
           anchor_date: string
           cadence: Database["public"]["Enums"]["recurring_cadence"]
           created_at: string
+          days_of_month: number[] | null
+          days_of_week: number[] | null
           ends_on: string | null
           id: string
           is_variable: boolean
@@ -126,6 +128,8 @@ export type Database = {
           anchor_date: string
           cadence: Database["public"]["Enums"]["recurring_cadence"]
           created_at?: string
+          days_of_month?: number[] | null
+          days_of_week?: number[] | null
           ends_on?: string | null
           id?: string
           is_variable?: boolean
@@ -142,6 +146,8 @@ export type Database = {
           anchor_date?: string
           cadence?: Database["public"]["Enums"]["recurring_cadence"]
           created_at?: string
+          days_of_month?: number[] | null
+          days_of_week?: number[] | null
           ends_on?: string | null
           id?: string
           is_variable?: boolean

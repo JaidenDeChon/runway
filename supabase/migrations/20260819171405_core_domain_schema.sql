@@ -36,6 +36,40 @@ $$;
 
 revoke all on function private.set_updated_at() from public;
 
+-- ── day-set normalisation ────────────────────────────────────────────────────
+-- Sorts and de-duplicates recurring_rules.days_of_month / days_of_week so
+-- {15,1} and {1,15,15} are one stored value rather than three. Without this,
+-- equality on a rule's day set depends on the order somebody typed it in.
+--
+-- A check constraint cannot do this — checks may not contain subqueries, and
+-- unnest/array_agg is the only way to sort an array — hence a BEFORE trigger,
+-- which fires before the constraints and so leaves them looking at the
+-- canonical value. An empty array is left exactly as it came in, for the
+-- constraint to reject; normalising it to null here would turn "no days" into
+-- "the anchor's day" behind the caller's back.
+create or replace function private.normalize_recurring_rule_days()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if cardinality(new.days_of_month) > 0 then
+    new.days_of_month := (
+      select array_agg(distinct d order by d) from unnest(new.days_of_month) as d
+    );
+  end if;
+  if cardinality(new.days_of_week) > 0 then
+    new.days_of_week := (
+      select array_agg(distinct d order by d) from unnest(new.days_of_week) as d
+    );
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function private.normalize_recurring_rule_days() from public;
+
 -- ── accounts ─────────────────────────────────────────────────────────────────
 create table public.accounts (
   id uuid primary key default gen_random_uuid(),
@@ -70,10 +104,32 @@ create table public.recurring_rules (
   amount_source public.recurring_amount_source not null default 'fixed',
   is_variable boolean not null default false,
   cadence public.recurring_cadence not null,
-  -- The single source of cadence alignment: weekday for weekly/biweekly,
-  -- day-of-month for monthly, month+day for annual. No day_of_month or
-  -- interval column exists, so no combination can contradict another.
+  -- The cadence's phase: which week a biweekly rule falls in, which
+  -- month-and-day an annual one lands on, and — when no day set is given below
+  -- — the weekday or day-of-month everything else aligns to.
   anchor_date date not null,
+  -- Optional multi-day expansion. Null in the common case, and null is NOT the
+  -- empty set: it means "the single day anchor_date names". The empty array is
+  -- rejected rather than quietly normalised into null, so a caller that meant
+  -- to write days and wrote none hears about it.
+  --
+  -- days_of_month widens a monthly rule to several days per month. {1,15} is
+  -- semi-monthly, the shape most paychecks take; any other combination works
+  -- the same way. -1 is the last day of the month, so "the 1st and the last" is
+  -- sayable outright instead of being encoded as 31 and inferred. A day past
+  -- the end of a short month clamps to that month's last day, and a clamp
+  -- collision — {30,31} in February — is one occurrence, not two.
+  --
+  -- days_of_week widens a weekly or biweekly rule the same way, in ISO weekday
+  -- numbers: 1 = Monday through 7 = Sunday. Biweekly keeps taking its phase
+  -- from anchor_date — the week containing it, then every other week.
+  --
+  -- Deliberately not an enum of named cadences. Semi-monthly as its own enum
+  -- value would cover exactly one of these arrangements and make the next one
+  -- ("the 5th and the 20th") another migration; a set of days covers all of
+  -- them and needs no vocabulary. The engine mirrors this in domain/cadence.ts.
+  days_of_month smallint[],
+  days_of_week smallint[],
   -- Inclusive, nullable = unbounded. Apply-to-future closes a rule with
   -- ends_on and opens a new one at starts_on; occurrence rows are never
   -- bulk-updated.
@@ -93,7 +149,26 @@ create table public.recurring_rules (
   constraint recurring_rules_predicted_is_income_ck
     check (amount_source = 'fixed' or kind = 'income'),
   constraint recurring_rules_variable_is_bill_ck
-    check (not is_variable or kind = 'bill')
+    check (not is_variable or kind = 'bill'),
+  -- cardinality, not array_length: array_length('{}', 1) is null, and a check
+  -- constraint whose expression is null PASSES. The empty array would sail
+  -- straight through a `between` written against array_length.
+  constraint recurring_rules_days_of_month_ck check (
+    days_of_month is null or (
+      cadence = 'monthly'
+      and cardinality(days_of_month) between 1 and 32
+      and array_position(days_of_month, null) is null
+      and days_of_month <@ '{-1,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}'::smallint[]
+    )
+  ),
+  constraint recurring_rules_days_of_week_ck check (
+    days_of_week is null or (
+      cadence in ('weekly', 'biweekly')
+      and cardinality(days_of_week) between 1 and 7
+      and array_position(days_of_week, null) is null
+      and days_of_week <@ '{1,2,3,4,5,6,7}'::smallint[]
+    )
+  )
 );
 
 -- ── occurrences ──────────────────────────────────────────────────────────────
@@ -144,7 +219,10 @@ create table public.transfers (
   from_account_id uuid not null,
   to_account_id uuid not null,
   -- One positive amount, two derived legs. Net-zero is structural: there is no
-  -- second row that can drift. See docs/database/schema.md.
+  -- second row that can drift. A transfer here is a classification of a paired
+  -- outflow/inflow the user already made — Runway never initiates a movement —
+  -- so it is one fact and lives in one row. Settled, not provisional: see
+  -- "One row, not two legs" in docs/database/schema.md.
   amount_cents bigint not null check (amount_cents > 0),
   occurs_on date not null,
   created_at timestamptz not null default now(),
@@ -168,9 +246,12 @@ create table public.user_settings (
   monthly_discretionary_cents bigint not null default 0
     check (monthly_discretionary_cents >= 0),
   discretionary_account_id uuid,
-  -- The dashboard's horizon toggle offers exactly these three.
+  -- How far the dashboard projects by default. The toggle happens to offer
+  -- 30/60/90, but that is a fact about one screen, not about the data: pinning
+  -- the schema to those three would make "let me see two weeks" a migration for
+  -- no gain. The bound here is a sanity range, not a menu.
   default_horizon_days smallint not null default 30
-    check (default_horizon_days in (30, 60, 90)),
+    check (default_horizon_days between 1 and 730),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   -- The column list on SET NULL (PG 15+) is required: without it, deleting the
@@ -204,6 +285,10 @@ create trigger accounts_set_updated_at
 create trigger recurring_rules_set_updated_at
   before update on public.recurring_rules
   for each row execute function private.set_updated_at();
+-- Insert as well as update: a day set arrives unsorted the first time too.
+create trigger recurring_rules_normalize_days
+  before insert or update on public.recurring_rules
+  for each row execute function private.normalize_recurring_rule_days();
 create trigger occurrences_set_updated_at
   before update on public.occurrences
   for each row execute function private.set_updated_at();
