@@ -88,6 +88,34 @@ export function addMonthsClamped(date: IsoDate, months: number, anchorDay: numbe
   return fromUtcMillis(Date.UTC(year, month, Math.min(anchorDay, lastDayOfTarget)))
 }
 
+/**
+ * ISO weekday: 1 = Monday through 7 = Sunday.
+ *
+ * ISO numbering rather than JavaScript's 0 = Sunday, because it is what
+ * `recurring_rules.days_of_week` stores and what a person reading "1 and 4"
+ * expects to mean Monday and Thursday.
+ */
+export function isoWeekday(date: IsoDate): number {
+  return ((new Date(requireMillis(date)).getUTCDay() + 6) % 7) + 1
+}
+
+/** The Monday on or before `date`. The week a date belongs to, ISO-style. */
+export function startOfIsoWeek(date: IsoDate): IsoDate {
+  return addDays(date, 1 - isoWeekday(date))
+}
+
+/**
+ * A monotonically increasing month number — `year * 12 + month`.
+ *
+ * Only differences between two of these are meaningful. It exists so a caller
+ * can jump straight to the month a window starts in instead of stepping there
+ * one cycle at a time.
+ */
+export function monthIndex(date: IsoDate): number {
+  const base = new Date(requireMillis(date))
+  return base.getUTCFullYear() * 12 + base.getUTCMonth()
+}
+
 /** Every calendar day from `start` to `end`, inclusive. Empty if `end < start`. */
 export function eachDay(start: IsoDate, end: IsoDate): IsoDate[] {
   const span = daysBetween(start, end)

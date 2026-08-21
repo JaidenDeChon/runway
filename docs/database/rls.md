@@ -138,6 +138,7 @@ For every new table:
 - [ ] `user_id uuid not null references auth.users (id) on delete cascade`
 - [ ] `alter table ... enable row level security` written explicitly
 - [ ] `create index <table>_user_id_idx on ... (user_id)`
+- [ ] If `user_id` is the primary key, or is the leading column of a unique constraint the table already carries (`unique (user_id, id)`), that index *is* the RLS-predicate index. Do not create a second one.
 - [ ] `grant select, insert, update, delete ... to authenticated` — and nothing to `anon`
 - [ ] Four policies, each `to authenticated`, each using `(select auth.uid())`
 - [ ] `update` carries both `using` and `with check`

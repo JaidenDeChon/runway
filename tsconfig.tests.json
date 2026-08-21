@@ -20,10 +20,13 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    // Mirrors the `#shared` alias Nuxt provides at runtime and the one
-    // vitest.config.ts declares for this project.
+    // Mirrors the aliases Nuxt provides at runtime and the ones
+    // vitest.config.ts declares for this project. `~~` / `@@` are the project
+    // root, which is how a test reaches `domain/` — see seed-fidelity.test.ts.
     "paths": {
-      "#shared/*": ["./shared/*"]
+      "#shared/*": ["./shared/*"],
+      "~~/*": ["./*"],
+      "@@/*": ["./*"]
     }
   },
   "include": ["tests/**/*.ts"]

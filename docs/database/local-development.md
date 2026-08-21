@@ -38,9 +38,38 @@ point the Nuxt app at the hosted project.
 Studio is at <http://127.0.0.1:54323>. Sent email lands in Mailpit at
 <http://127.0.0.1:54324> — nothing is delivered externally.
 
+## The same stack runs in CI
+
+The `database` job in `.github/workflows/ci.yml` does on every pull request what
+you do locally: brings a stack up from nothing, applies every migration, loads
+the seed, and runs the suite. Three things about it are worth knowing.
+
+- **It runs `bun run test`, not `bun run test:rls`** — the full Vitest run,
+  every project. It is the only job with a database, so it is where any
+  integration or E2E project added later runs, with no workflow edit.
+- **It sets `RUNWAY_RLS_REQUIRE_STACK=1`.** Locally, the RLS project skips
+  itself when the stack is down so that someone without Docker still gets a
+  green `bun run test`. In CI that would be a green run proving nothing, so the
+  variable turns a missing stack into a hard failure. Set it locally too if you
+  want the same strictness: `RUNWAY_RLS_REQUIRE_STACK=1 bun run test`.
+- **It fails when `shared/supabase/database.types.ts` is stale**, by
+  regenerating it and diffing. The CLI version is pinned in the workflow to the
+  one named under [Prerequisites](#prerequisites) above, because `supabase gen
+  types` output moves between CLI versions. **Upgrade one and you must upgrade
+  the other**, in the same commit as the regenerated file.
+
+To reproduce the CI run locally, use its exact container set:
+
+```sh
+supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,mailpit,storage-api,realtime
+RUNWAY_RLS_REQUIRE_STACK=1 bun run test
+```
+
 ## Changing the schema
 
-Migrations are forward-only and applied exactly once, in filename order.
+Migrations are forward-only and applied exactly once, in filename order. For
+what the tables actually are — columns, invariants, the entity diagram — see
+[`schema.md`](./schema.md); the shape itself is `schema.md`, not this file.
 
 ```sh
 supabase migration new describe_the_change   # creates supabase/migrations/<ts>_describe_the_change.sql
@@ -85,6 +114,40 @@ minute to debug something".
 Issue #3 adds `accounts` / `recurring_rules` / `occurrences` / `transfers` /
 `user_settings` rows to the bottom of the seed, owned by these same two ids.
 Do not invent new users.
+
+### User A is a mirror. Put new fixtures on user B.
+
+**User A's scenario must match `domain/seed.ts` rule for rule.** That module is
+what every screen renders today, and the figures quoted in
+`docs/design/*/spec.md` were computed from it — so a rule that exists in the seed
+and not in the module means your local database and the screenshots are showing
+different households.
+
+New fixtures — a cadence nobody had seeded yet, a state worth demonstrating —
+therefore go on **user B**, who mirrors nothing and exists so the RLS suite has
+cross-user rows to probe. The one exception is documented in place: user A
+carries a `Rent` **split pair** (an August rule that ends, a September rule that
+starts) because apply-to-future has to be visible in real data. Its
+forward-looking half still matches the module.
+
+`tests/rls/seed-fidelity.test.ts` enforces all of this, and also checks the
+seed's occurrence generator against `domain/cadence.ts` date for date. Two things
+it exists to catch, both of which had already happened:
+
+- **Postgres month-stepping is sticky and the engine's is not.** `generate_series(d,
+  ..., interval '1 month')` from Jan 31 yields Feb 28 and then **Mar 28**, carrying
+  the clamp forward, where `addMonthsClamped` returns to Mar 31. The seed steps
+  over month starts and applies the day afterwards, which has no stickiness — so a
+  rule anchored on the 29th, 30th or 31st is now safe to seed.
+- **The stored monthly discretionary figure has to survive the round trip.**
+  `dailyFromMonthly` is `round(monthly * 12 / 365)`, so `$1,034.00` comes back as
+  `$33.99` where the fixture says `$34.00` — a cent that then compounds on every
+  day of the burndown. Only `103402`–`103431` land on `$34.00`.
+
+One thing the seed deliberately does **not** cover: a *short* scenario. Both users
+are comfortably covered at every horizon, so the shortfall UI has no seeded data
+behind it. Worth adding when that screen is built — see
+`docs/design/dashboard/spec.md` for the state it should reproduce.
 
 ## What is not connected to the hosted project
 

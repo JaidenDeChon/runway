@@ -7,8 +7,11 @@ import {
   daysBetween,
   eachDay,
   isIsoDate,
+  isoWeekday,
   maxDate,
   minDate,
+  monthIndex,
+  startOfIsoWeek,
 } from './dates'
 
 describe('isIsoDate', () => {
@@ -79,5 +82,26 @@ describe('comparison helpers', () => {
 
   it('reads the day of month', () => {
     expect(dayOfMonth('2026-08-20')).toBe(20)
+  })
+})
+
+describe('week and month indexing', () => {
+  it('numbers weekdays ISO-style, Monday through Sunday', () => {
+    expect(isoWeekday('2026-08-17')).toBe(1) // Monday
+    expect(isoWeekday('2026-08-20')).toBe(4) // Thursday
+    expect(isoWeekday('2026-08-23')).toBe(7) // Sunday — 7, not JavaScript's 0
+  })
+
+  it('takes the Monday on or before a date as its week', () => {
+    expect(startOfIsoWeek('2026-08-20')).toBe('2026-08-17')
+    expect(startOfIsoWeek('2026-08-17')).toBe('2026-08-17')
+    // Sunday belongs to the week that started six days earlier, not the next one.
+    expect(startOfIsoWeek('2026-08-23')).toBe('2026-08-17')
+  })
+
+  it('counts months monotonically across a year boundary', () => {
+    expect(monthIndex('2027-01-01') - monthIndex('2026-12-31')).toBe(1)
+    expect(monthIndex('2026-08-01') - monthIndex('2026-08-31')).toBe(0)
+    expect(monthIndex('2026-08-15') - monthIndex('2025-08-15')).toBe(12)
   })
 })
