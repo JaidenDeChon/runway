@@ -111,18 +111,30 @@ insert into public.accounts (id, user_id, name, color, balance_cents, balance_as
 insert into public.user_settings (
   user_id, cushion_cents, monthly_discretionary_cents, discretionary_account_id, default_horizon_days
 ) values
-  ('00000000-0000-4000-8000-00000000000a', 60000, 103400,
+  -- 103417, not a rounder 103400: domain/discretionary.ts dailyFromMonthly is
+  -- round(monthly * 12 / 365), and only 103402..103431 land on the $34.00/day
+  -- that domain/seed.ts and the design both use. 103400 gives $33.99, and that
+  -- cent compounds every single day of the burndown.
+  ('00000000-0000-4000-8000-00000000000a', 60000, 103417,
    '10000000-0000-4000-8000-00000000000a', 30),
   ('00000000-0000-4000-8000-00000000000b', 30000, 50000,
    '10000000-0000-4000-8000-00000000000b', 60);
 
--- recurring_rules — every monthly anchor's day-of-month is <= 28, so
--- generate_series' sticky month-stepping below agrees with
--- domain/dates.ts addMonthsClamped, which is not sticky.
+-- recurring_rules.
 --
--- days_of_month is null on all but one rule, which is the point: null means
--- "the day anchor_date names". The exception is the semi-monthly salary, the
--- shape a large share of paychecks actually take — see docs/database/schema.md.
+-- **User A's rules must mirror domain/seed.ts, rule for rule.** That module is
+-- what every screen renders today and what the figures quoted in
+-- docs/design/*/spec.md were computed from, so a rule that exists here and not
+-- there means the local database and the screenshots describe different
+-- households. New cadence fixtures therefore go on **user B**, who mirrors
+-- nothing and exists so the RLS suite has cross-user rows to probe.
+--
+-- The one deliberate exception is the Rent split: user A carries an August rule
+-- that ends and a September rule that starts, at a higher amount, because
+-- apply-to-future has to be visible somewhere. See docs/database/schema.md.
+--
+-- days_of_month is null everywhere but B's paycheck, which is the point: null
+-- means "the day anchor_date names".
 insert into public.recurring_rules (
   id, user_id, account_id, name, kind, amount_cents, amount_source, is_variable,
   cadence, anchor_date, starts_on, ends_on, days_of_month
@@ -141,7 +153,7 @@ insert into public.recurring_rules (
    'monthly', '2026-08-28', null, null, null),
   ('20000000-0000-4000-8004-00000000000a', '00000000-0000-4000-8000-00000000000a',
    '10000000-0000-4000-8001-00000000000a', 'Side work', 'income', 40000, 'fixed', false,
-   'monthly', '2026-08-27', null, null, null),
+   'monthly', '2026-08-31', null, null, null),
   ('20000000-0000-4000-8005-00000000000a', '00000000-0000-4000-8000-00000000000a',
    '10000000-0000-4000-8000-00000000000a', 'Phone', 'bill', 5500, 'fixed', false,
    'monthly', '2026-09-03', null, null, null),
@@ -151,27 +163,50 @@ insert into public.recurring_rules (
   -- The split pair: the August rule closes with ends_on, the September rule
   -- opens with starts_on == anchor_date. Apply-to-future is this split, never
   -- a bulk occurrence edit — see docs/database/schema.md.
+  --
+  -- The increase runs 1550 -> 1650, not 1650 -> 1750, so the *forward-looking*
+  -- rule is the one that matches domain/seed.ts and the -$1,650 that
+  -- docs/design/shortfall/spec.md quotes for Sep 1. A split has to put the
+  -- divergence on one side or the other; it belongs on the closed August rule,
+  -- which no screen and no spec figure reads.
   ('20000000-0000-4000-8007-00000000000a', '00000000-0000-4000-8000-00000000000a',
-   '10000000-0000-4000-8000-00000000000a', 'Rent', 'bill', 165000, 'fixed', false,
+   '10000000-0000-4000-8000-00000000000a', 'Rent', 'bill', 155000, 'fixed', false,
    'monthly', '2026-08-01', null, '2026-08-31', null),
   ('20000000-0000-4000-8008-00000000000a', '00000000-0000-4000-8000-00000000000a',
-   '10000000-0000-4000-8000-00000000000a', 'Rent', 'bill', 175000, 'fixed', false,
+   '10000000-0000-4000-8000-00000000000a', 'Rent', 'bill', 165000, 'fixed', false,
    'monthly', '2026-09-01', '2026-09-01', null, null),
   ('20000000-0000-4000-8000-00000000000b', '00000000-0000-4000-8000-00000000000b',
    '10000000-0000-4000-8000-00000000000b', 'B Rent', 'bill', 90000, 'fixed', false,
    'monthly', '2026-09-01', null, null, null),
+  -- Semi-monthly, the 1st and the 15th — the way a large share of people are
+  -- actually paid, and the fixture for days_of_month. It sits on user B rather
+  -- than user A precisely because user A may not drift from domain/seed.ts.
+  --
+  -- Written unsorted on purpose: the normalising trigger stores it as {1,15},
+  -- and `db:reset` failing to do that is worth noticing here rather than in a
+  -- projection three screens away.
   ('20000000-0000-4000-8001-00000000000b', '00000000-0000-4000-8000-00000000000b',
    '10000000-0000-4000-8000-00000000000b', 'B Paycheck', 'income', 120000, 'fixed', false,
-   'biweekly', '2026-08-14', null, null, null),
-  -- Semi-monthly, the 1st and the 15th. Written unsorted on purpose: the
-  -- normalising trigger stores it as {1,15}, and `db:reset` failing to do that
-  -- is something worth noticing here rather than in a projection.
-  ('20000000-0000-4000-8009-00000000000a', '00000000-0000-4000-8000-00000000000a',
-   '10000000-0000-4000-8001-00000000000a', 'Salary', 'income', 118000, 'fixed', false,
-   'monthly', '2026-08-01', null, null, '{15,1}');
+   'monthly', '2026-08-15', null, null, '{15,1}');
 
 -- occurrences — materialized from every rule above, from its effective start
 -- (anchor, or starts_on if later) through 2026-12-31.
+--
+-- Two passes, split by how the cadence steps, because one `generate_series`
+-- cannot do both correctly.
+--
+-- The month-aligned pass below steps over **month starts**, never over the
+-- occurrence dates themselves. That is not a stylistic choice. Postgres'
+-- `generate_series(d, ..., interval '1 month')` is sticky: from 2026-01-31 it
+-- yields Jan 31, Feb 28, then **Mar 28** — the February clamp carries forward
+-- and every later date is wrong. domain/dates.ts addMonthsClamped is not
+-- sticky, and gives Mar 31. Starting from the 1st of each month and applying
+-- the day afterwards removes the stickiness entirely, so a rule anchored on the
+-- 29th, 30th or 31st now generates exactly what the engine projects. Before
+-- this, the seed silently required every monthly anchor to be day <= 28.
+
+-- Weekly and biweekly: a fixed number of days, so stepping over the dates
+-- themselves is already correct.
 insert into public.occurrences (user_id, account_id, rule_id, projected_date, projected_amount_cents)
 select r.user_id, r.account_id, r.id, d::date,
        case when r.kind = 'income' then r.amount_cents else -r.amount_cents end
@@ -179,20 +214,19 @@ from public.recurring_rules r
 cross join lateral generate_series(
   greatest(r.anchor_date, coalesce(r.starts_on, r.anchor_date))::timestamp,
   least(coalesce(r.ends_on, date '2026-12-31'), date '2026-12-31')::timestamp,
-  case r.cadence
-    when 'weekly'   then interval '7 days'
-    when 'biweekly' then interval '14 days'
-    when 'monthly'  then interval '1 month'
-    when 'annual'   then interval '1 year'
-  end
+  case r.cadence when 'weekly' then interval '7 days' else interval '14 days' end
 ) as d
-where r.days_of_month is null;
+where r.cadence in ('weekly', 'biweekly')
+  -- No seeded rule carries a weekday set. This pass would ignore one, so it
+  -- refuses to guess instead: add the pass when a fixture needs it.
+  and r.days_of_week is null;
 
--- Day-set rules land on several days per month, so one series of month starts,
--- expanded by the days themselves. `least(..., month end)` is the clamp
--- domain/cadence.ts performs, and `distinct` collapses days that clamp onto the
--- same date — `occurrences` is unique on (rule_id, projected_date), so a
--- collision here would be an error rather than a duplicate row.
+-- Monthly and annual: month starts, then the days inside each month.
+-- `coalesce(days_of_month, the anchor's day)` is what makes a plain monthly
+-- rule and a day-set rule the same code path — a rule with no day set is just
+-- one with a single day. `least(..., month end)` is the clamp the engine
+-- performs, and `distinct` collapses days that clamp onto the same date, since
+-- `occurrences` is unique on (rule_id, projected_date).
 insert into public.occurrences (user_id, account_id, rule_id, projected_date, projected_amount_cents)
 select distinct r.user_id, r.account_id, r.id, occurrence.occurs_on,
        case when r.kind = 'income' then r.amount_cents else -r.amount_cents end
@@ -200,19 +234,21 @@ from public.recurring_rules r
 cross join lateral generate_series(
   date_trunc('month', greatest(r.anchor_date, coalesce(r.starts_on, r.anchor_date))),
   date_trunc('month', least(coalesce(r.ends_on, date '2026-12-31'), date '2026-12-31')),
-  interval '1 month'
-) as month_start
-cross join lateral unnest(r.days_of_month) as wanted_day
+  case r.cadence when 'annual' then interval '1 year' else interval '1 month' end
+) as cycle_start
+cross join lateral unnest(
+  coalesce(r.days_of_month, array[extract(day from r.anchor_date)::smallint])
+) as wanted_day
 cross join lateral (
   select case
-    when wanted_day = -1 then (month_start + interval '1 month - 1 day')::date
+    when wanted_day = -1 then (cycle_start + interval '1 month - 1 day')::date
     else least(
-      month_start::date + (wanted_day - 1),
-      (month_start + interval '1 month - 1 day')::date
+      cycle_start::date + (wanted_day - 1),
+      (cycle_start + interval '1 month - 1 day')::date
     )
   end as occurs_on
 ) as occurrence
-where r.days_of_month is not null
+where r.cadence in ('monthly', 'annual')
   and occurrence.occurs_on >= greatest(r.anchor_date, coalesce(r.starts_on, r.anchor_date))
   and occurrence.occurs_on <= least(coalesce(r.ends_on, date '2026-12-31'), date '2026-12-31');
 
@@ -236,8 +272,15 @@ where r.id = o.rule_id
   and r.name = 'Electric & water'
   and o.projected_date = '2026-08-28';
 
+-- -44960 is $449.60 against a $310 rule: one instance edited upward, the way a
+-- car payment picks up a late fee or an extra principal payment. It was -449600
+-- — $4,496, fourteen times the rule — which is a units slip, not a scenario:
+-- nothing in the comment above or in docs/design/ asks for a hit that size, and
+-- it dropped Checking through the floor on the very day the design calls the
+-- low point. A deliberately *short* scenario would be worth seeding, but it
+-- should say so and match docs/design/dashboard/spec.md; this row does not.
 update public.occurrences o
-set is_overridden = true, actual_amount_cents = -449600
+set is_overridden = true, actual_amount_cents = -44960
 from public.recurring_rules r
 where r.id = o.rule_id
   and r.user_id = '00000000-0000-4000-8000-00000000000a'

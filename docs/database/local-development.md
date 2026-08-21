@@ -115,6 +115,40 @@ Issue #3 adds `accounts` / `recurring_rules` / `occurrences` / `transfers` /
 `user_settings` rows to the bottom of the seed, owned by these same two ids.
 Do not invent new users.
 
+### User A is a mirror. Put new fixtures on user B.
+
+**User A's scenario must match `domain/seed.ts` rule for rule.** That module is
+what every screen renders today, and the figures quoted in
+`docs/design/*/spec.md` were computed from it — so a rule that exists in the seed
+and not in the module means your local database and the screenshots are showing
+different households.
+
+New fixtures — a cadence nobody had seeded yet, a state worth demonstrating —
+therefore go on **user B**, who mirrors nothing and exists so the RLS suite has
+cross-user rows to probe. The one exception is documented in place: user A
+carries a `Rent` **split pair** (an August rule that ends, a September rule that
+starts) because apply-to-future has to be visible in real data. Its
+forward-looking half still matches the module.
+
+`tests/rls/seed-fidelity.test.ts` enforces all of this, and also checks the
+seed's occurrence generator against `domain/cadence.ts` date for date. Two things
+it exists to catch, both of which had already happened:
+
+- **Postgres month-stepping is sticky and the engine's is not.** `generate_series(d,
+  ..., interval '1 month')` from Jan 31 yields Feb 28 and then **Mar 28**, carrying
+  the clamp forward, where `addMonthsClamped` returns to Mar 31. The seed steps
+  over month starts and applies the day afterwards, which has no stickiness — so a
+  rule anchored on the 29th, 30th or 31st is now safe to seed.
+- **The stored monthly discretionary figure has to survive the round trip.**
+  `dailyFromMonthly` is `round(monthly * 12 / 365)`, so `$1,034.00` comes back as
+  `$33.99` where the fixture says `$34.00` — a cent that then compounds on every
+  day of the burndown. Only `103402`–`103431` land on `$34.00`.
+
+One thing the seed deliberately does **not** cover: a *short* scenario. Both users
+are comfortably covered at every horizon, so the shortfall UI has no seeded data
+behind it. Worth adding when that screen is built — see
+`docs/design/dashboard/spec.md` for the state it should reproduce.
+
 ## What is not connected to the hosted project
 
 This is a deliberate property, not an accident:
