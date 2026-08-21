@@ -204,6 +204,57 @@ describe('transfers are balance-neutral', () => {
   })
 })
 
+describe('events between a stale reading and the window', () => {
+  const onceOn = (date: string, over: Partial<RecurringItem>): RecurringItem =>
+    item({ nextOccurrence: date, startsOn: date, endsOn: date, ...over })
+
+  it('applies them, even though none of them is drawn', () => {
+    // The reading is true as of 2026-05-01 and already contains that day. The
+    // window opens two weeks later, so everything in between is integrated
+    // across without ever appearing on the chart — and if it were dropped, the
+    // opening balance would be too high by exactly the events nobody can see.
+    const data_ = data({
+      accounts: [
+        account({
+          id: 'a',
+          balance: toMinorUnits(5000),
+          balanceAsOf: '2026-05-01',
+          isDiscretionarySource: true,
+        }),
+      ],
+      recurringItems: [
+        onceOn('2026-05-05', { id: 'rent', amount: toMinorUnits(1200) }),
+        onceOn('2026-05-10', { id: 'pay', kind: 'income', amount: toMinorUnits(3000) }),
+      ],
+      monthlyDiscretionarySpend: toMinorUnits(1000),
+    })
+    const result = project(data_, { start: '2026-05-15', end: '2026-05-16' })
+
+    // 14 drained days (the 2nd through the 15th) at 3226c — May has 31 days, so
+    // the remainder of 25 puts the 1st through the 25th one cent above the share.
+    const drained = 14 * 3226
+    expect(result.combined[0]?.balance).toBe(
+      toMinorUnits(5000) - drained - toMinorUnits(1200) + toMinorUnits(3000),
+    )
+    // Neither of them is an occurrence of this window; they moved the opening
+    // balance and left no other trace.
+    expect(result.occurrences).toEqual([])
+  })
+
+  it('would report a balance that is too high if they were dropped', () => {
+    // The same portfolio with the gap emptied. If the engine ever stopped
+    // integrating the gap, the test above would produce this number instead —
+    // which is the app telling someone they have $1,651.64 they do not have.
+    const withoutGap = project(
+      data({
+        accounts: [account({ id: 'a', balance: toMinorUnits(5000), balanceAsOf: '2026-05-01' })],
+      }),
+      { start: '2026-05-15', end: '2026-05-16' },
+    )
+    expect(withoutGap.combined[0]?.balance).toBe(toMinorUnits(5000))
+  })
+})
+
 describe('a stale reading breaks transfer neutrality, and that is correct', () => {
   it('moves the combined line when the two legs straddle their as-of readings', () => {
     // Checking was last read *today*, so today's activity is already inside its
@@ -294,6 +345,11 @@ describe('the low point, found in the same walk as the series', () => {
     const { combinedSummary } = project(dipping, { ...window, verdictFrom: '2026-08-16' })
     // The 17th and the 18th are both $1,200; the 17th wins.
     expect(combinedSummary.lowest?.date).toBe('2026-08-17')
+  })
+
+  it('treats a verdictFrom before the window as the window itself', () => {
+    const { combinedSummary } = project(dipping, { ...window, verdictFrom: '2020-01-01' })
+    expect(combinedSummary.lowest).toEqual({ date: SEED_TODAY, balance: toMinorUnits(1000) })
   })
 
   it('has no low point when verdictFrom leaves no future to search', () => {

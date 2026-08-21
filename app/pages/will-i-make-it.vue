@@ -53,6 +53,10 @@ const targetDate = computed<IsoDate>(() => {
 // the running minimum over `[today, target]` inclusive, not the closing balance
 // — a window can end comfortably up and still dip below the cushion in the
 // middle, and that dip is the thing this page exists to catch.
+// `answer.through` rather than `targetDate` reaches the card below: a target in
+// the past is raised to today by the engine, and labelling the answer with the
+// date that was asked for would caption a verdict about today with a day that
+// has already been and gone.
 const answer = computed(() =>
   shortfallThrough(data.value, {
     today: today.value,
@@ -83,7 +87,7 @@ const answer = computed(() =>
     <VerdictCard
       :verdict="answer"
       :today-balance="answer.startingBalance"
-      :target-date="targetDate"
+      :target-date="answer.through"
       :cushion="cushion"
       :today="today"
     />

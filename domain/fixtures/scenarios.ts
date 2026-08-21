@@ -98,6 +98,27 @@ const dailyDrain = (asOf: IsoDate): RunwayData =>
     monthlyDiscretionarySpend: 100_000,
   })
 
+/**
+ * A reading two weeks before the window, with a bill, income and a discretionary
+ * drain in between — the span the engine integrates across but nobody sees.
+ */
+const staleReading = data({
+  accounts: [
+    account({
+      id: 'checking',
+      balanceAsOf: '2026-05-01',
+      balance: 500_000,
+      isDiscretionarySource: true,
+    }),
+  ],
+  recurringItems: [
+    once('Rent', '2026-05-05', { amount: 120_000 }),
+    once('Paycheck', '2026-05-10', { kind: 'income', amount: 300_000 }),
+    once('Card', '2026-05-18', { amount: 40_000 }),
+  ],
+  monthlyDiscretionarySpend: 100_000,
+})
+
 const fiveAccounts: readonly Account[] = ['checking', 'savings', 'bills', 'travel', 'buffer'].map(
   (id, index) =>
     account({
@@ -202,6 +223,12 @@ export const GOLDEN_SCENARIOS: readonly GoldenScenario[] = [
     why: 'Nothing at all. Every series is empty and the combined line is a flat zero, not a crash.',
     data: data({}),
     window: { start: '2026-05-01', end: '2026-05-05' },
+  },
+  {
+    name: 'stale-reading-with-events',
+    why: 'A reading two weeks before the window, with a bill, income and a daily drain between the two. Every one of those has to be integrated across even though none of them is drawn.',
+    data: staleReading,
+    window: { start: '2026-05-15', end: '2026-05-20' },
   },
   {
     name: 'ninety-days-five-accounts',

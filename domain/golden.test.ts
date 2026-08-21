@@ -76,6 +76,16 @@ describe('what the fixtures are pinning down', () => {
     expect(sameDay.combined).toEqual([120_000, 120_000, 250_000, 250_000, 250_000])
   })
 
+  it('carries events that fall between a stale reading and the window', () => {
+    const stale = record('stale-reading-with-events')
+    // $5,000 read on May 1, then across the unseen fortnight: 14 drained days at
+    // 3226c, rent of $1,200 on the 5th and $3,000 of income on the 10th.
+    expect(stale.combined[0]).toBe(500_000 - 14 * 3226 - 120_000 + 300_000)
+    // Only the in-window event is an occurrence; the other two left no trace
+    // beyond the opening balance they moved.
+    expect(stale.occurrences).toEqual(['2026-05-18 Card -40000'])
+  })
+
   it('draws a flat line through a window with no events in it', () => {
     const empty = record('empty-window')
     expect(empty.occurrences).toEqual([])

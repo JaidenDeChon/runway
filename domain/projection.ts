@@ -81,8 +81,6 @@ export interface Projection {
   /** The combined line's low point and endpoint, from the walk that built it. */
   readonly combinedSummary: SeriesSummary
   readonly occurrences: readonly Occurrence[]
-  /** The first day the summaries consider. Resolved, never `undefined`. */
-  readonly verdictFrom: IsoDate
 }
 
 export interface ProjectionWindow {
@@ -108,9 +106,10 @@ export interface ProjectionWindow {
    * therefore different spans, and the window carries both rather than the
    * screen re-scanning the series with an offset.
    *
-   * Raised to `start` if it precedes it. A `verdictFrom` past `end` leaves every
-   * summary's `lowest` null rather than throwing — there is genuinely no future
-   * in that window to have a low point in.
+   * A `verdictFrom` before `start` is treated as `start`. One past `end` leaves
+   * every summary's `lowest` null rather than throwing — there is genuinely no
+   * future in that window to have a low point in, and that is worth being able
+   * to say.
    */
   readonly verdictFrom?: IsoDate
 }
@@ -270,14 +269,15 @@ export function project(data: RunwayData, window: ProjectionWindow): Projection 
   // Where the visible window begins inside the (possibly earlier-starting)
   // integration range. Both ranges end on the same day.
   const offset = Math.max(0, seriesDays.length - days.length)
-  // Raised to the window's start if it precedes it — judging days the caller
-  // did not ask to see is never what was meant — but deliberately *not* lowered
-  // to `end`: a verdictFrom past the end means there is no future left in this
-  // window, and that has to stay distinguishable from judging its last day.
-  const requestedFrom = window.verdictFrom ?? window.start
-  const verdictFrom = compareDates(requestedFrom, window.start) < 0 ? window.start : requestedFrom
-  // Days before this index are drawn but not judged. `days.length` when the
-  // window has no future in it at all, which leaves every `lowest` null.
+  // Days before this index are drawn but not judged.
+  //
+  // `Math.max(0, …)` is what raises a `verdictFrom` that precedes the window to
+  // its start — judging days the caller did not ask to see is never what was
+  // meant. It is deliberately not clamped at the other end: a `verdictFrom`
+  // past `end` yields `days.length`, no day is ever judged, and every `lowest`
+  // comes back null, which is how "no future left in this window" stays
+  // distinguishable from "judge its last day".
+  const verdictFrom = window.verdictFrom ?? window.start
   const verdictIndex =
     compareDates(verdictFrom, window.end) > 0
       ? days.length
@@ -324,7 +324,6 @@ export function project(data: RunwayData, window: ProjectionWindow): Projection 
     combined,
     combinedSummary: { lowest: combinedLowest, ending: combined.at(-1)?.balance ?? 0 },
     occurrences: occurrences.filter((occurrence) => visible.has(occurrence.date)),
-    verdictFrom,
   }
 }
 

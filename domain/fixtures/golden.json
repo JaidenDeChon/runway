@@ -226,6 +226,32 @@
     "byAccount": []
   },
   {
+    "name": "stale-reading-with-events",
+    "why": "A reading two weeks before the window, with a bill, income and a daily drain between the two. Every one of those has to be integrated across even though none of them is drawn.",
+    "window": {
+      "start": "2026-05-15",
+      "end": "2026-05-20",
+      "days": 6
+    },
+    "occurrences": ["2026-05-18 Card -40000"],
+    "combined": [634836, 631610, 628384, 585158, 581932, 578706],
+    "combinedLowest": {
+      "date": "2026-05-20",
+      "balance": 578706
+    },
+    "combinedEnding": 578706,
+    "byAccount": [
+      {
+        "accountId": "checking",
+        "ending": 578706,
+        "lowest": {
+          "date": "2026-05-20",
+          "balance": 578706
+        }
+      }
+    ]
+  },
+  {
     "name": "ninety-days-five-accounts",
     "why": "The performance scenario, pinned as a golden too so the benchmark cannot drift silently.",
     "window": {
