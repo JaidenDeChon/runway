@@ -203,6 +203,67 @@ describe('transfers are balance-neutral', () => {
   })
 })
 
+describe('a stale reading breaks transfer neutrality, and that is correct', () => {
+  it('moves the combined line when the two legs straddle their as-of readings', () => {
+    // Checking was last read *today*, so today's activity is already inside its
+    // $1,000. Savings was last read five days ago, so it is not inside its $500.
+    // A transfer between them today is therefore counted once, not twice — and
+    // the combined line legitimately drops by it.
+    //
+    // This is not the engine losing money. It is two readings taken on
+    // different days disagreeing about whether the transfer has happened yet,
+    // and the honest total is the one that believes the fresher reading.
+    const straddling = data({
+      accounts: [
+        account({ id: 'checking', balance: toMinorUnits(1000), balanceAsOf: SEED_TODAY }),
+        account({ id: 'savings', balance: toMinorUnits(500), balanceAsOf: '2026-08-10' }),
+      ],
+      transfers: [
+        {
+          id: 'x',
+          fromAccountId: 'savings',
+          toAccountId: 'checking',
+          amount: toMinorUnits(100),
+          date: SEED_TODAY,
+          createdAt: 1,
+        },
+      ],
+    })
+    const window = { start: SEED_TODAY, end: SEED_TODAY }
+    const without = project({ ...straddling, transfers: [] }, window)
+    const withIt = project(straddling, window)
+
+    expect(without.combined[0]?.balance).toBe(toMinorUnits(1500))
+    expect(withIt.combined[0]?.balance).toBe(toMinorUnits(1400))
+    // Checking already had it; savings had not yet paid it.
+    expect(withIt.byAccount[0]?.points[0]?.balance).toBe(toMinorUnits(1000))
+    expect(withIt.byAccount[1]?.points[0]?.balance).toBe(toMinorUnits(400))
+  })
+
+  it('is neutral again once the transfer post-dates both readings', () => {
+    const clean = data({
+      accounts: [
+        account({ id: 'checking', balance: toMinorUnits(1000) }),
+        account({ id: 'savings', balance: toMinorUnits(500) }),
+      ],
+      transfers: [
+        {
+          id: 'x',
+          fromAccountId: 'savings',
+          toAccountId: 'checking',
+          amount: toMinorUnits(100),
+          date: addDays(SEED_TODAY, 1),
+          createdAt: 1,
+        },
+      ],
+    })
+    const window = { start: SEED_TODAY, end: addDays(SEED_TODAY, 2) }
+    expect(project(clean, window).combined.map((point) => point.balance)).toEqual(
+      project({ ...clean, transfers: [] }, window).combined.map((point) => point.balance),
+    )
+  })
+})
+
 describe('the low point, found in the same walk as the series', () => {
   /** A one-off event: a monthly rule whose window is a single day. */
   const onceOn = (date: string, over: Partial<RecurringItem>): RecurringItem =>

@@ -4,6 +4,12 @@
   // typechecked — vitest strips types without checking them. Strict mode is
   // non-negotiable for a money app, and that has to include the tests that
   // prove the money is protected.
+  //
+  // `domain/**/*.test.ts` is here for the same reason and was missing for the
+  // same reason: tsconfig.domain.json deliberately *excludes* the tests so the
+  // engine compiles with `"types": []`, which left them checked by nothing at
+  // all. The engine's tests are where its invariants are written down; they get
+  // the same strictness the engine does.
   "compilerOptions": {
     "target": "ES2023",
     "lib": ["ES2023"],
@@ -29,5 +35,5 @@
       "@@/*": ["./*"]
     }
   },
-  "include": ["tests/**/*.ts"]
+  "include": ["tests/**/*.ts", "domain/**/*.test.ts"]
 }

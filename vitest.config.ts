@@ -11,10 +11,20 @@ export default defineConfig({
       {
         // Pure-node unit tests. No Nuxt boot, no DOM, no Vue plugin.
         // `app/lib/*` and `domain/*` must both remain importable under these terms.
+        //
+        // `tests/domain/` holds the tests *about* the domain that cannot live
+        // inside it: purity is checked by reading the source files, and
+        // `domain/**` is lint-banned from importing `node:*`. Everything that
+        // can live beside its module still does.
         test: {
           name: 'unit',
           environment: 'node',
-          include: ['app/lib/**/*.test.ts', 'app/utils/**/*.test.ts', 'domain/**/*.test.ts'],
+          include: [
+            'app/lib/**/*.test.ts',
+            'app/utils/**/*.test.ts',
+            'domain/**/*.test.ts',
+            'tests/domain/**/*.test.ts',
+          ],
         },
         resolve: {
           // Mirrors Nuxt's aliases so `@/lib/...` resolves the same way it does at runtime.
