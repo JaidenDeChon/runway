@@ -5,6 +5,7 @@ import {
   compareDates,
   dayOfMonth,
   daysBetween,
+  daysInMonth,
   eachDay,
   isIsoDate,
   isoWeekday,
@@ -12,6 +13,7 @@ import {
   minDate,
   monthIndex,
   startOfIsoWeek,
+  todayIn,
 } from './dates'
 
 describe('isIsoDate', () => {
@@ -103,5 +105,66 @@ describe('week and month indexing', () => {
     expect(monthIndex('2027-01-01') - monthIndex('2026-12-31')).toBe(1)
     expect(monthIndex('2026-08-01') - monthIndex('2026-08-31')).toBe(0)
     expect(monthIndex('2026-08-15') - monthIndex('2025-08-15')).toBe(12)
+  })
+})
+
+describe('daysInMonth', () => {
+  it('knows the ordinary month lengths', () => {
+    expect(daysInMonth('2026-01-15')).toBe(31)
+    expect(daysInMonth('2026-04-30')).toBe(30)
+    expect(daysInMonth('2026-08-01')).toBe(31)
+  })
+
+  it('knows February in a leap year and out of one', () => {
+    expect(daysInMonth('2024-02-10')).toBe(29)
+    expect(daysInMonth('2026-02-10')).toBe(28)
+    // 2100 is divisible by 4 and still not a leap year.
+    expect(daysInMonth('2100-02-10')).toBe(28)
+  })
+})
+
+describe('todayIn', () => {
+  it('is still yesterday in a zone far enough west', () => {
+    // 02:00Z on the 20th is 19:00 on the 19th in Los Angeles.
+    const instant = Date.UTC(2026, 7, 20, 2, 0, 0)
+    expect(todayIn('UTC', instant)).toBe('2026-08-20')
+    expect(todayIn('America/Los_Angeles', instant)).toBe('2026-08-19')
+  })
+
+  it('is already tomorrow in a zone far enough east', () => {
+    // 23:00Z on the 20th is 08:00 on the 21st in Tokyo.
+    const instant = Date.UTC(2026, 7, 20, 23, 0, 0)
+    expect(todayIn('UTC', instant)).toBe('2026-08-20')
+    expect(todayIn('Asia/Tokyo', instant)).toBe('2026-08-21')
+  })
+
+  it('disagrees between zones at the same instant, which is the whole point', () => {
+    // The two ends of the offset range are 25 hours apart, so they are never on
+    // the same calendar day, whatever instant you pick.
+    const instant = Date.UTC(2026, 7, 20, 2, 0, 0)
+    expect(todayIn('Pacific/Kiritimati', instant)).not.toBe(todayIn('Pacific/Midway', instant))
+  })
+
+  it('zero-pads to a parseable ISO date', () => {
+    const date = todayIn('America/New_York', Date.UTC(2026, 0, 5, 17, 0, 0))
+    expect(date).toBe('2026-01-05')
+    expect(isIsoDate(date)).toBe(true)
+  })
+
+  it('is stable across the spring-forward instant', () => {
+    // US DST starts 2026-03-08 at 02:00 local. 09:00Z is 04:00 EDT, after the
+    // jump; the calendar day is unchanged by the hour that went missing.
+    expect(todayIn('America/New_York', Date.UTC(2026, 2, 8, 9, 0, 0))).toBe('2026-03-08')
+    expect(todayIn('America/New_York', Date.UTC(2026, 2, 8, 6, 0, 0))).toBe('2026-03-08')
+  })
+
+  it('is stable across the fall-back instant', () => {
+    // US DST ends 2026-11-01 at 02:00 local, so 01:30 local happens twice.
+    expect(todayIn('America/New_York', Date.UTC(2026, 10, 1, 5, 30, 0))).toBe('2026-11-01')
+    expect(todayIn('America/New_York', Date.UTC(2026, 10, 1, 6, 30, 0))).toBe('2026-11-01')
+  })
+
+  it('refuses an unknown zone rather than guessing', () => {
+    expect(() => todayIn('Mars/Olympus_Mons', Date.UTC(2026, 7, 20))).toThrow(RangeError)
   })
 })

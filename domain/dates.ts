@@ -124,3 +124,57 @@ export function eachDay(start: IsoDate, end: IsoDate): IsoDate[] {
   for (let offset = 0; offset <= span; offset++) days.push(addDays(start, offset))
   return days
 }
+
+/** How many days the month containing `date` has. 28–31; 29 in a leap February. */
+export function daysInMonth(date: IsoDate): number {
+  const base = new Date(requireMillis(date))
+  return new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + 1, 0)).getUTCDate()
+}
+
+/**
+ * Formatters are cached because constructing an `Intl.DateTimeFormat` is the
+ * expensive part, and `todayIn` is called on every render of every screen that
+ * shows a date.
+ */
+const zonedDateFormatters = new Map<string, Intl.DateTimeFormat>()
+
+function zonedDateFormatter(timeZone: string): Intl.DateTimeFormat {
+  const cached = zonedDateFormatters.get(timeZone)
+  if (cached) return cached
+  // Throws `RangeError` on an unknown zone, which is the right outcome: a
+  // silently-wrong "today" would move every projection by a day.
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  zonedDateFormatters.set(timeZone, formatter)
+  return formatter
+}
+
+/**
+ * The calendar date it is at instant `at` in IANA zone `timeZone`.
+ *
+ * This is the **only** function in the domain where a timezone means anything,
+ * and it is the seam the issue calls "injectable timezone". Everything
+ * downstream reasons in whole calendar days, which are zone-independent by
+ * construction — a bill due on the 20th is due on the 20th everywhere. The one
+ * question a zone actually answers is which day "today" is, and answering it
+ * wrong shifts an entire projection by a day: at 2026-08-20T02:00Z it is still
+ * the 19th in Los Angeles and already the 21st in Tokyo.
+ *
+ * `at` is a required epoch-milliseconds argument and has no default. The domain
+ * never reads the system clock; the caller supplies the instant.
+ */
+export function todayIn(timeZone: string, at: number): IsoDate {
+  let year = ''
+  let month = ''
+  let day = ''
+  for (const part of zonedDateFormatter(timeZone).formatToParts(new Date(at))) {
+    if (part.type === 'year') year = part.value
+    else if (part.type === 'month') month = part.value
+    else if (part.type === 'day') day = part.value
+  }
+  return `${year.padStart(4, '0')}-${month}-${day}`
+}

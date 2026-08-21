@@ -41,6 +41,7 @@
     "@biomejs/biome": "2.5.8",
     "@tailwindcss/vite": "4.3.3",
     "@types/node": "22",
+    "fast-check": "4.9.0",
     "postgres": "3.4.9",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3",
