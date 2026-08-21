@@ -47,6 +47,28 @@ using `(select auth.uid())` — the subquery form, not bare `auth.uid()`.
 - `bun run test:rls` proves the posture holds. It needs the local stack up; a
   green `bun run test` with those tests skipped proves nothing.
 
+---
+
+## Projection engine
+
+`domain/` is the pure calculation engine every screen is a view onto. Read
+`docs/engine/README.md` before changing anything in it — the public API with
+worked examples, and the rules that are easy to get wrong.
+
+- **Pure and enforced.** No Nuxt, Supabase, network, filesystem or clock.
+  `today` is a parameter. `tests/domain/purity.test.ts` reads the source and
+  fails the build if that stops being true.
+- **Integer minor units everywhere.** Not one floating-point monetary value.
+- **Calendar days, never instants.** `YYYY-MM-DD`. `domain/dates.ts` `todayIn`
+  is the only function in the domain where a timezone means anything.
+- **One walk.** `project` computes the series, the running minimum and the
+  closing balance in a single pass; `evaluate` reads that summary. If you are
+  looping over points to find a minimum, the engine already found it.
+- **Golden fixtures are load-bearing.** `bun run test:golden:update` regenerates
+  `domain/fixtures/golden.json` — read the diff, and name the behaviour change
+  that caused it in the commit. If you cannot, it is a bug.
+- **The engine never logs.** A balance must not reach an application log.
+
 ## UI conventions
 
 - Vue 3 with `<script setup>` and TypeScript, strict mode

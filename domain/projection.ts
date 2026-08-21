@@ -246,7 +246,7 @@ function integrate(
  * along with each line's low point and closing balance.
  *
  * Everything a screen needs comes out of this one call. See
- * `docs/projection-engine.md` for worked examples.
+ * `docs/engine/README.md` for worked examples.
  */
 export function project(data: RunwayData, window: ProjectionWindow): Projection {
   const accounts = accountsFor(data, window.accountIds)

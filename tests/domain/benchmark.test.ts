@@ -13,7 +13,7 @@
  * afternoon gets deleted rather than investigated. What this catches is not a
  * 20% regression — it is somebody making the walk quadratic.
  *
- * See `docs/projection-engine.md` for the recorded figures.
+ * See `docs/engine/README.md` for the recorded figures.
  */
 
 import { describe, expect, it } from 'vitest'

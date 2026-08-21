@@ -24,7 +24,18 @@ runtime APIs.
 
 - `money.ts` — integer minor-units money helpers (issue #1's seed file, so this directory has at
   least one real module).
-- Issue #3 landed the rule window (`startsOn`/`endsOn`) and `annual` cadence on `RecurringItem`,
-  plus `discretionary.ts`, which converts the schema's stored monthly discretionary figure into
-  the flat daily rate `projection.ts` already drains.
-- Issue #4 (projection engine) and #9 (occurrence materialization) land here too.
+- `types.ts` — the data model. `dates.ts` — calendar-day arithmetic, including `todayIn`, the one
+  place a timezone means anything. `cadence.ts` — expanding a rule into the days it lands on.
+- `projection.ts` — the engine itself: `project`, `evaluate`, `shortfallThrough`, `upcomingBills`.
+- `discretionary.ts` — the monthly discretionary figure divided by the length of the month each day
+  falls in, with the remainder distributed so a month costs exactly what the user said it costs.
+- `overrides.ts` — occurrence-level edits. `prediction.ts` — income predicted from deposit history.
+  `accounts.ts`, `transfers.ts` — invariants over those collections. `seed.ts` — the synthetic
+  fixture the app boots with, mirrored by `supabase/seed.sql`.
+- `fixtures/` — the golden scenarios and their committed output. See `fixtures/README.md`.
+
+**Start at `docs/engine/README.md`**: the public API with worked examples, the rules that are easy
+to get wrong (as-of anchoring, transfer neutrality, `verdictFrom`), the performance budget, and how
+the whole thing is tested.
+
+Issue #9 (occurrence materialization) lands here too.
