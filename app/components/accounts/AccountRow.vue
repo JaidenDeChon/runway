@@ -7,14 +7,28 @@
  * chevron is decoration.
  */
 import { ChevronRight } from '@lucide/vue'
+import { computed } from 'vue'
 import AccountSwatch from '@/components/AccountSwatch.vue'
 import MoneyText from '@/components/MoneyText.vue'
 import { Badge } from '@/components/ui/badge'
 import { formatDateLong } from '@/lib/format'
 import type { Account } from '~~/domain/types'
 
-const props = defineProps<{ account: Account }>()
+const props = defineProps<{
+  account: Account
+  /**
+   * How far this account's reading is behind the most recent one, from
+   * `domain/accounts`'s `balanceReadings`. `0` when it is current.
+   */
+  daysBehind?: number
+}>()
 defineEmits<{ select: [] }>()
+
+const behindLabel = computed(() => {
+  const days = props.daysBehind ?? 0
+  if (days <= 0) return null
+  return days === 1 ? '1 day behind' : `${days} days behind`
+})
 </script>
 
 <template>
@@ -35,6 +49,10 @@ defineEmits<{ select: [] }>()
       </span>
       <span class="mt-0.5 block text-xs text-muted-foreground">
         Balance as of {{ formatDateLong(props.account.balanceAsOf) }}
+        <!-- Amber, not red: an out-of-step reading makes the forecast less
+             trustworthy, it does not make anything wrong. Same register as the
+             dashboard's alert and the "Tight" verdict. -->
+        <span v-if="behindLabel" class="text-chart-warning">· {{ behindLabel }}</span>
       </span>
     </span>
 

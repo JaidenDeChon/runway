@@ -22,7 +22,9 @@ import AppPage from '@/components/AppPage.vue'
 import BalanceForecastCard from '@/components/dashboard/BalanceForecastCard.vue'
 import DayDetailEditor from '@/components/dashboard/DayDetailEditor.vue'
 import LowestBalanceCard from '@/components/dashboard/LowestBalanceCard.vue'
+import StaleBalancesAlert from '@/components/dashboard/StaleBalancesAlert.vue'
 import UpcomingCard from '@/components/dashboard/UpcomingCard.vue'
+import UpdateBalancesEditor from '@/components/dashboard/UpdateBalancesEditor.vue'
 import { Card } from '@/components/ui/card'
 import { useChartDensity } from '@/composables/useChartDensity'
 import { useIsDesktop } from '@/composables/useIsDesktop'
@@ -30,6 +32,8 @@ import { useRunwayData } from '@/composables/useRunwayData'
 import { useToday } from '@/composables/useToday'
 import { accountColorVar } from '@/lib/account-colors'
 import type { ChartSeries, LegendEntry } from '@/lib/burndown'
+import type { BalanceReading } from '~~/domain/accounts'
+import { balanceReadings } from '~~/domain/accounts'
 import type { IsoDate } from '~~/domain/dates'
 import { addDays, compareDates, daysBetween } from '~~/domain/dates'
 import type { OccurrenceOverride } from '~~/domain/overrides'
@@ -45,7 +49,7 @@ const LOOKBACK_DAYS = 14
 /** How long the export holds the skeleton before swapping in the chart. */
 const LOAD_DELAY_MS = 550
 
-const { data, accounts, accountsById, safetyCushion, isEmpty } = useRunwayData()
+const { data, accounts, accountsById, safetyCushion, isEmpty, saveBalances } = useRunwayData()
 const today = useToday()
 const isDesktop = useIsDesktop()
 
@@ -87,6 +91,21 @@ const windowEnd = computed(() => addDays(today.value, horizonDays.value))
 const overrides = computed(() =>
   whatIf.value ? [...savedOverrides.value, ...whatIfOverrides.value] : savedOverrides.value,
 )
+
+/**
+ * Whether the accounts' readings describe one moment.
+ *
+ * The check is the domain's — a component must not decide what "stale" means —
+ * and it gates a warning above the chart rather than changing the forecast.
+ * The engine projects what it is given; this tells the user that what it was
+ * given disagrees with itself.
+ */
+const readings = computed(() => balanceReadings(accounts.value))
+const balancesOpen = ref(false)
+
+function recordBalances(readings: BalanceReading[]): void {
+  saveBalances(readings, today.value)
+}
 
 const projection = computed(() =>
   project(data.value, {
@@ -252,7 +271,16 @@ function saveOverride(override: OccurrenceOverride): void {
       </div>
     </Card>
 
-    <div v-else class="grid gap-3.5 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-5">
+    <template v-else>
+      <StaleBalancesAlert
+        v-if="!readings.isConsistent"
+        class="mb-3.5 lg:mb-5"
+        :readings="readings"
+        :accounts-by-id="accountsById"
+        @update="balancesOpen = true"
+      />
+
+      <div class="grid gap-3.5 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-5">
       <BalanceForecastCard
         :days="projection.days"
         :series="series"
@@ -278,15 +306,25 @@ function saveOverride(override: OccurrenceOverride): void {
 
       <LowestBalanceCard :verdict="verdict" :today="today" />
 
-      <UpcomingCard
-        class="lg:col-span-2"
-        :occurrences="upcoming"
-        :accounts-by-id="accountsById"
-        :horizon-days="horizonDays"
+        <UpcomingCard
+          class="lg:col-span-2"
+          :occurrences="upcoming"
+          :accounts-by-id="accountsById"
+          :horizon-days="horizonDays"
+          :today="today"
+          @select-day="openDay"
+        />
+      </div>
+
+      <UpdateBalancesEditor
+        :open="balancesOpen"
+        :accounts="accounts"
         :today="today"
-        @select-day="openDay"
+        :newest-on-file="readings.newest"
+        @update:open="(value) => (balancesOpen = value)"
+        @save="recordBalances"
       />
-    </div>
+    </template>
 
     <DayDetailEditor
       :open="editorOpen"

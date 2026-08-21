@@ -10,10 +10,13 @@
  * state and generates ids.
  */
 
+import type { BalanceReading } from '~~/domain/accounts'
 import {
+  applyBalanceReadings,
   deleteAccount as domainDeleteAccount,
   upsertAccount as domainUpsertAccount,
 } from '~~/domain/accounts'
+import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
 import { resolveAmount } from '~~/domain/prediction'
 import { createSeedData } from '~~/domain/seed'
@@ -60,6 +63,21 @@ export function useRunwayData() {
     const saved: Account = { ...account, id: account.id ?? createId('acct') }
     data.value = { ...data.value, accounts: domainUpsertAccount(data.value.accounts, saved) }
     return saved
+  }
+
+  /**
+   * Records observed balances against `asOf`, for every account reported.
+   *
+   * The one entry point for "here is what these accounts hold now", whether the
+   * numbers came from the user typing them or, later, from a bank connection.
+   * Both hand the same readings to the same domain function — an automatic
+   * source should be a different caller, not a second code path.
+   */
+  function saveBalances(readings: readonly BalanceReading[], asOf: IsoDate): void {
+    data.value = {
+      ...data.value,
+      accounts: applyBalanceReadings(data.value.accounts, readings, asOf),
+    }
   }
 
   /**
@@ -149,6 +167,7 @@ export function useRunwayData() {
     isEmpty,
     accountName,
     saveAccount,
+    saveBalances,
     removeAccount,
     saveRecurringItem,
     removeRecurringItem,

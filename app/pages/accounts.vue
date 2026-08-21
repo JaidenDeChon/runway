@@ -7,11 +7,22 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useRunwayData } from '@/composables/useRunwayData'
+import { balanceReadings } from '~~/domain/accounts'
 import type { Account } from '~~/domain/types'
 
 useHead({ title: 'Accounts - Runway' })
 
 const { accounts } = useRunwayData()
+
+// Which readings are out of step is the domain's call, not the list's. The
+// dashboard asks the same question of the same function; this screen is where
+// the answer is actionable, since it is where balances are edited.
+const daysBehindByAccount = computed(
+  () =>
+    new Map(
+      balanceReadings(accounts.value).stale.map((entry) => [entry.accountId, entry.daysBehind]),
+    ),
+)
 
 const editorOpen = ref(false)
 const editing = ref<Account | null>(null)
@@ -49,7 +60,11 @@ function openAdd(): void {
           :key="account.id"
           :class="index > 0 ? 'border-t' : ''"
         >
-          <AccountRow :account="account" @select="openEdit(account)" />
+          <AccountRow
+            :account="account"
+            :days-behind="daysBehindByAccount.get(account.id) ?? 0"
+            @select="openEdit(account)"
+          />
         </div>
       </template>
 
