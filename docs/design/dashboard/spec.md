@@ -339,6 +339,43 @@ the green/amber chart palette, and the monospace face.
 
 ---
 
+## Added since the export — awaiting design
+
+One piece of this screen is **not in the design** and is not derived from it. It is described here
+rather than only in a pull request so the next person reading this spec sees the screen that exists.
+
+### Stale-balance alert — `app/components/dashboard/StaleBalancesAlert.vue`
+
+An amber `Alert` above the chart, shown only when the accounts' `balanceAsOf` dates disagree. It
+names the accounts that are behind, says how far, and offers one **Update balances** button that
+opens an editor prefilled with *every* account.
+
+**Why it exists.** A stored balance is true as of its own day and already contains everything up to
+it, so a chart built from a reading taken today and one taken three weeks ago is adding a fresh
+number to a stale one. Recording a transfer between two such accounts moves the combined line —
+correctly, and bafflingly, because the transfer is inside one reading and not the other. The
+projection engine's property tests are what surfaced this; the design predates them.
+
+**What it borrows rather than invents.** The `Alert` primitive is already in the component
+inventory, and `--chart-warning` is the token the `Tight` verdict carries — amber rather than
+destructive on purpose: nothing is broken and nothing was lost, the forecast is just less
+trustworthy than it looks. No new token, no new component.
+
+**The three judgment calls, all open to a second opinion:**
+
+1. **The copy.** "Some balances are older than others", then which accounts and by how much.
+2. **The placement**, above the chart rather than inside the card or beside the legend. The
+   reasoning: everything below it is derived from the readings it is warning about.
+3. **Prefilling every account, not only the stale ones.** Re-typing only the stale balance leaves
+   the user asserting that a number they never checked is still true. The counter-argument — that
+   it asks for more work than the problem needs — is real, and this is the call most worth
+   revisiting.
+
+**To see it**, give two accounts different "Balance as of" dates on `/accounts`. No seeded household
+carries a stale reading, so it never appears on a fresh load.
+
+---
+
 ## Open questions
 
 1. **Chart palette mismatch.** The design's `--chart-1`/`--chart-2` are greens, `--chart-3`/`-4`
@@ -374,6 +411,18 @@ the green/amber chart palette, and the monospace face.
 13. **Discretionary spend** is a flat −$34/day applied to Checking with no UI anywhere on this
     screen — it is not in the legend, the tooltip, or the Upcoming list, yet it dominates the slope.
     Should it be visible/adjustable here?
+
+    **Resolved (issue #4), on the arithmetic half only.** The flat daily rate is an observation
+    about the prototype export, not a requirement. The engine holds the figure the user can
+    actually state — a *monthly* amount — and divides it by the length of the month each day falls
+    in, so a day in February costs more than a day in March and every month drains exactly what was
+    stated. A flat `monthly × 12 ÷ 365` under-drains February by ~10%, and under-draining is the
+    direction that matters: it reports a higher low point than reality, which is the app saying
+    "you're covered" about a month the user is not. Read the −$34/day as the prototype's rounding of
+    a ~$1,034/month figure, not as a spec of the daily rate. See `domain/discretionary.ts`.
+
+    **Still open:** whether the drain should be *visible* on this screen — in the legend, the
+    tooltip, or Upcoming — and whether it is adjustable from here. Nothing below has changed that.
 
 ---
 

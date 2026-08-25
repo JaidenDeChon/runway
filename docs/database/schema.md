@@ -246,6 +246,27 @@ and the toggle constrains its own values in the UI regardless. The range that
 remains is a sanity bound, catching `0` and `32767` while staying out of the
 way of any horizon a person might actually want.
 
+### The timezone override has no writer, on purpose
+
+`user_settings.time_zone` is readable, mapped, and resolved
+(`override ?? device ?? UTC`), and nothing in the app writes it. That is a
+decision, not an unfinished edge.
+
+Following the device is the right default for very nearly everybody: "what day
+is it" should track the phone in your hand, not a setting you changed once and
+forgot. The override exists for the minority it is wrong for — somebody working
+abroad who still budgets on home dates — and for a reason that outlives them:
+the answer has to be *storable* to survive the move from browser storage to an
+account, and a column added later is a migration plus a backfill, where a column
+carried from the start is free.
+
+So the writer waits for the settings screen, which does not exist yet.
+`useRunwayData().setTimeZoneOverride` is the seam it will call; it is exercised
+by tests and by nothing else, and that is the intended state until then. What
+must **not** happen in the meantime is the device-resolved zone being written
+into this column as a convenience — that freezes the first device the user ever
+opened the app on. See `app/composables/useTimeZone.ts`.
+
 ### The regeneration contract
 
 `projected_date` is written by the occurrence generator and never by a user.
