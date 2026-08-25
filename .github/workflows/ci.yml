@@ -35,11 +35,10 @@ jobs:
       - name: Typecheck (vue-tsc + domain tsc)
         run: bun run typecheck
 
-      # Unit only — this job has no database. Everything else Vitest knows how to
-      # run (RLS today, component and E2E when they land) runs in `database`
-      # below, against a live stack. Running the unit project in both jobs is a
-      # few seconds of duplication bought for fast feedback when a pure-logic
-      # test breaks.
+      # Unit only — this job has no database. The `integration` project needs a
+      # live stack and runs in `database` below; Playwright runs in `e2e`.
+      # Running the unit project in both jobs is a few seconds of duplication
+      # bought for fast feedback when a pure-logic test breaks.
       - name: Unit tests (Vitest)
         run: bun run test:unit
 
@@ -93,21 +92,80 @@ jobs:
             exit 1
           fi
 
-      # The whole suite, not `test:rls`: this is the one job with a database, so
-      # it is the one that must run every project Vitest has — including any
-      # component or E2E project added later, with no edit to this file.
+      # The whole suite, not `test:integration`: this is the one job with a
+      # database, so it is the one that must run every project Vitest has —
+      # including any component project added later, with no edit to this file.
       #
       # RUNWAY_RLS_REQUIRE_STACK makes a missing stack a hard error. Without it
-      # the RLS project skips itself and CI reports green for a database nothing
-      # checked. See tests/rls/global-setup.ts.
-      - name: Full test suite (unit + RLS, nothing skipped)
+      # the integration project skips itself and CI reports green for a database
+      # nothing checked. See tests/support/global-setup.ts.
+      - name: Full test suite (unit + integration, nothing skipped)
         env:
           RUNWAY_RLS_REQUIRE_STACK: '1'
         run: bun run test
 
-      - name: Stack logs
+      # Deliberately NOT `supabase status`: it prints the stack's keys and its
+      # database connection string, and the issue this suite was built for
+      # requires that CI logs carry neither. Container state is what is
+      # actually diagnostic when the stack fails to come up.
+      - name: Stack diagnostics
         if: failure()
-        run: supabase status || docker ps -a
+        run: docker ps -a --format 'table {{.Names}}\t{{.Status}}'
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.0
+
+      # Same pin as the `database` job — see the note there.
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.76.15
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Only chromium. Both Playwright projects (desktop and the 375px mobile
+      # viewport) are chromium-backed, so pulling firefox and webkit would be
+      # minutes of download per run for browsers nothing launches.
+      - name: Install the Playwright browser
+        run: bun run test:e2e:install
+
+      # The authenticated-session fixture signs in against the local GoTrue and
+      # seeds through PostgREST, so the stack has to be up even though the app
+      # does not read it yet. Same trimmed container set as the `database` job.
+      - name: Start the local Supabase stack
+        run: |
+          supabase start \
+            -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,mailpit,storage-api,realtime
+
+      # Playwright starts the app itself (`webServer` in playwright.config.ts).
+      - name: E2E tests
+        run: bun run test:e2e
+
+      # Traces, screenshots and video for whatever failed. These contain
+      # rendered page content — synthetic balances — which is why they are
+      # uploaded as a restricted build artifact and never echoed into the log.
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Stack diagnostics
+        if: failure()
+        run: docker ps -a --format 'table {{.Names}}\t{{.Status}}'
 
   security:
     name: Trivy vulnerability scan

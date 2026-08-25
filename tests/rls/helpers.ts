@@ -1,53 +1,34 @@
 /**
- * Shared plumbing for the live-database RLS suite.
+ * RLS-suite-specific helpers.
  *
- * Nothing here hardcodes a URL or a key. Credentials come from
- * `supabase status -o json` at run time, which means this suite cannot
- * accidentally be pointed at the hosted project: `supabase status` only ever
- * describes the local stack, and it fails outright when the stack is down.
- */
-
-import { execFileSync } from 'node:child_process'
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import postgres from 'postgres'
-import type { Database } from '#shared/supabase/database.types'
-
-export interface LocalStack {
-  readonly apiUrl: string
-  readonly dbUrl: string
-  readonly anonKey: string
-  readonly serviceRoleKey: string
-}
-
-/**
- * The seed's three synthetic users. Ids are pinned in `supabase/seed.sql`; these
- * constants must agree with that file. Passwords are local-only fixtures with
- * no value outside this machine.
- */
-export const USER_A = {
-  id: '00000000-0000-4000-8000-00000000000a',
-  email: 'user-a@runway.test',
-  password: 'runway-local-a',
-} as const
-
-export const USER_B = {
-  id: '00000000-0000-4000-8000-00000000000b',
-  email: 'user-b@runway.test',
-  password: 'runway-local-b',
-} as const
-
-/**
- * The short household — the one that runs out of money.
+ * The general plumbing — seed users, clients, the admin connection, the
+ * rolled-back transaction — moved to `tests/support/database.ts` when issue #5
+ * gave `tests/integration/` and `tests/e2e/` the same needs. It is re-exported
+ * here so the files in this directory read exactly as they did, and so there is
+ * still one obvious import for anything RLS.
  *
- * It mirrors `domain/seed.ts`'s `createShortSeedData()` rather than existing for
- * the isolation probes, which is why the cross-user tests still work in terms of
- * A and B. Sign in as this one to see the app's Short states against real rows.
+ * What stays here is what only the RLS suite has an opinion about: the fixture
+ * table, and the isolation assertion the negative control has to be able to
+ * make fail.
  */
-export const USER_C = {
-  id: '00000000-0000-4000-8000-00000000000c',
-  email: 'user-c@runway.test',
-  password: 'runway-local-c',
-} as const
+
+export {
+  adminSql,
+  anonClient,
+  asUserInRolledBackTx,
+  LOCAL_STACK,
+  type LocalStack,
+  type RunwayTestClient,
+  requireStack,
+  type SeedUser,
+  signedInClient,
+  USER_A,
+  USER_B,
+  USER_C,
+} from '../support/database'
+export { resolveStack } from '../support/stack'
+
+import { signedInClient, USER_A } from '../support/database'
 
 /**
  * The fixture table the suite exercises. Not a domain table — issue #3 kept it
@@ -58,110 +39,6 @@ export const USER_C = {
  */
 export const FIXTURE_TABLE = 'rls_fixture_items'
 
-let cached: LocalStack | null | undefined
-
-/**
- * Resolve the local stack's connection details, or `null` when it is not up.
- *
- * `global-setup.ts` populates the `RUNWAY_RLS_*` variables once so each test
- * file does not pay for its own `supabase status` subprocess; the direct call
- * is the fallback for when that did not happen (a single file run through the
- * IDE, for instance).
- */
-export function resolveStack(): LocalStack | null {
-  if (cached !== undefined) return cached
-
-  const fromEnv = process.env.RUNWAY_RLS_API_URL
-  if (fromEnv) {
-    cached = {
-      apiUrl: fromEnv,
-      dbUrl: process.env.RUNWAY_RLS_DB_URL as string,
-      anonKey: process.env.RUNWAY_RLS_ANON_KEY as string,
-      serviceRoleKey: process.env.RUNWAY_RLS_SERVICE_ROLE_KEY as string,
-    }
-    return cached
-  }
-
-  try {
-    const raw = execFileSync('supabase', ['status', '-o', 'json'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    })
-    const status = JSON.parse(raw) as Record<string, string>
-    // ANON_KEY is the legacy JWT; PUBLISHABLE_KEY is its replacement. Newer CLI
-    // versions may stop emitting the former, so accept either.
-    const anonKey = status.ANON_KEY || status.PUBLISHABLE_KEY
-    const serviceRoleKey = status.SERVICE_ROLE_KEY || status.SECRET_KEY
-    if (!status.API_URL || !status.DB_URL || !anonKey || !serviceRoleKey) {
-      cached = null
-      return cached
-    }
-    cached = {
-      apiUrl: status.API_URL,
-      dbUrl: status.DB_URL,
-      anonKey,
-      serviceRoleKey,
-    }
-  } catch {
-    cached = null
-  }
-  return cached
-}
-
-/**
- * Resolved once at module load. `null` when the local stack is not running,
- * which is what the test files branch on to skip themselves.
- */
-export const LOCAL_STACK = resolveStack()
-
-/**
- * The stack, narrowed to non-null.
- *
- * Safe to call anywhere inside a `describe.skipIf(LOCAL_STACK === null)` block:
- * the throw is unreachable there. It exists so no caller needs a non-null
- * assertion, and so a mistake surfaces as a readable message rather than
- * "cannot read properties of null".
- */
-export function requireStack(): LocalStack {
-  if (!LOCAL_STACK) {
-    throw new Error('local Supabase stack is not running — start it with `bun run db:start`')
-  }
-  return LOCAL_STACK
-}
-
-/** A client carrying no session at all — the unauthenticated public. */
-export function anonClient(): SupabaseClient<Database> {
-  const stack = requireStack()
-  return createClient<Database>(stack.apiUrl, stack.anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  })
-}
-
-/** A client authenticated as one of the seed users. */
-export async function signedInClient(
-  user: typeof USER_A | typeof USER_B,
-): Promise<SupabaseClient<Database>> {
-  const client = anonClient()
-  const { data, error } = await client.auth.signInWithPassword({
-    email: user.email,
-    password: user.password,
-  })
-  if (error) throw new Error(`could not sign in as ${user.email}: ${error.message}`)
-  if (data.user?.id !== user.id) {
-    throw new Error(`signed in as ${data.user?.id}, expected ${user.id} — is the seed stale?`)
-  }
-  return client
-}
-
-/**
- * A direct superuser connection, for asserting catalog state and for the
- * negative control's policy surgery. `postgres` holds BYPASSRLS, so this
- * deliberately sees everything — never use it to assert an isolation property.
- */
-export function adminSql() {
-  return postgres(requireStack().dbUrl, { max: 1, onnotice: () => {} })
-}
-
 /**
  * The suite's core isolation assertion, factored out so `negative-control`
  * can prove it actually fails when the policy is widened.
@@ -169,58 +46,6 @@ export function adminSql() {
  * Throws when user A can see any row it does not own. Returns the number of
  * rows A legitimately sees.
  */
-/**
- * Runs `fn` inside a transaction that is ALWAYS rolled back, with the
- * connection acting as `authenticated` for `userId` — the role and JWT claim
- * that RLS actually reads.
- *
- * This exists because a filtered write cannot test an UPDATE or DELETE policy.
- * PostgreSQL applies SELECT policies *in addition* to UPDATE/DELETE ones
- * whenever the statement references relation columns, so `PATCH ...?id=eq.X`
- * matches zero rows via the SELECT policy and the write policy is never
- * reached. Only an unfiltered statement reaches it — and an unfiltered
- * statement would clobber the caller's own rows, hence the rollback.
- *
- * `asAdmin()` drops back to the superuser inside the same transaction so a
- * test can assert what the write did without asking the mechanism under test.
- */
-const ROLLBACK = Symbol('rollback')
-
-export async function asUserInRolledBackTx<T>(
-  userId: string,
-  fn: (
-    tx: postgres.TransactionSql,
-    asAdmin: () => Promise<void>,
-    asAuthenticated: () => Promise<void>,
-  ) => Promise<T>,
-): Promise<T> {
-  const sql = adminSql()
-  let result: T | undefined
-  try {
-    await sql.begin(async (tx) => {
-      const asAuthenticated = async () => {
-        await tx`select set_config('request.jwt.claims', ${JSON.stringify({
-          sub: userId,
-          role: 'authenticated',
-        })}, true)`
-        await tx`select set_config('role', 'authenticated', true)`
-      }
-      const asAdmin = async () => {
-        await tx`select set_config('role', 'postgres', true)`
-      }
-      await asAuthenticated()
-      result = await fn(tx as postgres.TransactionSql, asAdmin, asAuthenticated)
-      // Nothing this helper does is allowed to survive.
-      throw ROLLBACK
-    })
-  } catch (err) {
-    if (err !== ROLLBACK) throw err
-  } finally {
-    await sql.end()
-  }
-  return result as T
-}
-
 export async function assertUserAOnlySeesOwnRows(): Promise<number> {
   const client = await signedInClient(USER_A)
   const { data, error } = await client.from(FIXTURE_TABLE).select('id, user_id')

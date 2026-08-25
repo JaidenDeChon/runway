@@ -21,8 +21,9 @@ nothing outside your laptop — do not treat them as secrets, and do not copy
 them into `.env`.
 
 **You do not need a `.env` file to work locally.** Nothing in the local
-workflow reads one: the CLI knows its own stack, and `bun run test:rls` reads
-credentials from `supabase status` at run time. `.env` matters only when you
+workflow reads one: the CLI knows its own stack, and the test suites read
+credentials from `supabase status` at run time — and refuse any endpoint that
+is not on loopback (`tests/support/stack.ts`). `.env` matters only when you
 point the Nuxt app at the hosted project.
 
 ## The commands
@@ -33,7 +34,8 @@ point the Nuxt app at the hosted project.
 | `bun run db:stop` | Take it down. State survives. |
 | `bun run db:reset` | Drop, re-apply every migration from zero, re-seed. Your reset button. |
 | `bun run db:types` | Regenerate `shared/supabase/database.types.ts` from the running local schema. |
-| `bun run test:rls` | Run the RLS suite against the live stack. |
+| `bun run test:integration` | Run the whole integration project against the live stack. |
+| `bun run test:rls` | Run just the RLS files — a subset of the above. |
 
 Studio is at <http://127.0.0.1:54323>. Sent email lands in Mailpit at
 <http://127.0.0.1:54324> — nothing is delivered externally.
@@ -44,12 +46,13 @@ The `database` job in `.github/workflows/ci.yml` does on every pull request what
 you do locally: brings a stack up from nothing, applies every migration, loads
 the seed, and runs the suite. Three things about it are worth knowing.
 
-- **It runs `bun run test`, not `bun run test:rls`** — the full Vitest run,
-  every project. It is the only job with a database, so it is where any
-  integration or E2E project added later runs, with no workflow edit.
-- **It sets `RUNWAY_RLS_REQUIRE_STACK=1`.** Locally, the RLS project skips
-  itself when the stack is down so that someone without Docker still gets a
-  green `bun run test`. In CI that would be a green run proving nothing, so the
+- **It runs `bun run test`, not `bun run test:integration`** — the full Vitest
+  run, every project. It is the only job with a database, so it is where any
+  project added later runs, with no workflow edit. (Playwright has its own
+  runner and its own `E2E (Playwright)` job — see `docs/testing.md`.)
+- **It sets `RUNWAY_RLS_REQUIRE_STACK=1`.** Locally, the integration project
+  skips itself when the stack is down so that someone without Docker still gets
+  a green `bun run test`. In CI that would be a green run proving nothing, so the
   variable turns a missing stack into a hard failure. Set it locally too if you
   want the same strictness: `RUNWAY_RLS_REQUIRE_STACK=1 bun run test`.
 - **It fails when `shared/supabase/database.types.ts` is stale**, by
@@ -76,7 +79,7 @@ supabase migration new describe_the_change   # creates supabase/migrations/<ts>_
 # write the SQL — follow docs/database/rls.md, it is not optional
 bun run db:reset                             # prove it applies from zero
 bun run db:types                             # refresh the generated types
-bun run test:rls                             # prove the new table is closed
+bun run test:integration                     # prove the new table is closed
 git add supabase/migrations shared/supabase/database.types.ts
 ```
 
@@ -107,7 +110,7 @@ which the app needs and neither of the others is:
 | User C | `00000000-0000-4000-8000-00000000000c` | `user-c@runway.test` / `runway-local-c` | mirrors `createShortSeedData()` — the short household |
 
 Ids are pinned constants so tests and future seed data can reference them
-directly. `tests/rls/helpers.ts` mirrors them — change one, change both.
+directly. `tests/support/database.ts` mirrors them — change one, change both.
 
 Everything in the seed is synthetic. No real balances, no real people, no real
 institution data, ever. That rule has no exceptions, including "just for a
@@ -193,8 +196,13 @@ an unmounted volume. Check `docker info`.
 **Port already in use.** Another Supabase project is running. `supabase stop
 --project-id <other>`, or `supabase stop --all`.
 
-**The RLS tests skip with a warning.** The stack is down. `bun run db:start`.
-A green `bun run test` with the RLS tests skipped proves nothing about RLS.
+**The database tests skip with a warning.** The stack is down. `bun run
+db:start`. A green `bun run test` with them skipped proves nothing.
+
+**A suite refuses to start, saying an endpoint "is not this machine".** That is
+`tests/support/stack.ts` doing its job: something — most likely a stale
+`RUNWAY_RLS_API_URL` in your shell — is pointing the tests at a database that is
+not local. Unset it. Do not weaken the guard.
 
 **PostgREST returns 404 `PGRST205` for a table you just created.** The schema
 cache is stale, or — far more likely — the table has no `GRANT`. Check

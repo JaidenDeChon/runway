@@ -120,3 +120,33 @@ worked examples, and the rules that are easy to get wrong.
 - Money is displayed from integer cents, formatted at the edge — never stored or passed as a float
 - Components perform no financial calculation. All projection arithmetic comes from the engine. Arithmetic on balances inside a component is a bug.
 - No balance values in logs, analytics events, or URL parameters
+
+---
+
+## Testing
+
+Full guide: `docs/testing.md`. What an agent must not get wrong:
+
+- **Four suites.** `bun run test:unit` (pure logic, needs nothing),
+  `bun run test:integration` (live local Supabase), `bun run test:rls` (a subset
+  of it), `bun run test:e2e` (Playwright against the running app). `bun run test`
+  runs the Vitest projects — unit and integration — and not E2E.
+- **Never point a suite at the hosted database.** Endpoints are resolved and
+  loopback-checked in `tests/support/stack.ts`, including values arriving through
+  `RUNWAY_RLS_*` environment variables. Do not add a second way to configure a
+  connection, and do not weaken that guard to make something run.
+- **A skipped suite is not a passing one.** The database tests skip themselves
+  when the stack is down so `bun run test` stays green without Docker; CI sets
+  `RUNWAY_RLS_REQUIRE_STACK=1` to ban that. If a test cannot run, make it fail
+  loudly — do not substitute a weaker assertion under the same test name.
+- **Seed fixtures go in through a user's own session**, never the admin
+  connection, so seeding exercises the INSERT policies and cannot create rows the
+  app could not. Build them from `domain/types.ts`; `tests/support/fixtures.ts`
+  is the helper.
+- **Never log a balance, a token or a connection string** — not in an assertion
+  message, not in CI output. Errors name hosts, ids and counts.
+- **Broken behaviour gets `test.fail()`, not deletion.** It runs, and the suite
+  goes red when someone fixes the bug and forgets to remove the annotation.
+  `test.fixme` is only for what cannot run at all yet.
+- Playwright traces and screenshots contain rendered balances. They are failure-
+  only CI artifacts; never commit them and never echo them into a log.

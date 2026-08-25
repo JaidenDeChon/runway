@@ -28,3 +28,10 @@ logs
 # silently pointing at the hosted project.
 supabase/.temp/
 supabase/.branches/
+
+# Playwright output. Reports and traces contain rendered page content — which
+# for this app means balances — so they are build artifacts, never commits.
+/test-results
+/playwright-report
+/blob-report
+/playwright/.cache

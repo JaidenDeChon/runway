@@ -35,5 +35,10 @@
       "@@/*": ["./*"]
     }
   },
-  "include": ["tests/**/*.ts", "domain/**/*.test.ts"]
+  "include": ["tests/**/*.ts", "domain/**/*.test.ts"],
+  // The Playwright suite runs in a browser and needs the DOM lib, which this
+  // config deliberately withholds so a node test cannot reach for `window`.
+  // It is typechecked by tsconfig.e2e.json instead — also part of
+  // `bun run typecheck`.
+  "exclude": ["tests/e2e/**"]
 }
