@@ -1,43 +1,21 @@
 version: 2
 updates:
+  # GitHub Actions only. npm moved to Renovate (.github/renovate.json).
+  #
+  # Dependabot does open npm PRs, but it cannot finish them: it edits
+  # package.json and leaves bun.lock untouched, so every one of them dies at
+  # `bun install --frozen-lockfile` before a single check runs. That is
+  # dependabot-core#11602, open upstream — not a misconfiguration here, and
+  # not something a setting on this file fixes. Four such PRs (#37-#40)
+  # were closed rather than merged.
+  #
+  # Renovate's bun manager regenerates the lockfile in the same commit, which
+  # is the whole reason for the split. Actions updates stay here because
+  # Dependabot handles them correctly and Renovate is scoped to the bun
+  # manager, so the two never contend for the same file.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     commit-message:
       prefix: 'chore(ci)'
-
-  # Dependabot does open PRs here, but it cannot finish them: it edits
-  # package.json and leaves bun.lock untouched, so every npm PR dies at
-  # `bun install --frozen-lockfile` before a single check runs. This is
-  # dependabot-core#11602, still open upstream — not a misconfiguration
-  # here, and not something a setting on this block fixes.
-  #
-  # Until it is fixed, an npm PR from Dependabot is a notification that a
-  # version moved, not a mergeable change. Land it by taking the bumps onto
-  # a branch, regenerating the lockfile with the pinned Bun
-  # (`bun install`, matching `packageManager` above), and letting the
-  # superseded PRs close themselves when it merges. The alternative is
-  # switching this one ecosystem to Renovate, which updates bun.lock today;
-  # that needs the Renovate GitHub App installed on the repo.
-  - package-ecosystem: npm
-    directory: /
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: 'chore(deps)'
-    ignore:
-      # @types/node tracks the runtime major, not the newest release: Netlify
-      # builds on NODE_VERSION 22.13.0 and `engines.node` is >=22.13.0. Typing
-      # against a newer major would let code that calls a Node 26-only API
-      # typecheck clean here and fail in production, so majors are declined
-      # deliberately. Raise the floor in netlify.toml and engines first, then
-      # this entry.
-      - dependency-name: '@types/node'
-        update-types: ['version-update:semver-major']
-    groups:
-      nuxt:
-        patterns: ['nuxt', '@nuxt/*', '@nuxtjs/*']
-      shadcn:
-        patterns: ['shadcn-vue', 'reka-ui', '@lucide/vue', 'tailwind*', '@tailwindcss/*']
