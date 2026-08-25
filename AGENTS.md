@@ -10,9 +10,13 @@ Runway answers one question: *given what is coming, when does my balance dip
 lowest, and does it clear my cushion?* Every screen is a view onto `domain/`'s
 projection of that.
 
-**Today it is a local-only app.** A user's data lives in their browser. There
-are no accounts, no sign-in, and nothing leaves the device. That is the current
-architecture, not a gap to be filled opportunistically.
+**Today the app runs on seeded data held in memory.** There are no accounts, no
+sign-in, and a reload starts over. That is a waypoint, not the architecture, and
+it is explicitly *not* a call for browser-local persistence: storing data in the
+browser was considered and dropped, because **authentication is the next feature
+to land** and a storage layer that sign-in would immediately replace is work
+done twice. Anything reaching for `localStorage` should be a Supabase call
+instead, once there is a session to make it under.
 
 **Supabase exists in this repo ahead of the app needing it**, deliberately. The
 schema, the deny-by-default RLS posture and the migrations are built and tested
@@ -24,11 +28,11 @@ What that means while writing code:
 - **The domain shapes map to the schema one-to-one, on purpose.** `RunwayData`
   is what `user_settings` and the user's rows will deserialize into. Add a field
   to one and you add it to the other, and to the mapping table in
-  `docs/database/schema.md`. A field that exists only in the browser is a field
-  that gets lost the day sign-in ships.
+  `docs/database/schema.md`. A field that exists only in memory is a field that
+  gets lost the day sign-in ships.
 - **`app/composables/useRunwayData.ts` is the seam.** It holds all state and
-  every mutation. Replacing browser storage with Supabase should mean changing
-  that file and nothing downstream of it, so screens must not reach around it.
+  every mutation. Putting Supabase behind sign-in should mean changing that file
+  and nothing downstream of it, so screens must not reach around it.
 - **Per-user isolation is already the model.** Every domain table carries
   `user_id`; do not write code that assumes a single user just because there is
   currently exactly one.
