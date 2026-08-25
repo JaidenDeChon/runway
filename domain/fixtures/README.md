@@ -31,8 +31,12 @@ these two fail.
 ## Regenerating
 
 ```sh
-bun run test:golden:update
+bun run test:golden:update && bun run lint:fix
 ```
+
+The formatter is not optional there: the script writes JSON, Biome decides how
+it wraps, and skipping the second half leaves `bun run lint` failing on a file
+whose *content* is correct.
 
 **Then read the diff.** A golden file regenerated without looking at what moved
 is not a safety net, it is a rubber stamp. Every changed number should be

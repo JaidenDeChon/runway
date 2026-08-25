@@ -158,6 +158,169 @@ export const seedTransfers: readonly Transfer[] = [
   },
 ] as const
 
+/**
+ * The *short* household — the one the shortfall screen exists for.
+ *
+ * `seedAccounts` above describe somebody who is comfortably covered at every
+ * horizon, which left every "Short" state in the app — the red verdict band, the
+ * shortfall figure, "you're $X short on the 18th" — with no data behind it. This
+ * is the other household, and it is the one most people arrive at this app
+ * already living in.
+ *
+ * Three properties are deliberate, and `seed.test.ts` holds each of them:
+ *
+ * 1. **It is short at every horizon**, not just at 90 days. The running minimum
+ *    can only fall as a window lengthens, so being short inside the first month
+ *    is what makes it short at 60 and 90 too — but the first dip is what the
+ *    dashboard's 30-day default has to show, so the dip is placed early.
+ * 2. **It never climbs out.** Income is $2,124/month against $2,176 of bills and
+ *    discretionary spending — a $52/month bleed. A household that recovers would
+ *    quietly stop being a short fixture a few months after this file was
+ *    written, and nobody would notice until a screenshot looked wrong.
+ * 3. **The dip precedes the paycheck that would cover it.** Rent lands on the
+ *    1st alongside a half-month's pay that does not meet it, so the window can
+ *    close higher than its low point — the exact shape `shortfallThrough` exists
+ *    to catch, and the one an endpoint-only reading gets wrong.
+ *
+ * The dates are anchored to `SEED_TODAY` like the fixture above, so the two
+ * households describe the same fortnight. `supabase/seed.sql` mirrors this one
+ * onto user C, rule for rule, the way user A mirrors the fixture above.
+ */
+export const shortSeedAccounts: readonly Account[] = [
+  {
+    id: 'acct-short-checking',
+    name: 'Checking',
+    // Read *on* payday, with that deposit already in it — which is the point:
+    // the money is there and it is already spoken for. The paycheck occurrence
+    // on this same day is therefore inside this reading and must not be added
+    // a second time; the engine's same-day rule is what makes that true, and
+    // this fixture is one of the places it is exercised.
+    balance: toMinorUnits(1104.28),
+    balanceAsOf: SEED_TODAY,
+    color: 'chart-2',
+    isDiscretionarySource: true,
+  },
+  {
+    id: 'acct-short-savings',
+    name: 'Savings',
+    balance: toMinorUnits(45),
+    balanceAsOf: SEED_TODAY,
+    color: 'chart-4',
+    isDiscretionarySource: false,
+  },
+] as const
+
+export const shortSeedRecurringItems: readonly RecurringItem[] = [
+  {
+    id: 'short-item-paycheck',
+    name: 'Paycheck',
+    kind: 'income',
+    // Semi-monthly — the 1st and the 15th — which is how a large share of
+    // hourly and salaried people are actually paid, and the reason the low
+    // point lands *before* money arrives rather than after it.
+    amount: toMinorUnits(1062),
+    cadence: 'monthly',
+    daysOfMonth: [1, 15],
+    accountId: 'acct-short-checking',
+    nextOccurrence: '2026-09-01',
+    amountSource: 'fixed',
+    depositHistory: [],
+    isVariable: false,
+  },
+  {
+    id: 'short-item-car-insurance',
+    name: 'Car insurance',
+    kind: 'bill',
+    amount: toMinorUnits(121),
+    cadence: 'monthly',
+    accountId: 'acct-short-checking',
+    nextOccurrence: '2026-09-06',
+    amountSource: 'fixed',
+    depositHistory: [],
+    isVariable: false,
+  },
+  {
+    id: 'short-item-phone',
+    name: 'Phone',
+    kind: 'bill',
+    amount: toMinorUnits(58),
+    cadence: 'monthly',
+    accountId: 'acct-short-checking',
+    nextOccurrence: '2026-09-12',
+    amountSource: 'fixed',
+    depositHistory: [],
+    isVariable: false,
+  },
+  {
+    id: 'short-item-electric-water',
+    name: 'Electric & water',
+    kind: 'bill',
+    amount: toMinorUnits(132),
+    cadence: 'monthly',
+    accountId: 'acct-short-checking',
+    nextOccurrence: '2026-08-22',
+    amountSource: 'fixed',
+    depositHistory: [],
+    isVariable: true,
+  },
+  {
+    id: 'short-item-card-minimum',
+    name: 'Card minimum',
+    kind: 'bill',
+    amount: toMinorUnits(95),
+    cadence: 'monthly',
+    accountId: 'acct-short-checking',
+    nextOccurrence: '2026-08-24',
+    amountSource: 'fixed',
+    depositHistory: [],
+    isVariable: false,
+  },
+  {
+    id: 'short-item-rent',
+    name: 'Rent',
+    kind: 'bill',
+    amount: toMinorUnits(1150),
+    cadence: 'monthly',
+    accountId: 'acct-short-checking',
+    nextOccurrence: '2026-09-01',
+    amountSource: 'fixed',
+    depositHistory: [],
+    isVariable: false,
+  },
+] as const
+
+/**
+ * One transfer, dated before both readings.
+ *
+ * It is deliberately *inside* the balances above rather than after them: a
+ * transfer that predates every `balanceAsOf` is already contained in both
+ * readings and must not be applied a second time. Somewhere in the fixtures
+ * there should be one of those, and a household scraping the bottom of its
+ * savings is the honest place for it.
+ */
+export const shortSeedTransfers: readonly Transfer[] = [
+  {
+    id: 'short-xfer-1',
+    fromAccountId: 'acct-short-savings',
+    toAccountId: 'acct-short-checking',
+    amount: toMinorUnits(75),
+    date: '2026-08-05',
+    createdAt: 1,
+  },
+] as const
+
+/** The short household. See `shortSeedAccounts` for what makes it short. */
+export function createShortSeedData(): RunwayData {
+  return {
+    accounts: [...shortSeedAccounts],
+    recurringItems: [...shortSeedRecurringItems],
+    transfers: [...shortSeedTransfers],
+    monthlyDiscretionarySpend: toMinorUnits(620),
+    safetyCushion: toMinorUnits(250),
+    timeZone: null,
+  }
+}
+
 export function createSeedData(): RunwayData {
   return {
     accounts: [...seedAccounts],
