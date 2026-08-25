@@ -20,7 +20,7 @@ export interface LocalStack {
 }
 
 /**
- * The seed's two synthetic users. Ids are pinned in `supabase/seed.sql`; these
+ * The seed's three synthetic users. Ids are pinned in `supabase/seed.sql`; these
  * constants must agree with that file. Passwords are local-only fixtures with
  * no value outside this machine.
  */
@@ -34,6 +34,19 @@ export const USER_B = {
   id: '00000000-0000-4000-8000-00000000000b',
   email: 'user-b@runway.test',
   password: 'runway-local-b',
+} as const
+
+/**
+ * The short household — the one that runs out of money.
+ *
+ * It mirrors `domain/seed.ts`'s `createShortSeedData()` rather than existing for
+ * the isolation probes, which is why the cross-user tests still work in terms of
+ * A and B. Sign in as this one to see the app's Short states against real rows.
+ */
+export const USER_C = {
+  id: '00000000-0000-4000-8000-00000000000c',
+  email: 'user-c@runway.test',
+  password: 'runway-local-c',
 } as const
 
 /**

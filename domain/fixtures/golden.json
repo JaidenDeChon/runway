@@ -252,6 +252,57 @@
     ]
   },
   {
+    "name": "short-household",
+    "why": "The seeded short household over the dashboard's own window. It is the only fixture whose verdict is Short, and every figure the Short state prints — the low point, its date, the closing balance above it — is pinned here so a change to the engine has to move them in a diff somebody reads.",
+    "window": {
+      "start": "2026-08-01",
+      "end": "2026-09-14",
+      "days": 45
+    },
+    "occurrences": [
+      "2026-08-01 Paycheck 106200",
+      "2026-08-01 Rent -115000",
+      "2026-08-06 Car insurance -12100",
+      "2026-08-12 Phone -5800",
+      "2026-08-15 Paycheck 106200",
+      "2026-08-22 Electric & water -13200",
+      "2026-08-24 Card minimum -9500",
+      "2026-09-01 Paycheck 106200",
+      "2026-09-01 Rent -115000",
+      "2026-09-06 Car insurance -12100",
+      "2026-09-12 Phone -5800"
+    ],
+    "combined": [
+      54628, 52628, 50628, 48628, 46628, 32528, 30528, 28528, 26528, 24528, 22528, 14728, 12728,
+      10728, 114928, 112928, 110928, 108928, 106928, 104928, 102928, 87728, 85728, 74228, 72228,
+      70228, 68228, 66228, 64228, 62228, 60228, 49361, 47294, 45227, 43160, 41093, 26926, 24859,
+      22792, 20725, 18658, 16591, 8724, 6657, 4590
+    ],
+    "combinedLowest": {
+      "date": "2026-09-14",
+      "balance": 4590
+    },
+    "combinedEnding": 4590,
+    "byAccount": [
+      {
+        "accountId": "acct-short-checking",
+        "ending": 90,
+        "lowest": {
+          "date": "2026-09-14",
+          "balance": 90
+        }
+      },
+      {
+        "accountId": "acct-short-savings",
+        "ending": 4500,
+        "lowest": {
+          "date": "2026-08-16",
+          "balance": 4500
+        }
+      }
+    ]
+  },
+  {
     "name": "ninety-days-five-accounts",
     "why": "The performance scenario, pinned as a golden too so the benchmark cannot drift silently.",
     "window": {

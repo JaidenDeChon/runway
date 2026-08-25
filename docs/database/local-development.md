@@ -96,13 +96,15 @@ excluded from Biome for that reason.
 **never** sent by `supabase db push` and must never be run against the hosted
 project.
 
-It creates two synthetic users, because proving user A cannot read user B's
-rows takes two users:
+It creates three synthetic users. Two of them are there because proving user A
+cannot read user B's rows takes two users; the third is the short household,
+which the app needs and neither of the others is:
 
-| | id | credentials |
-| --- | --- | --- |
-| User A | `00000000-0000-4000-8000-00000000000a` | `user-a@runway.test` / `runway-local-a` |
-| User B | `00000000-0000-4000-8000-00000000000b` | `user-b@runway.test` / `runway-local-b` |
+| | id | credentials | scenario |
+| --- | --- | --- | --- |
+| User A | `00000000-0000-4000-8000-00000000000a` | `user-a@runway.test` / `runway-local-a` | mirrors `createSeedData()` — comfortably covered |
+| User B | `00000000-0000-4000-8000-00000000000b` | `user-b@runway.test` / `runway-local-b` | mirrors nothing; cross-user rows for the RLS probes |
+| User C | `00000000-0000-4000-8000-00000000000c` | `user-c@runway.test` / `runway-local-c` | mirrors `createShortSeedData()` — the short household |
 
 Ids are pinned constants so tests and future seed data can reference them
 directly. `tests/rls/helpers.ts` mirrors them — change one, change both.
@@ -112,16 +114,17 @@ institution data, ever. That rule has no exceptions, including "just for a
 minute to debug something".
 
 Issue #3 adds `accounts` / `recurring_rules` / `occurrences` / `transfers` /
-`user_settings` rows to the bottom of the seed, owned by these same two ids.
-Do not invent new users.
+`user_settings` rows to the bottom of the seed, owned by these same ids. Do not
+invent new users: a fourth one is a fourth scenario to keep in step, and the
+three here already cover covered, short, and cross-user.
 
-### User A is a mirror. Put new fixtures on user B.
+### A and C are mirrors. Put new fixtures on user B.
 
-**User A's scenario must match `domain/seed.ts` rule for rule.** That module is
-what every screen renders today, and the figures quoted in
-`docs/design/*/spec.md` were computed from it — so a rule that exists in the seed
-and not in the module means your local database and the screenshots are showing
-different households.
+**User A's scenario must match `domain/seed.ts` rule for rule, and user C's must
+match `createShortSeedData()` the same way.** That module is what every screen
+renders today, and the figures quoted in `docs/design/*/spec.md` were computed
+from it — so a rule that exists in the seed and not in the module means your
+local database and the screenshots are showing different households.
 
 New fixtures — a cadence nobody had seeded yet, a state worth demonstrating —
 therefore go on **user B**, who mirrors nothing and exists so the RLS suite has
@@ -146,10 +149,25 @@ it exists to catch, both of which had already happened:
   365)` — and the seed carried an odd `103417` chosen to survive that rounding.
   Issue #4 removed the conversion; the odd number went with it.)
 
-One thing the seed deliberately does **not** cover: a *short* scenario. Both users
-are comfortably covered at every horizon, so the shortfall UI has no seeded data
-behind it. Worth adding when that screen is built — see
-`docs/design/dashboard/spec.md` for the state it should reproduce.
+### The short household
+
+User C exists because the seed used to cover only one of the app's two verdicts.
+Both of the other users are comfortably covered at every horizon, which left the
+Short band, the shortfall figure and the whole "you're $204 short on the 14th"
+half of the product with no seeded data behind it — and that is the half most
+people arrive at this app already living in.
+
+C mirrors `createShortSeedData()`: $1,104.28 in checking read on payday, rent on
+the 1st against semi-monthly pay that does not meet it, and $2,124 of monthly
+income against $2,176 of bills and discretionary spending. The $52/month bleed is
+deliberate. A household that recovers stops being a short fixture a few months
+after the day it was written, and nobody notices until a screenshot looks wrong.
+
+What makes it short is proven in `domain/seed.test.ts`, not here: the fixture is
+projected on every day for over a year and has to come back Short at 30, 60 and
+90 days each time, with the reported shortfall exact to the cent. This file's job
+is only to keep the database holding that same household —
+`tests/rls/seed-fidelity.test.ts` mirrors A and C alike.
 
 ## What is not connected to the hosted project
 

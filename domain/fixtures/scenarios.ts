@@ -13,9 +13,10 @@
  * them. Everything in this module is pure; see `fixtures/README.md`.
  */
 
-import type { IsoDate } from '../dates'
+import { addDays, type IsoDate } from '../dates'
 import type { ProjectionWindow } from '../projection'
 import { project } from '../projection'
+import { createShortSeedData, SEED_TODAY } from '../seed'
 import type { Account, RecurringItem, RunwayData, Transfer } from '../types'
 
 export interface GoldenScenario {
@@ -229,6 +230,16 @@ export const GOLDEN_SCENARIOS: readonly GoldenScenario[] = [
     why: 'A reading two weeks before the window, with a bill, income and a daily drain between the two. Every one of those has to be integrated across even though none of them is drawn.',
     data: staleReading,
     window: { start: '2026-05-15', end: '2026-05-20' },
+  },
+  {
+    name: 'short-household',
+    why: "The seeded short household over the dashboard's own window. It is the only fixture whose verdict is Short, and every figure the Short state prints — the low point, its date, the closing balance above it — is pinned here so a change to the engine has to move them in a diff somebody reads.",
+    data: createShortSeedData(),
+    window: {
+      start: addDays(SEED_TODAY, -14),
+      end: addDays(SEED_TODAY, 30),
+      verdictFrom: addDays(SEED_TODAY, 1),
+    },
   },
   {
     name: 'ninety-days-five-accounts',

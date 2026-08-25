@@ -6,6 +6,11 @@
  * real store means changing this file and nothing else. The mutation surface
  * below is deliberately the shape a persistence layer would need.
  *
+ * The store it is waiting for is **Supabase behind sign-in**, not the browser.
+ * Persisting to `localStorage` first was considered and dropped: authentication
+ * is the next feature, and a storage layer it would immediately replace is work
+ * done twice. Reloading loses your edits until then, deliberately.
+ *
  * All mutations delegate their *rules* to `domain/`; this composable only holds
  * state and generates ids.
  */
@@ -120,8 +125,13 @@ export function useRunwayData() {
     const saved: Transfer = {
       ...transfer,
       id: createId('xfer'),
-      // Monotonic within a session; only ever used to break same-day ties.
-      createdAt: data.value.transfers.length + 1,
+      // Epoch milliseconds, which is what `transfers.created_at` maps to (see
+      // the mapping table in docs/database/schema.md). It was the transfer
+      // count, which is monotonic only within one session: once rows are loaded
+      // from storage rather than built from scratch, a count restarts and two
+      // transfers can claim the same tie-breaker. Reading the clock is fine
+      // here and only here — the domain never does it.
+      createdAt: Date.now(),
     }
     data.value = { ...data.value, transfers: [...data.value.transfers, saved] }
     return saved

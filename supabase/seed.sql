@@ -5,29 +5,34 @@
 -- Everything here is synthetic. No real balances, no real people, no real
 -- institution data — ever. See docs/database/local-development.md.
 --
--- Two users exist because the RLS suite must prove that user A cannot read user
--- B's rows. Their ids are pinned constants so tests and future seed data can
--- reference them directly:
+-- Three users exist. Two of them are there because the RLS suite must prove
+-- that user A cannot read user B's rows; the third is a scenario the app needs
+-- and neither of the others provides. Their ids are pinned constants so tests
+-- and future seed data can reference them directly:
 --
 --   user A  00000000-0000-4000-8000-00000000000a  user-a@runway.test / runway-local-a
 --   user B  00000000-0000-4000-8000-00000000000b  user-b@runway.test / runway-local-b
+--   user C  00000000-0000-4000-8000-00000000000c  user-c@runway.test / runway-local-c
 --
 -- These passwords are local-only fixtures with no value outside this machine.
 --
 -- Issue #3 added accounts / recurring_rules / occurrences / transfers /
--- user_settings rows at the bottom of this file, owned by these same two ids.
+-- user_settings rows at the bottom of this file, owned by these same ids.
 -- User A mirrors domain/seed.ts's Checking/Savings scenario, including the
 -- Rent rule split (an August rule that ends, a September rule that starts) so
 -- the seed and the domain module tell the same story. User B is a smaller but
 -- non-empty scenario in every table, so the RLS suite has real cross-user rows
--- to probe. See docs/database/schema.md for the full shape.
+-- to probe. User C is the **short household** — the one that runs out of money
+-- — mirroring domain/seed.ts's `createShortSeedData()` the way A mirrors
+-- `createSeedData()`. See docs/database/schema.md for the full shape.
 
 -- Idempotent: makes the file safe to replay by hand. On a fresh reset this is a
 -- no-op. The FK cascade clears dependent rows.
 delete from auth.users
 where id in (
   '00000000-0000-4000-8000-00000000000a',
-  '00000000-0000-4000-8000-00000000000b'
+  '00000000-0000-4000-8000-00000000000b',
+  '00000000-0000-4000-8000-00000000000c'
 );
 
 -- The empty-string token columns are not decoration: gotrue scans them into Go
@@ -59,6 +64,15 @@ values
    now(), now(), now(),
    '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb,
    '', '', '', '', '', '',
+   false, false, false),
+  ('00000000-0000-0000-0000-000000000000',
+   '00000000-0000-4000-8000-00000000000c',
+   'authenticated', 'authenticated',
+   'user-c@runway.test',
+   extensions.crypt('runway-local-c', extensions.gen_salt('bf')),
+   now(), now(), now(),
+   '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb,
+   '', '', '', '', '', '',
    false, false, false);
 
 -- Without a matching identity row, password sign-in fails.
@@ -80,7 +94,8 @@ select
 from auth.users u
 where u.id in (
   '00000000-0000-4000-8000-00000000000a',
-  '00000000-0000-4000-8000-00000000000b'
+  '00000000-0000-4000-8000-00000000000b',
+  '00000000-0000-4000-8000-00000000000c'
 );
 
 -- Fixture rows for the RLS suite: two owned by A, one by B. The suite asserts
@@ -105,7 +120,15 @@ insert into public.accounts (id, user_id, name, color, balance_cents, balance_as
   ('10000000-0000-4000-8000-00000000000b', '00000000-0000-4000-8000-00000000000b',
    'B Checking', 'chart-2', 90000, '2026-08-15'),
   ('10000000-0000-4000-8001-00000000000b', '00000000-0000-4000-8000-00000000000b',
-   'B Savings', 'chart-4', 150000, '2026-08-15');
+   'B Savings', 'chart-4', 150000, '2026-08-15'),
+  -- User C: the short household. Mirrors domain/seed.ts `shortSeedAccounts`,
+  -- balance for balance — the reading is taken *on* payday with that deposit
+  -- already inside it, which is why the same-day paycheck occurrence must not
+  -- be applied twice.
+  ('10000000-0000-4000-8000-00000000000c', '00000000-0000-4000-8000-00000000000c',
+   'Checking', 'chart-2', 110428, '2026-08-15'),
+  ('10000000-0000-4000-8001-00000000000c', '00000000-0000-4000-8000-00000000000c',
+   'Savings', 'chart-4', 4500, '2026-08-15');
 
 -- user_settings — one row per user, discretionary source pinned to Checking.
 -- time_zone is null for user A because domain/seed.ts holds null, and A must
@@ -122,7 +145,12 @@ insert into public.user_settings (
   ('00000000-0000-4000-8000-00000000000a', 60000, 103400,
    '10000000-0000-4000-8000-00000000000a', 30, null),
   ('00000000-0000-4000-8000-00000000000b', 30000, 50000,
-   '10000000-0000-4000-8000-00000000000b', 60, 'America/Chicago');
+   '10000000-0000-4000-8000-00000000000b', 60, 'America/Chicago'),
+  -- User C mirrors createShortSeedData(): a $250 cushion and $620/month of
+  -- discretionary spending against $2,124 of income. time_zone is null for the
+  -- same reason A's is — the fixture follows the device.
+  ('00000000-0000-4000-8000-00000000000c', 25000, 62000,
+   '10000000-0000-4000-8000-00000000000c', 30, null);
 
 -- recurring_rules.
 --
@@ -191,7 +219,34 @@ insert into public.recurring_rules (
   -- projection three screens away.
   ('20000000-0000-4000-8001-00000000000b', '00000000-0000-4000-8000-00000000000b',
    '10000000-0000-4000-8000-00000000000b', 'B Paycheck', 'income', 120000, 'fixed', false,
-   'monthly', '2026-08-15', null, null, '{15,1}');
+   'monthly', '2026-08-15', null, null, '{15,1}'),
+  -- ── user C: the short household ──────────────────────────────────────────
+  -- Mirrors domain/seed.ts `shortSeedRecurringItems`, rule for rule, the way
+  -- user A mirrors `seedRecurringItems`. tests/rls/seed-fidelity.test.ts holds
+  -- the two together; drifting from the module here means the local database
+  -- stops being short while the unit tests still say it is.
+  --
+  -- Semi-monthly pay against a month-start rent is what puts the low point
+  -- *before* the money that would cover it — the shape the shortfall screen
+  -- exists to catch.
+  ('20000000-0000-4000-8000-00000000000c', '00000000-0000-4000-8000-00000000000c',
+   '10000000-0000-4000-8000-00000000000c', 'Paycheck', 'income', 106200, 'fixed', false,
+   'monthly', '2026-09-01', null, null, '{1,15}'),
+  ('20000000-0000-4000-8001-00000000000c', '00000000-0000-4000-8000-00000000000c',
+   '10000000-0000-4000-8000-00000000000c', 'Car insurance', 'bill', 12100, 'fixed', false,
+   'monthly', '2026-09-06', null, null, null),
+  ('20000000-0000-4000-8002-00000000000c', '00000000-0000-4000-8000-00000000000c',
+   '10000000-0000-4000-8000-00000000000c', 'Phone', 'bill', 5800, 'fixed', false,
+   'monthly', '2026-09-12', null, null, null),
+  ('20000000-0000-4000-8003-00000000000c', '00000000-0000-4000-8000-00000000000c',
+   '10000000-0000-4000-8000-00000000000c', 'Electric & water', 'bill', 13200, 'fixed', true,
+   'monthly', '2026-08-22', null, null, null),
+  ('20000000-0000-4000-8004-00000000000c', '00000000-0000-4000-8000-00000000000c',
+   '10000000-0000-4000-8000-00000000000c', 'Card minimum', 'bill', 9500, 'fixed', false,
+   'monthly', '2026-08-24', null, null, null),
+  ('20000000-0000-4000-8005-00000000000c', '00000000-0000-4000-8000-00000000000c',
+   '10000000-0000-4000-8000-00000000000c', 'Rent', 'bill', 115000, 'fixed', false,
+   'monthly', '2026-09-01', null, null, null);
 
 -- occurrences — materialized from every rule above, from its effective start
 -- (anchor, or starts_on if later) through 2026-12-31.
@@ -309,4 +364,10 @@ insert into public.transfers (id, user_id, from_account_id, to_account_id, amoun
    15000, '2026-07-18'),
   ('30000000-0000-4000-8000-00000000000b', '00000000-0000-4000-8000-00000000000b',
    '10000000-0000-4000-8000-00000000000b', '10000000-0000-4000-8001-00000000000b',
+   7500, '2026-08-05'),
+  -- User C's one transfer, dated before both balance readings and therefore
+  -- already inside them: savings raided to cover the month, which is what a
+  -- short household's transfers look like.
+  ('30000000-0000-4000-8000-00000000000c', '00000000-0000-4000-8000-00000000000c',
+   '10000000-0000-4000-8001-00000000000c', '10000000-0000-4000-8000-00000000000c',
    7500, '2026-08-05');
