@@ -1,7 +1,7 @@
 {
   "name": "runway",
   "dependencies": {
-    "@lucide/vue": "1.32.0",
+    "@lucide/vue": "1.33.0",
     "@nuxtjs/color-mode": "4.0.1",
     "@supabase/supabase-js": "2.112.3",
     "@vueuse/core": "14.4.0",
