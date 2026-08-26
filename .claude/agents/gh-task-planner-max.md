@@ -37,3 +37,19 @@ and what would have to be true for the choice to be wrong. Then the plan:
 Be concrete: real files, real names, real signatures. Where intent is
 genuinely underspecified by the issue, state the assumption and plan against
 it rather than deferring.
+
+## Preserve the plan before you return it
+
+Your return trip can be lost — a rate limit can end the parent's turn before it
+ever reads you, and your plan is the most expensive artifact in the pipeline.
+Write the finished plan to disk as your last action, then return it as well:
+
+```sh
+mkdir -p .claude/runway-runner/tasks/<issue>
+cat > .claude/runway-runner/tasks/<issue>/plan.md <<'PLAN'
+...the complete plan...
+PLAN
+```
+
+Write it once and complete. A half-written plan on disk is worse than none,
+because the agent that resumes will trust it.

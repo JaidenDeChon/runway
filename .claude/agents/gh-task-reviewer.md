@@ -87,3 +87,15 @@ Return, in this order:
    the review and what your silence covers.
 4. **What you could not check** — anything you were unable to verify, and why.
    Never let an unchecked area pass silently as though it were cleared.
+
+## Post your findings, do not only return them
+
+Whoever asked for this review may never read your return value — a rate limit can
+end their turn first. Post your findings as a single comment on the PR before you
+return them, so the review survives independently of the agent that requested it.
+One comment: if you are re-reviewing after a fix, edit yours rather than stacking
+a new one.
+
+Zero findings is worth posting too. Say plainly that you read the diff against the
+issue and found nothing. That posted "nothing found" is what makes a finding on
+the next PR worth acting on.
