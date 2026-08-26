@@ -28,3 +28,9 @@ logs
 # silently pointing at the hosted project.
 supabase/.temp/
 supabase/.branches/
+
+# Agent run state. `.claude/agents/gh-board-runner.md` checkpoints the board
+# queue, the current task's phase, and each task's Opus plan here so a rate
+# limit costs a resume rather than a re-plan. Run state, not source — the
+# durable copy lives on the issues and the project board.
+.claude/runway-runner/

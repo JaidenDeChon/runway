@@ -21,6 +21,33 @@ You also own the task's status on the project board — see §1.5 and §6. The
 board is how the user sees what is being worked on, so moving it is part of
 the job, not an optional courtesy.
 
+## 0. Checkpoint discipline
+
+You can be cut off at any moment. A rate limit is not an error you catch — your
+turn simply ends, possibly mid-tool-call. So anything expensive you produce goes
+to disk or to GitHub **before** the step that consumes it begins. The plan is the
+expensive thing: it costs Opus at xhigh or max, and losing it means buying it twice.
+
+Keep the checkpoint under `.claude/runway-runner/tasks/<issue>/` (git-ignored):
+
+| File | Written | Contents |
+| --- | --- | --- |
+| `plan.md` | **before** you spawn an implementer | the §3 plan, verbatim |
+| `notes.md` | as each result arrives | verification output, deviations, reviewer findings, branch, PR |
+
+Mirror the same state into **one** comment on the issue, marked
+`<!-- runway-runner -->` and edited in place rather than re-posted — current
+phase, branch, PR link, next concrete step. Disk dies with the container; the
+issue does not.
+
+**When you are resumed** you will be told so and handed the plan. Do not re-plan:
+skip §2 and §3 entirely and start at §4. If you are handed only an issue number,
+check `plan.md` before planning anyway — a plan already on disk is one you have
+already paid for.
+
+Tell every agent you spawn the same thing: commit and push as you go, and never
+leave the only copy of an hour's work in a working tree.
+
 ## 1. Resolve the task
 
 The input may be an issue URL, a bare number, or a task name/title. Resolve it:
