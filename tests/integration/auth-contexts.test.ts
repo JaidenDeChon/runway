@@ -56,14 +56,23 @@ describe.skipIf(LOCAL_STACK === null)('auth contexts', () => {
       const b = await secondUserContext()
 
       for (const table of DOMAIN_TABLES) {
-        const seenByA = await a.restSelect(table, 'id,user_id')
-        const seenByB = await b.restSelect(table, 'id,user_id')
-        expect(seenByA.status).toBe(200)
-        expect(seenByB.status).toBe(200)
+        // `user_id` rather than `id`: `user_settings` has no `id` column — its
+        // primary key is `user_id` — and ownership is the property under test
+        // anyway. Asking each side who owns what it can see is a stronger
+        // statement than comparing id sets, because it also fails when a table
+        // is empty for the wrong reason.
+        const seenByA = await a.restSelect(table, 'user_id')
+        const seenByB = await b.restSelect(table, 'user_id')
+        expect({ table, status: seenByA.status }).toEqual({ table, status: 200 })
+        expect({ table, status: seenByB.status }).toEqual({ table, status: 200 })
 
-        const idsForA = new Set(seenByA.rows.map((row) => String(row.id)))
-        const overlap = seenByB.rows.filter((row) => idsForA.has(String(row.id)))
-        expect(overlap.map((row) => String(row.id))).toEqual([])
+        const foreignToA = seenByA.rows.filter((row) => row.user_id !== USER_A.id)
+        const foreignToB = seenByB.rows.filter((row) => row.user_id !== USER_B.id)
+        expect({ table, foreignToA: foreignToA.length, foreignToB: foreignToB.length }).toEqual({
+          table,
+          foreignToA: 0,
+          foreignToB: 0,
+        })
       }
     })
   })
@@ -107,14 +116,33 @@ describe.skipIf(LOCAL_STACK === null)('auth contexts', () => {
 
       expect(result.status).toBe(401)
       expect(result.rows).toEqual([])
-      // PostgREST's code for a JWT it will not accept. Asserted by code rather
-      // than by message text, which moves between versions.
-      expect(result.code).toBe('PGRST301')
+
+      // `PGRST303`, not `PGRST301`, and the difference is the entire point of
+      // this test.
+      //
+      // PostgREST distinguishes them: `PGRST301` is the generic "this JWT is
+      // not acceptable" — wrong signature, malformed, bad claims — while
+      // `PGRST303` is specifically "the `exp` claim has passed". Asserting the
+      // generic code, or accepting either, would turn this into a test that
+      // some refusal happened, which any broken token would satisfy. What is
+      // being proved here is that the helper produces a token the stack rejects
+      // *for having expired*, so the expiry-specific code is the assertion.
+      //
+      // The first CI run returned `PGRST303` where this said `PGRST301`. The
+      // original comment's instinct was right — assert the code, not the
+      // message, because message text moves between versions — it just did not
+      // anticipate that the code would move too. Pinning to the narrower code
+      // is safe because the Supabase CLI version is pinned in
+      // .github/workflows/ci.yml and named in docs/database/local-development.md;
+      // if that pin moves and this fails, the fix is to re-read PostgREST's
+      // error table, not to widen the assertion.
+      expect(result.code).toBe('PGRST303')
     })
 
     it('is refused on every domain table, not just the one', async () => {
       for (const table of DOMAIN_TABLES) {
-        const result = await context.restSelect(table, 'id')
+        // `user_id`, not `id` — `user_settings` has no `id` column.
+        const result = await context.restSelect(table, 'user_id')
         expect({ table, status: result.status, rows: result.rows.length }).toEqual({
           table,
           status: 401,

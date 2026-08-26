@@ -163,8 +163,3 @@ export async function expiredSessionContext(): Promise<AuthContext | null> {
     restSelect: (table, columns = '*') => restSelectWithToken(expired, table, columns),
   }
 }
-
-/** The three contexts that are always available, in a stable order. */
-export async function alwaysAvailableContexts(): Promise<readonly AuthContext[]> {
-  return [await validUserContext(), await secondUserContext(), unauthenticatedContext()]
-}

@@ -72,22 +72,44 @@ export default function setup(): () => void {
       )
     }
     console.warn(MISSING_STACK)
-    // No stack, no work, nothing to budget.
-    return () => {}
+    // Falls through to the same teardown. With everything skipped the suite
+    // finishes in about a second and the budget is never near — but installing
+    // it unconditionally means the mechanism is exercised on every run rather
+    // than only on machines with Docker, which is how it stays working.
+  } else {
+    publishStackToEnvironment(stack)
   }
 
-  publishStackToEnvironment(stack)
+  return () => enforceBudget(startedAt)
+}
 
-  return () => {
-    const elapsed = Date.now() - startedAt
-    const budget = budgetMillis()
-    if (elapsed > budget) {
-      throw new Error(
-        `Integration suite took ${(elapsed / 1000).toFixed(1)}s, over its ` +
-          `${(budget / 1000).toFixed(0)}s budget. This suite runs on every pull request; ` +
-          'that is the constraint it is being held to. Either make it faster or change the ' +
-          'budget deliberately in tests/support/global-setup.ts, with a reason.',
-      )
-    }
-  }
+/**
+ * Fails the run when the suite ran long.
+ *
+ * `process.exitCode`, not `throw`, and that is not a style preference — it is
+ * the difference between this working and not working. Vitest catches an error
+ * thrown from a globalSetup teardown, prints it as "error during close", and
+ * then **exits 0 anyway**: the run is reported as passing and CI goes green. A
+ * budget enforced that way is decorative, which is precisely the kind of check
+ * that gets mistaken for evidence. Setting the exit code directly is what
+ * actually fails the run; verified both ways before this was written.
+ */
+function enforceBudget(startedAt: number): void {
+  const elapsed = Date.now() - startedAt
+  const budget = budgetMillis()
+  if (elapsed <= budget) return
+
+  console.error(
+    [
+      '',
+      `  [integration] OVER BUDGET: the suite took ${(elapsed / 1000).toFixed(1)}s, ` +
+        `against a ${(budget / 1000).toFixed(0)}s ceiling.`,
+      '',
+      '  [integration] This suite runs on every pull request; that is the constraint it is',
+      '  [integration] being held to. Either make it faster, or move the budget in',
+      '  [integration] tests/support/global-setup.ts deliberately, with a reason.',
+      '',
+    ].join('\n'),
+  )
+  process.exitCode = 1
 }

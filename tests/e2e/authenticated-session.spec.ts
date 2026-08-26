@@ -15,7 +15,13 @@
  */
 
 import { USER_A } from '../support/database'
-import { assertBaseUrlIsLocal, assertSessionAuthenticates, expect, test } from './fixtures'
+import {
+  assertBaseUrlIsLocal,
+  assertSessionAuthenticates,
+  expect,
+  gotoHydrated,
+  test,
+} from './fixtures'
 
 test.beforeEach(({ baseURL }) => {
   assertBaseUrlIsLocal(baseURL)
@@ -35,7 +41,7 @@ test.describe('the authenticated-session fixture', () => {
     authenticatedPage,
     session,
   }) => {
-    await authenticatedPage.goto('/')
+    await gotoHydrated(authenticatedPage, '/')
 
     const stored = await authenticatedPage.evaluate(
       (key: string) => window.localStorage.getItem(key),
@@ -56,7 +62,7 @@ test.describe('the authenticated-session fixture', () => {
     authenticatedPage,
     session,
   }) => {
-    await authenticatedPage.goto('/accounts')
+    await gotoHydrated(authenticatedPage, '/accounts')
     await expect(authenticatedPage.getByRole('heading', { name: 'Accounts' })).toBeVisible()
 
     const stillThere = await authenticatedPage.evaluate(
@@ -85,7 +91,7 @@ test.describe('the authenticated-session fixture', () => {
   test.fixme('shows the signed-in user their own seeded household [blocked on #6: authentication]', async ({
     authenticatedPage,
   }) => {
-    await authenticatedPage.goto('/accounts')
+    await gotoHydrated(authenticatedPage, '/accounts')
     // User A's seeded accounts, from supabase/seed.sql — not from memory.
     await expect(authenticatedPage.getByText('Checking', { exact: true })).toBeVisible()
     await expect(authenticatedPage.getByText('Savings', { exact: true })).toBeVisible()

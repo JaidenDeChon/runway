@@ -139,6 +139,27 @@ export async function assertSessionAuthenticates(session: BrowserSession): Promi
   return rows.length
 }
 
+/**
+ * Skip locally when there is no stack; refuse to skip where skipping would lie.
+ *
+ * Without the second half, a CI run in which `supabase start` came up broken
+ * would silently skip every authenticated test and report the E2E job green —
+ * the same "a skipped suite is indistinguishable from a passing one" trap the
+ * integration project guards against with the very same variable. The E2E job
+ * sets `RUNWAY_RLS_REQUIRE_STACK=1` for exactly this reason.
+ */
+function requireStackOrSkip(): void {
+  if (LOCAL_STACK) return
+  if (process.env.RUNWAY_RLS_REQUIRE_STACK === '1') {
+    throw new Error(
+      'RUNWAY_RLS_REQUIRE_STACK=1 but the local Supabase stack is not reachable. ' +
+        'Refusing to skip the authenticated E2E tests: skipping them here would report a ' +
+        'green run for a session nothing has checked.',
+    )
+  }
+  test.skip(true, 'needs the local Supabase stack — `bun run db:start`')
+}
+
 interface RunwayFixtures {
   /** A page that already holds a verified session for the seeded user A. */
   authenticatedPage: import('@playwright/test').Page
@@ -148,7 +169,7 @@ interface RunwayFixtures {
 export const test = base.extend<RunwayFixtures>({
   // biome-ignore lint/correctness/noEmptyPattern: Playwright's fixture signature requires the destructured first argument even when nothing is taken from it.
   session: async ({}, use) => {
-    test.skip(LOCAL_STACK === null, 'needs the local Supabase stack — `bun run db:start`')
+    requireStackOrSkip()
     const session = await mintBrowserSession(USER_A)
     await assertSessionAuthenticates(session)
     await use(session)
@@ -166,6 +187,73 @@ export const test = base.extend<RunwayFixtures>({
     await use(page)
   },
 })
+
+/**
+ * Navigate, and do not return until the page is actually interactive.
+ *
+ * This exists because of a bug it caused in this very suite, which is worth
+ * recording so nobody reintroduces it.
+ *
+ * Nuxt server-renders these pages, so the markup — inputs included — is present
+ * and fillable well before Vue has attached to it. `page.fill()` sets the DOM
+ * value and dispatches an `input` event; if that lands before hydration, there
+ * is no listener yet and the value is silently dropped. The field still *shows*
+ * what was typed, because the DOM value was set directly, so the test looks
+ * like it worked and the application state never received anything.
+ *
+ * That produced a convincing false positive: a first-run "balance is lost"
+ * failure that reproduced consistently against the dev server (slow hydration)
+ * and not at all against a production preview (fast hydration). It was
+ * initially reported as an application bug. It was not one — the app is
+ * correct, and the test was racing it.
+ *
+ * Vue sets `__vue_app__` on the container element when it mounts, which is the
+ * signal used here, together with the network going quiet — on the dev server
+ * the client bundle arrives as a long tail of ES modules, and mount alone fires
+ * before the page subtree is listening.
+ *
+ * Even this is a *timing* gate, so it is not the only defence. Anywhere the
+ * result of an interaction is load-bearing, the specs additionally wait on a
+ * reactive consequence — see `expectInteractive` below and the way the
+ * onboarding spec types the name and waits for Continue to enable before typing
+ * anything it then asserts on. Timing gates make the suite fast; the reactive
+ * gates make it correct.
+ */
+export async function gotoHydrated(page: import('@playwright/test').Page, path: string) {
+  const response = await page.goto(path)
+  await page.waitForFunction(() => {
+    const root = document.querySelector('#__nuxt') as (Element & { __vue_app__?: unknown }) | null
+    return !!root?.__vue_app__
+  })
+  await page.waitForLoadState('networkidle')
+  return response
+}
+
+/**
+ * Click until the click actually does something.
+ *
+ * A click dispatched before the handler is attached is swallowed — Playwright
+ * does not retry it, because from its point of view the click succeeded. Where
+ * the consequence is what the test is about, retry the pair until the
+ * consequence appears.
+ */
+export async function clickUntil(
+  target: import('@playwright/test').Locator,
+  consequence: import('@playwright/test').Locator,
+): Promise<void> {
+  await expect(async () => {
+    // Checked before clicking, not after. Once the consequence is on screen the
+    // target has often gone with it — a step advanced, a dialog replaced the
+    // row — and clicking again would block waiting for an element that is
+    // deliberately no longer there.
+    if (await consequence.isVisible()) return
+    // Short, because a swallowed click is the case being handled: waiting the
+    // full default timeout for one would burn the retry budget on a single
+    // attempt.
+    await target.click({ timeout: 2_000 })
+    await expect(consequence).toBeVisible({ timeout: 1_000 })
+  }).toPass({ timeout: 20_000 })
+}
 
 /**
  * The same local-only rule the integration suite is held to, applied to the

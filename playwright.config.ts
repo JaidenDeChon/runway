@@ -14,13 +14,24 @@ import { defineConfig, devices } from '@playwright/test'
  *
  * ## The server under test
  *
- * The Nuxt dev server rather than a production preview. It is what a developer
- * already has running, `reuseExistingServer` makes the local loop instant, and
- * the first-compile cost is paid once behind a generous timeout. The tradeoff
- * is real and worth naming: this harness therefore does not exercise the
- * production build's output. `bun run build` is a separate CI gate that does,
- * and swapping this over to `bun run preview` is a two-line change when there
- * is a reason to.
+ * A production preview (`bun run build && bun run preview`), not the Nuxt dev
+ * server. This started as dev and moved, for a concrete reason: the dev server
+ * compiles routes lazily on first request, and on a cold CI runner with no
+ * `.nuxt` cache it did not become ready inside 180s — the whole E2E job failed
+ * without running a single test, while passing locally where the cache was
+ * warm. Raising the timeout would have treated the symptom and left the
+ * suite's slowest and least predictable step on every pull request's critical
+ * path.
+ *
+ * The preview server serves an already-built Nitro output and is listening in
+ * seconds. It also means the suite now exercises what actually ships, which the
+ * dev server never did.
+ *
+ * The build is part of the default command so `bun run test:e2e` works from a
+ * clean checkout with no ceremony. CI overrides it with
+ * `RUNWAY_E2E_SERVER_COMMAND=bun run preview` and builds in an explicit step
+ * instead, so a build failure is reported as a build failure rather than as a
+ * server that never came up.
  *
  * ## Two viewports
  *
@@ -30,6 +41,15 @@ import { defineConfig, devices } from '@playwright/test'
  */
 
 const BASE_URL = process.env.RUNWAY_E2E_BASE_URL ?? 'http://127.0.0.1:3000'
+
+/**
+ * Build then serve, unless the caller has already built.
+ *
+ * `reuseExistingServer` short-circuits this entirely when a server is already
+ * listening locally, so the inner-loop cost is paid once per change, not once
+ * per run.
+ */
+const SERVER_COMMAND = process.env.RUNWAY_E2E_SERVER_COMMAND ?? 'bun run build && bun run preview'
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -101,12 +121,13 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: 'bun run dev',
+    command: SERVER_COMMAND,
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
-    // Nuxt's first dev compile is not fast, and a flaky timeout here reads as a
-    // broken test suite rather than as a slow machine.
-    timeout: 180_000,
+    // Generous because the default command includes a production build. When CI
+    // overrides the command to serve an already-built output, readiness is a
+    // matter of seconds and this ceiling is never approached.
+    timeout: 300_000,
     stdout: 'ignore',
     stderr: 'pipe',
   },

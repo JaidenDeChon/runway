@@ -14,7 +14,7 @@
  */
 
 import type { Locator, Page } from '@playwright/test'
-import { assertBaseUrlIsLocal, expect, test } from './fixtures'
+import { assertBaseUrlIsLocal, clickUntil, expect, gotoHydrated, test } from './fixtures'
 
 /**
  * A card's title.
@@ -42,7 +42,7 @@ test.beforeEach(({ baseURL }) => {
 
 test.describe('first-run onboarding', () => {
   test('takes a new user from nothing to a projection', async ({ page }) => {
-    await page.goto('/first-run')
+    await gotoHydrated(page, '/first-run')
 
     await expect(page.getByRole('heading', { name: 'See how far your money goes.' })).toBeVisible()
 
@@ -57,7 +57,7 @@ test.describe('first-run onboarding', () => {
     await page.locator('#onboarding-account-name').fill('Checking')
     await page.locator('#onboarding-account-balance').fill('2500')
     await expect(continueButton).toBeEnabled()
-    await continueButton.click()
+    await clickUntil(continueButton, cardTitle(page, 'Add a bill or paycheck'))
 
     // --- Step 2: the recurring item -----------------------------------------
     await expect(cardTitle(page, 'Add a bill or paycheck')).toBeVisible()
@@ -66,9 +66,9 @@ test.describe('first-run onboarding', () => {
     await expect(buildButton).toBeDisabled()
 
     await page.locator('#onboarding-item-name').fill('Rent')
-    await page.locator('#onboarding-item-amount').fill('1200')
     await expect(buildButton).toBeEnabled()
-    await buildButton.click()
+    await page.locator('#onboarding-item-amount').fill('1200')
+    await clickUntil(buildButton, cardTitle(page, "You're set."))
 
     // --- Done ---------------------------------------------------------------
     await expect(cardTitle(page, "You're set.")).toBeVisible()
@@ -84,68 +84,103 @@ test.describe('first-run onboarding', () => {
     await expect(summary).toContainText('$1,200')
 
     // --- Into the app -------------------------------------------------------
+    // A plain click, deliberately: `NuxtLink` renders a real `<a href="/">`, so
+    // the browser follows it whether or not Vue has taken over yet. This is the
+    // one interaction in the flow that does not depend on hydration, and
+    // routing it through `clickUntil` was actively wrong — the "consequence"
+    // locator matched the done card that was already on screen, so the helper
+    // returned satisfied without ever clicking.
     await page.getByRole('link', { name: 'See your runway' }).click()
-    await expect(page).toHaveURL(/\/$/)
+    await page.waitForURL(/\/$/)
     await expect(page).toHaveTitle(/Home/)
   })
 
-  test('keeps the step-one account name when the user goes back', async ({ page }) => {
-    await page.goto('/first-run')
+  test('keeps step-one values when the user goes back', async ({ page }) => {
+    await gotoHydrated(page, '/first-run')
 
+    const continueButton = page.getByRole('button', { name: 'Continue' })
     await page.locator('#onboarding-account-name').fill('Everyday')
-    await page.getByRole('button', { name: 'Continue' }).click()
+    // Continue can only enable through Vue reactivity, so this is proof the
+    // card is listening — not a guess that enough time has passed. Typing a
+    // value before this point is dropped silently; see ./fixtures.ts.
+    await expect(continueButton).toBeEnabled()
 
-    await expect(cardTitle(page, 'Add a bill or paycheck')).toBeVisible()
-    await page.getByRole('button', { name: 'Back' }).click()
+    await page.locator('#onboarding-account-balance').fill('2500')
+    await clickUntil(continueButton, cardTitle(page, 'Add a bill or paycheck'))
+
+    await clickUntil(
+      page.getByRole('button', { name: 'Back' }),
+      page.locator('#onboarding-account-name'),
+    )
 
     // The step components unmount and remount; the form state lives above them
     // precisely so this round trip is lossless.
+    //
+    // A whole-dollar balance here on purpose. This assertion was the one that
+    // first looked like "onboarding loses the balance" — twice, for two
+    // unrelated reasons, neither of them the one originally reported. The first
+    // was this test racing hydration (see `gotoHydrated` in ./fixtures.ts); the
+    // second is the genuine `step` defect isolated in the test below. Keeping
+    // the value whole here means this test measures what it claims to — that
+    // Back preserves state — and not the defect, which has its own test.
     await expect(page.locator('#onboarding-account-name')).toHaveValue('Everyday')
-  })
-
-  /**
-   * A real defect, found by this harness on its first run against the branch.
-   *
-   * The balance typed in step 1 never reaches `accountForm.balance`. Two
-   * independent symptoms, both reproduced by hand: coming Back to step 1 shows
-   * `0` instead of what was typed, and — worse, because the user never sees it
-   * happen — the account is *created* with a zero balance, so onboarding ends
-   * on a projection built from $0. The name typed beside it survives, and the
-   * amount field on step 2 works through the very same `MoneyInput`, which is
-   * what makes this specific rather than a broken component.
-   *
-   * `test.fail()` rather than `test.fixme()` on purpose: this one still runs,
-   * so the day the wiring is fixed the suite goes red with "expected to fail
-   * but passed" and whoever fixed it is told to delete this annotation. A
-   * `fixme` would sit here silently forever.
-   *
-   * Not fixed in this pull request: this is the test scaffold, and quietly
-   * changing application behaviour inside it would bury the finding in a diff
-   * nobody is reviewing for that.
-   */
-  test.fail('carries the step-one balance through to the created account', async ({ page }) => {
-    await page.goto('/first-run')
-
-    await page.locator('#onboarding-account-name').fill('Everyday')
-    await page.locator('#onboarding-account-balance').fill('2500')
-    await page.getByRole('button', { name: 'Continue' }).click()
-
-    await expect(cardTitle(page, 'Add a bill or paycheck')).toBeVisible()
-    await page.getByRole('button', { name: 'Back' }).click()
-
     await expect(page.locator('#onboarding-account-balance')).toHaveValue('2500')
   })
 
+  /**
+   * A real, user-facing defect, found by this harness and verified at the
+   * browser level rather than inferred.
+   *
+   * `MoneyInput` renders `<input type="number">` and sets no `step`, so the
+   * HTML default of `step=1` applies. Any amount with cents is then a
+   * `stepMismatch`: the input reports `checkValidity() === false`, and because
+   * both first-run step cards wrap their fields in a real `<form>` with a
+   * `type="submit"` button, **the whole form becomes unsubmittable**. A user who
+   * types 812.34 as their opening balance cannot press Continue at all.
+   *
+   * Measured directly, not deduced from a timeout:
+   *
+   *     2500   -> { step: null, stepMismatch: false, formValid: true  }
+   *     812.34 -> { step: null, stepMismatch: true,  formValid: false }
+   *
+   * This is browser validation, so it is not specific to the dev server and not
+   * a hydration artifact — it reproduces against the production preview too.
+   * For an application whose stated rule is that money *is* integer cents, a
+   * money field that rejects cents is worth fixing deliberately.
+   *
+   * The fix is one attribute — `step="0.01"` on the input inside
+   * `app/components/MoneyInput.vue` — but it is an application change, and this
+   * pull request is the test scaffold. Raised rather than silently resolved,
+   * per CLAUDE.md. Delete this annotation when it lands.
+   */
+  test.fail('accepts an opening balance that has cents in it', async ({ page }) => {
+    await gotoHydrated(page, '/first-run')
+
+    const continueButton = page.getByRole('button', { name: 'Continue' })
+    await page.locator('#onboarding-account-name').fill('Everyday')
+    await expect(continueButton).toBeEnabled()
+    await page.locator('#onboarding-account-balance').fill('812.34')
+    await continueButton.click()
+
+    await expect(cardTitle(page, 'Add a bill or paycheck')).toBeVisible({ timeout: 5_000 })
+  })
+
   test('offers income as well as bills', async ({ page }) => {
-    await page.goto('/first-run')
+    await gotoHydrated(page, '/first-run')
 
+    const continueButton = page.getByRole('button', { name: 'Continue' })
     await page.locator('#onboarding-account-name').fill('Checking')
-    await page.getByRole('button', { name: 'Continue' }).click()
+    await expect(continueButton).toBeEnabled()
+    await clickUntil(continueButton, cardTitle(page, 'Add a bill or paycheck'))
 
+    // The segmented control is inside the step-2 card, which `clickUntil` above
+    // has already proven is mounted and listening.
     await segment(page, 'Income').click()
+    const buildButton = page.getByRole('button', { name: 'Build my runway' })
     await page.locator('#onboarding-item-name').fill('Paycheck')
+    await expect(buildButton).toBeEnabled()
     await page.locator('#onboarding-item-amount').fill('2000')
-    await page.getByRole('button', { name: 'Build my runway' }).click()
+    await clickUntil(buildButton, cardTitle(page, "You're set."))
 
     const summary = page.getByText(/We'll track Checking against Paycheck/)
     await expect(summary).toBeVisible()

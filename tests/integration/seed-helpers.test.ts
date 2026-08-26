@@ -26,7 +26,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { occurrenceDates } from '~~/domain/cadence'
 import { createSeedData } from '~~/domain/seed'
 import { assertCannotReadAnotherUsersRows } from '../support/assertions'
-import { secondUserContext, validUserContext } from '../support/auth'
+import { secondUserContext, unauthenticatedContext, validUserContext } from '../support/auth'
 import { adminSql, LOCAL_STACK } from '../support/database'
 import { removeFixtures, type SeededHousehold, seedHousehold } from '../support/fixtures'
 
@@ -101,7 +101,6 @@ describe.skipIf(LOCAL_STACK === null)('the seed helpers', () => {
   })
 
   it('refuses to seed for a context that has no user', async () => {
-    const { unauthenticatedContext } = await import('../support/auth')
     await expect(
       seedHousehold(unauthenticatedContext(), {
         label: `${LABEL}-anon`,

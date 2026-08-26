@@ -263,21 +263,3 @@ export async function removeFixtures(label: string): Promise<void> {
     await sql.end()
   }
 }
-
-/** Removes fixtures from every label — the belt-and-braces sweep for a suite start. */
-export async function removeAllFixtures(): Promise<void> {
-  const sql = adminSql()
-  try {
-    await sql`
-      delete from public.transfers t
-      where exists (
-        select 1 from public.accounts a
-        where a.id in (t.from_account_id, t.to_account_id) and a.name like ${`${FIXTURE_PREFIX}%`}
-      )
-    `
-    await sql`delete from public.recurring_rules where name like ${`${FIXTURE_PREFIX}%`}`
-    await sql`delete from public.accounts where name like ${`${FIXTURE_PREFIX}%`}`
-  } finally {
-    await sql.end()
-  }
-}

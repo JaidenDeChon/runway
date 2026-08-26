@@ -11,7 +11,7 @@
  * changes one line — the fixture it seeds from — and not its assertions.
  */
 
-import { assertBaseUrlIsLocal, expect, test } from './fixtures'
+import { assertBaseUrlIsLocal, clickUntil, expect, gotoHydrated, test } from './fixtures'
 
 test.beforeEach(({ baseURL }) => {
   assertBaseUrlIsLocal(baseURL)
@@ -19,22 +19,29 @@ test.beforeEach(({ baseURL }) => {
 
 test.describe('the accounts screen', () => {
   test('lists the household and opens an account for editing', async ({ page }) => {
-    await page.goto('/accounts')
+    await gotoHydrated(page, '/accounts')
 
     await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible()
     await expect(page.getByText('Checking', { exact: true })).toBeVisible()
     await expect(page.getByText('Savings', { exact: true })).toBeVisible()
 
-    await page.getByText('Checking', { exact: true }).click()
+    // Retried until the editor actually opens: a click landing before the row
+    // is listening is swallowed, and Playwright would not retry it on its own.
+    await clickUntil(page.getByText('Checking', { exact: true }), page.getByRole('dialog'))
 
-    // `ResponsiveEditor` is a Dialog on desktop and a Sheet on mobile; both
-    // expose the same accessible name, which is what this asserts rather than
-    // either implementation.
-    await expect(page.getByRole('heading', { name: /account/i }).first()).toBeVisible()
+    // Asserted on the dialog itself, not on a heading matching /account/i —
+    // the page's own `<h1>Accounts</h1>` matches that too, so the original
+    // form of this check would have passed whether or not the editor ever
+    // opened. `ResponsiveEditor` is a Dialog on desktop and a Sheet on mobile
+    // and both carry `role="dialog"`, so this holds for either without
+    // asserting which one rendered.
+    const editor = page.getByRole('dialog')
+    await expect(editor).toBeVisible()
+    await expect(editor).toContainText('Edit account')
   })
 
   test('keeps the "connect a bank" card out of the tab order', async ({ page }) => {
-    await page.goto('/accounts')
+    await gotoHydrated(page, '/accounts')
 
     // Scoped to the card itself rather than to the first `aria-disabled`
     // element on the page — at 375px that was matching something else entirely,

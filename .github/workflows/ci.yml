@@ -76,8 +76,25 @@ jobs:
       # of image pulls per run.
       - name: Start the local Supabase stack
         run: |
-          supabase start \
-            -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,mailpit,storage-api,realtime
+          # `supabase start` ends with a banner listing the stack's publishable
+          # and secret keys. They are ephemeral local-stack credentials, worth
+          # nothing off the runner — but issue #5 requires that CI logs contain
+          # no tokens, and "it is only a local key" is how that requirement
+          # erodes. The banner is captured rather than printed; on failure it is
+          # echoed back with any key-shaped string redacted, so a stack that
+          # will not come up is still diagnosable.
+          set -o pipefail
+          if ! supabase start \
+            -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,mailpit,storage-api,realtime \
+            > supabase-start.log 2>&1; then
+            sed -E \
+              -e 's/sb_(publishable|secret)_[A-Za-z0-9_-]+/<redacted>/g' \
+              -e 's/eyJ[A-Za-z0-9._-]{10,}/<redacted>/g' \
+              -e 's#postgresql://[^[:space:]]+#<redacted>#g' \
+              supabase-start.log
+            exit 1
+          fi
+          echo 'Local Supabase stack is up.'
 
       # shared/supabase/database.types.ts is generated and committed. If it no
       # longer matches what the migrations produce, every consumer is typed
@@ -142,11 +159,45 @@ jobs:
       # does not read it yet. Same trimmed container set as the `database` job.
       - name: Start the local Supabase stack
         run: |
-          supabase start \
-            -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,mailpit,storage-api,realtime
+          # `supabase start` ends with a banner listing the stack's publishable
+          # and secret keys. They are ephemeral local-stack credentials, worth
+          # nothing off the runner — but issue #5 requires that CI logs contain
+          # no tokens, and "it is only a local key" is how that requirement
+          # erodes. The banner is captured rather than printed; on failure it is
+          # echoed back with any key-shaped string redacted, so a stack that
+          # will not come up is still diagnosable.
+          set -o pipefail
+          if ! supabase start \
+            -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,mailpit,storage-api,realtime \
+            > supabase-start.log 2>&1; then
+            sed -E \
+              -e 's/sb_(publishable|secret)_[A-Za-z0-9_-]+/<redacted>/g' \
+              -e 's/eyJ[A-Za-z0-9._-]{10,}/<redacted>/g' \
+              -e 's#postgresql://[^[:space:]]+#<redacted>#g' \
+              supabase-start.log
+            exit 1
+          fi
+          echo 'Local Supabase stack is up.'
 
-      # Playwright starts the app itself (`webServer` in playwright.config.ts).
+      # Built here rather than inside Playwright's `webServer` command, so that
+      # a compile error is reported as a failed build step instead of as a
+      # server that never became ready — which is exactly how the first run of
+      # this job failed, against the Nuxt dev server.
+      - name: Build the app
+        run: bun run build
+
+      # Playwright starts the server itself (`webServer` in
+      # playwright.config.ts). The override tells it the build is already done,
+      # so it only has to serve the output — seconds, not minutes.
+      #
+      # RUNWAY_RLS_REQUIRE_STACK is the same guard the `database` job uses, for
+      # the same reason: without it, a stack that failed to come up would make
+      # every authenticated-session test skip itself and this job would report
+      # green having checked no session at all.
       - name: E2E tests
+        env:
+          RUNWAY_RLS_REQUIRE_STACK: '1'
+          RUNWAY_E2E_SERVER_COMMAND: bun run preview
         run: bun run test:e2e
 
       # Traces, screenshots and video for whatever failed. These contain

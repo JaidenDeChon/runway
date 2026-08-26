@@ -36,7 +36,12 @@ export async function assertCannotReadAnotherUsersRows(
     )
   }
 
-  const result = await reader.restSelect(table, 'id,user_id')
+  // `user_id` only, and for two reasons. `user_settings` has no `id` column at
+  // all — its primary key *is* `user_id` — so a generic helper that asked for
+  // one would 400 on that table. And `user_id` is the whole predicate under
+  // test, so selecting anything else would only widen what a failure message
+  // could accidentally print.
+  const result = await reader.restSelect(table, 'user_id')
   if (result.status !== 200) {
     throw new Error(
       `"${reader.name}" could not read its own rows from ${table}: ` +
@@ -46,9 +51,12 @@ export async function assertCannotReadAnotherUsersRows(
 
   const foreign = result.rows.filter((row) => row.user_id !== reader.userId)
   if (foreign.length > 0) {
+    // The count, not the rows. A breach is diagnosed from the fact that it
+    // happened and on which table; dumping the offending rows into a CI log is
+    // how a leak becomes two leaks.
     throw new Error(
-      `RLS BREACH: "${reader.name}" can see ${foreign.length} row(s) in ${table} owned by ` +
-        `another user (ids: ${foreign.map((row) => String(row.id)).join(', ')})`,
+      `RLS BREACH: "${reader.name}" can see ${foreign.length} row(s) in ${table} ` +
+        'owned by another user',
     )
   }
   return result.rows.length
