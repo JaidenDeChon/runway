@@ -22,7 +22,6 @@ import AppPage from '@/components/AppPage.vue'
 import BalanceForecastCard from '@/components/dashboard/BalanceForecastCard.vue'
 import DayDetailEditor from '@/components/dashboard/DayDetailEditor.vue'
 import LowestBalanceCard from '@/components/dashboard/LowestBalanceCard.vue'
-import StaleBalancesAlert from '@/components/dashboard/StaleBalancesAlert.vue'
 import UpcomingCard from '@/components/dashboard/UpcomingCard.vue'
 import UpdateBalancesEditor from '@/components/dashboard/UpdateBalancesEditor.vue'
 import { Card } from '@/components/ui/card'
@@ -96,7 +95,8 @@ const overrides = computed(() =>
  * Whether the accounts' readings describe one moment.
  *
  * The check is the domain's — a component must not decide what "stale" means —
- * and it gates a warning above the chart rather than changing the forecast.
+ * and it gates a warning inside the forecast card, directly above the chart,
+ * rather than changing the forecast.
  * The engine projects what it is given; this tells the user that what it was
  * given disagrees with itself.
  */
@@ -272,14 +272,6 @@ function saveOverride(override: OccurrenceOverride): void {
     </Card>
 
     <template v-else>
-      <StaleBalancesAlert
-        v-if="!readings.isConsistent"
-        class="mb-3.5 lg:mb-5"
-        :readings="readings"
-        :accounts-by-id="accountsById"
-        @update="balancesOpen = true"
-      />
-
       <div class="grid gap-3.5 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-5">
       <BalanceForecastCard
         :days="projection.days"
@@ -287,6 +279,8 @@ function saveOverride(override: OccurrenceOverride): void {
         :combined="combined"
         :occurrences-by-day="occurrencesByDay"
         :legend="legend"
+        :readings="readings"
+        :accounts-by-id="accountsById"
         :cushion="safetyCushion"
         :today-index="todayIndex"
         :lowest="verdict.lowest"
@@ -301,6 +295,7 @@ function saveOverride(override: OccurrenceOverride): void {
         @update:density="(value) => (density = value)"
         @update:density-open="(value) => (densityOpen = value)"
         @update:account-checked="setAccountChecked"
+        @update-balances="balancesOpen = true"
         @select-day="openDay"
       />
 
