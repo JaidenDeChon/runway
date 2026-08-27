@@ -41,7 +41,7 @@ test.beforeEach(({ baseURL }) => {
 })
 
 test.describe('first-run onboarding', () => {
-  test('takes a new user from nothing to a projection', async ({ page }) => {
+  test('takes a new user from nothing to a projection', async ({ authenticatedPage: page }) => {
     await gotoHydrated(page, '/first-run')
 
     await expect(page.getByRole('heading', { name: 'See how far your money goes.' })).toBeVisible()
@@ -95,7 +95,7 @@ test.describe('first-run onboarding', () => {
     await expect(page).toHaveTitle(/Home/)
   })
 
-  test('keeps step-one values when the user goes back', async ({ page }) => {
+  test('keeps step-one values when the user goes back', async ({ authenticatedPage: page }) => {
     await gotoHydrated(page, '/first-run')
 
     const continueButton = page.getByRole('button', { name: 'Continue' })
@@ -150,7 +150,7 @@ test.describe('first-run onboarding', () => {
    * distinguishes "the fix is in place" from "some other change happened to
    * make Continue clickable".
    */
-  test('accepts an opening balance that has cents in it', async ({ page }) => {
+  test('accepts an opening balance that has cents in it', async ({ authenticatedPage: page }) => {
     await gotoHydrated(page, '/first-run')
 
     const continueButton = page.getByRole('button', { name: 'Continue' })
@@ -181,7 +181,7 @@ test.describe('first-run onboarding', () => {
     await expect(page.locator('#onboarding-account-balance')).toHaveValue('812.34')
   })
 
-  test('offers income as well as bills', async ({ page }) => {
+  test('offers income as well as bills', async ({ authenticatedPage: page }) => {
     await gotoHydrated(page, '/first-run')
 
     const continueButton = page.getByRole('button', { name: 'Continue' })

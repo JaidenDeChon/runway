@@ -179,10 +179,33 @@ jobs:
           fi
           echo 'Local Supabase stack is up.'
 
+      # The app requires Supabase to render anything at all now that every route
+      # is behind sign-in, so the preview server needs the local stack's URL and
+      # publishable key. They are read from `supabase status` and written
+      # straight into $GITHUB_ENV without ever being echoed; `add-mask` covers
+      # the case where a later step prints one by accident. These are ephemeral
+      # local-stack credentials, worth nothing off the runner — and "it is only
+      # a local key" is exactly how the no-tokens-in-CI-logs rule erodes, so
+      # they are handled as though they mattered.
+      - name: Point the app at the local stack
+        run: |
+          set -o pipefail
+          eval "$(supabase status -o env | sed -E 's/^/export /')"
+          echo "::add-mask::${ANON_KEY:-$PUBLISHABLE_KEY}"
+          {
+            echo "NUXT_PUBLIC_SUPABASE_URL=${API_URL}"
+            echo "NUXT_PUBLIC_SUPABASE_ANON_KEY=${ANON_KEY:-$PUBLISHABLE_KEY}"
+          } >> "$GITHUB_ENV"
+          echo 'The preview server is pointed at the local stack.'
+
       # Built here rather than inside Playwright's `webServer` command, so that
       # a compile error is reported as a failed build step instead of as a
       # server that never became ready — which is exactly how the first run of
       # this job failed, against the Nuxt dev server.
+      #
+      # The Supabase values above are runtime configuration, not build-time:
+      # nothing in nuxt.config.ts reads process.env, so the build does not need
+      # them and does not bake them in. See .env.example.
       - name: Build the app
         run: bun run build
 

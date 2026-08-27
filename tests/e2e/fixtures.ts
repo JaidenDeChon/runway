@@ -1,84 +1,82 @@
 /**
  * The E2E harness's fixtures — chiefly the authenticated-session one.
  *
- * ## The honest state of this, today
+ * ## What changed when issue #6 landed
  *
- * Issue #5 asks for "a Playwright E2E harness with an authenticated-session
- * fixture" and "at least one E2E test completing a real user flow against a
- * seeded database". The app it is being built for **has no sign-in and reads
- * nothing from the database**: `app/composables/useRunwayData.ts` holds the
- * household in memory from `domain/seed.ts`, and `AppUserMenu.vue` says in its
- * first line that real session data belongs to issue #6.
+ * This file used to hand the browser a session in `localStorage`, because that
+ * is where `@supabase/supabase-js`'s plain `createClient` puts one, and because
+ * the app read nothing at the time. Authentication moved the session into
+ * **cookies**: `@supabase/ssr` keeps it there so a server-rendered request can
+ * see it, which is the whole basis of route protection and of `requireUser()`
+ * in a Nitro handler. A `localStorage` session would now be invisible to the
+ * server, and every protected page would redirect to sign-in.
  *
- * There were three ways to respond to that and only one of them is honest.
- * Building authentication here would be annexing issue #6. Writing a test that
- * asserts against the in-memory seed and calling it "against a seeded database"
- * would redefine the acceptance criterion quietly, which is worse than missing
- * it. What is done instead:
+ * So the fixture installs cookies. The trick that made the old version
+ * trustworthy is the one that makes this version trustworthy too, applied to a
+ * different store: rather than guessing the cookie name, the chunking rule or
+ * the encoding, it hands a **real `@supabase/ssr` server client** a cookie
+ * adapter that records what the library writes, signs in for real, and installs
+ * exactly those name/value pairs. The library is the authority on its own
+ * format, and it has changed that format between minor versions before.
  *
- * - The fixture mints a **real** session against the local GoTrue, with the
- *   same seed users the integration suite signs in as, and **proves it works**
- *   by using the minted token to read that user's rows through PostgREST before
- *   handing it to the browser. The fixture is not a placeholder; it is verified
- *   every time it runs.
- * - It installs that session where `@supabase/supabase-js` will look for it,
- *   so the day `createRunwayClient` is wired into the app the fixture keeps
- *   working with no edit.
- * - The flows that can be driven end-to-end **today** are driven today, for
- *   real, against the running app.
- * - The one assertion that genuinely cannot be made yet — "the UI renders rows
- *   that came from the database" — is committed as a `test.fixme` naming issue
- *   #6, rather than omitted and forgotten.
+ * ## What the fixture still proves before any test uses it
  *
- * ## Why the storage key is not hardcoded
+ * The minted token is used to read the seeded user's rows through PostgREST
+ * *before* it reaches the browser, so a dead token fails here, loudly, rather
+ * than as a confusing redirect three tests later.
  *
- * `supabase-js` derives its storage key from the project URL and has changed
- * that derivation between versions. Rather than guess `sb-127-auth-token` and
- * be quietly wrong later, the fixture hands a real client a storage adapter
- * that records what it writes, signs in, and uses exactly the key and value the
- * library chose. The library is the authority on its own format.
+ * ## The stack is no longer optional
+ *
+ * Every screen in the app is behind sign-in now, so every E2E spec needs a
+ * session, so every E2E spec needs the local stack. That is a real cost and it
+ * is the honest one: a suite that drove the app without signing in would be
+ * driving an app that no longer exists. `requireStackOrSkip` still skips
+ * locally for somebody with no Docker, and still refuses to skip in CI.
  */
 
 import { test as base, expect } from '@playwright/test'
-import { createClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
 import { LOCAL_STACK, type SeedUser, USER_A } from '../support/database'
 import { assertLocalOnly, hostOf, isLoopbackHost } from '../support/stack'
 
 export { expect }
 
+/** One cookie exactly as `@supabase/ssr` chose to write it. */
+export interface SessionCookie {
+  readonly name: string
+  readonly value: string
+}
+
 export interface BrowserSession {
-  /** The `localStorage` key `supabase-js` itself chose for this project URL. */
-  readonly storageKey: string
-  /** The serialized session, exactly as `supabase-js` would have written it. */
-  readonly storageValue: string
+  /** The cookies `@supabase/ssr` itself wrote for this project URL. */
+  readonly cookies: readonly SessionCookie[]
   readonly accessToken: string
   readonly userId: string
+  readonly email: string
 }
 
 /**
- * Signs in for real and captures what `supabase-js` persists.
+ * Signs in for real and captures the cookies the library persists.
  *
- * The capturing storage adapter is the whole trick: it makes the library
- * disclose both halves of the pair the app will later look for, instead of this
- * file asserting a format it does not own.
+ * The capturing adapter is the whole trick: it makes `@supabase/ssr` disclose
+ * the exact names and values the app will later look for, instead of this file
+ * asserting a format it does not own. A large session is chunked across
+ * `…auth-token.0`, `…auth-token.1`, …; capturing rather than reconstructing
+ * means that is handled without this file knowing it happens.
  */
 export async function mintBrowserSession(user: SeedUser): Promise<BrowserSession> {
   if (!LOCAL_STACK) throw new Error('mintBrowserSession requires the local Supabase stack')
 
-  const written = new Map<string, string>()
-  const client = createClient(LOCAL_STACK.apiUrl, LOCAL_STACK.anonKey, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-      storage: {
-        getItem: (key: string) => written.get(key) ?? null,
-        setItem: (key: string, value: string) => {
-          written.set(key, value)
-        },
-        removeItem: (key: string) => {
-          written.delete(key)
-        },
+  const jar = new Map<string, string>()
+
+  const client = createServerClient(LOCAL_STACK.apiUrl, LOCAL_STACK.anonKey, {
+    cookies: {
+      getAll: () => [...jar.entries()].map(([name, value]) => ({ name, value })),
+      setAll: (cookiesToSet) => {
+        for (const { name, value } of cookiesToSet) {
+          if (value) jar.set(name, value)
+          else jar.delete(name)
+        }
       },
     },
   })
@@ -91,29 +89,32 @@ export async function mintBrowserSession(user: SeedUser): Promise<BrowserSession
     throw new Error(`could not sign in as ${user.email}: ${error?.message ?? 'no session'}`)
   }
 
-  const entries = [...written.entries()].filter(([key]) => key.includes('auth-token'))
-  const entry = entries[0]
-  if (!entry) {
+  const cookies = [...jar.entries()]
+    .filter(([name]) => name.startsWith('sb-'))
+    .map(([name, value]) => ({ name, value }))
+
+  if (cookies.length === 0) {
     throw new Error(
-      'supabase-js persisted no auth-token entry, so this fixture cannot know what key the ' +
-        'app will read. Check the client options in tests/e2e/fixtures.ts against the ' +
-        'installed @supabase/supabase-js version.',
+      '@supabase/ssr persisted no sb-* cookie, so this fixture cannot know what the app will ' +
+        'read. Check the client options in tests/e2e/fixtures.ts against the installed ' +
+        '@supabase/ssr version.',
     )
   }
 
   return {
-    storageKey: entry[0],
-    storageValue: entry[1],
+    cookies,
     accessToken: data.session.access_token,
     userId: data.user?.id ?? '',
+    email: user.email,
   }
 }
 
 /**
  * Proves a minted token actually authenticates, before any test relies on it.
  *
- * Without this the fixture could hand the browser a dead token for a whole
- * release and nothing would notice, because nothing in the app reads it yet.
+ * Without this the fixture could hand the browser a dead token and the failure
+ * would surface as "the dashboard redirected to sign-in", which reads as an
+ * application bug rather than as a broken fixture.
  */
 export async function assertSessionAuthenticates(session: BrowserSession): Promise<number> {
   if (!LOCAL_STACK) throw new Error('assertSessionAuthenticates requires the local Supabase stack')
@@ -148,7 +149,7 @@ export async function assertSessionAuthenticates(session: BrowserSession): Promi
  * integration project guards against with the very same variable. The E2E job
  * sets `RUNWAY_RLS_REQUIRE_STACK=1` for exactly this reason.
  */
-function requireStackOrSkip(): void {
+export function requireStackOrSkip(): void {
   if (LOCAL_STACK) return
   if (process.env.RUNWAY_RLS_REQUIRE_STACK === '1') {
     throw new Error(
@@ -175,14 +176,17 @@ export const test = base.extend<RunwayFixtures>({
     await use(session)
   },
 
-  authenticatedPage: async ({ page, session }, use) => {
-    // Installed before any application script runs, so the app finds the
-    // session on its very first evaluation rather than after a re-render.
-    await page.addInitScript(
-      ({ key, value }: { key: string; value: string }) => {
-        window.localStorage.setItem(key, value)
-      },
-      { key: session.storageKey, value: session.storageValue },
+  authenticatedPage: async ({ page, context, baseURL, session }, use) => {
+    // Installed on the context before the first navigation, so the very first
+    // *server* render already sees the session — which is the point of cookies
+    // over `localStorage`, and what stops a protected page redirecting once
+    // before settling.
+    await context.addCookies(
+      session.cookies.map((cookie) => ({
+        name: cookie.name,
+        value: cookie.value,
+        url: baseURL ?? 'http://127.0.0.1:3000',
+      })),
     )
     await use(page)
   },
@@ -214,10 +218,10 @@ export const test = base.extend<RunwayFixtures>({
  *
  * Even this is a *timing* gate, so it is not the only defence. Anywhere the
  * result of an interaction is load-bearing, the specs additionally wait on a
- * reactive consequence — see `expectInteractive` below and the way the
- * onboarding spec types the name and waits for Continue to enable before typing
- * anything it then asserts on. Timing gates make the suite fast; the reactive
- * gates make it correct.
+ * reactive consequence — see `clickUntil` below and the way the onboarding spec
+ * types the name and waits for Continue to enable before typing anything it
+ * then asserts on. Timing gates make the suite fast; the reactive gates make it
+ * correct.
  */
 export async function gotoHydrated(page: import('@playwright/test').Page, path: string) {
   const response = await page.goto(path)

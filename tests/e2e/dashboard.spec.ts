@@ -81,7 +81,7 @@ test.beforeEach(({ baseURL }) => {
 })
 
 test.describe('the chart display settings', () => {
-  test('open as a dialog whose controls are all named', async ({ page }) => {
+  test('open as a dialog whose controls are all named', async ({ authenticatedPage: page }) => {
     await gotoHydrated(page, '/')
 
     const dialog = await openDisplaySettings(page)
@@ -96,7 +96,7 @@ test.describe('the chart display settings', () => {
     }
   })
 
-  test('start at the default when nothing has been stored', async ({ page }) => {
+  test('start at the default when nothing has been stored', async ({ authenticatedPage: page }) => {
     await gotoHydrated(page, '/')
 
     // Nothing is written until the user changes something: a first visit that
@@ -112,7 +112,7 @@ test.describe('the chart display settings', () => {
     )
   })
 
-  test('remember a change across a reload', async ({ page }) => {
+  test('remember a change across a reload', async ({ authenticatedPage: page }) => {
     await gotoHydrated(page, '/')
     const dialog = await openDisplaySettings(page)
 
@@ -140,7 +140,7 @@ test.describe('the chart display settings', () => {
     )
   })
 
-  test('store presentation numbers and nothing else', async ({ page }) => {
+  test('store presentation numbers and nothing else', async ({ authenticatedPage: page }) => {
     await gotoHydrated(page, '/')
     const dialog = await openDisplaySettings(page)
 
@@ -166,7 +166,7 @@ test.describe('the chart display settings', () => {
     }).toPass({ timeout: 5_000 })
   })
 
-  test('clamp a stored value that is out of range', async ({ page }) => {
+  test('clamp a stored value that is out of range', async ({ authenticatedPage: page }) => {
     // What an older build with wider bounds, or a user editing storage by hand,
     // would leave behind. `normalizeDensity` clamps rather than rejecting the
     // whole record over one bad field; this proves the composable actually
@@ -197,7 +197,9 @@ test.describe('the chart display settings', () => {
     ['is JSON but not a density', JSON.stringify({ lineWeight: 'thick' })],
     ['is missing a field', JSON.stringify({ lineWeight: 6, dashDensity: 12 })],
   ] as const) {
-    test(`fall back to the default when the stored value ${description}`, async ({ page }) => {
+    test(`fall back to the default when the stored value ${description}`, async ({
+      authenticatedPage: page,
+    }) => {
       await seedStoredDensity(page, raw)
       await gotoHydrated(page, '/')
 
@@ -215,7 +217,9 @@ test.describe('the chart display settings', () => {
 })
 
 test.describe('the forecast horizon', () => {
-  test('is a labelled group whose selection changes the window drawn', async ({ page }) => {
+  test('is a labelled group whose selection changes the window drawn', async ({
+    authenticatedPage: page,
+  }) => {
     await gotoHydrated(page, '/')
 
     const group = page.getByRole('group', { name: 'Forecast horizon' })

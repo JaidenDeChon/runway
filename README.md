@@ -15,11 +15,17 @@ and shadcn-vue.
 git clone git@github.com:JaidenDeChon/runway.git
 cd runway
 bun install
+bun run db:start     # the local Supabase stack — needs Docker
+# then point the app at it, per docs/database/local-development.md
 bun run dev
 ```
 
-Then open http://localhost:3000. No `.env` file is required for local development — see
-[Environment variables](#environment-variables).
+Then open http://localhost:3000 and sign in as a seed user — `user-a@runway.test` /
+`runway-local-a`. Every route is behind sign-in ([`docs/auth.md`](./docs/auth.md)), so the app needs
+`NUXT_PUBLIC_SUPABASE_URL` and `NUXT_PUBLIC_SUPABASE_ANON_KEY` in a `.env` — see
+[Environment variables](#environment-variables) and
+[`docs/database/local-development.md`](./docs/database/local-development.md) for the copy-paste
+command that reads them out of the running stack.
 
 ## Scripts
 
@@ -45,9 +51,16 @@ Then open http://localhost:3000. No `.env` file is required for local developmen
 
 ## Environment variables
 
-See [`.env.example`](./.env.example). As of this scaffold, the app reads **no** environment
-variables — `bun install && bun run dev` works with no `.env` file at all. When a feature starts
-reading a variable, it is added to `.env.example` in the same change, even if commented out.
+See [`.env.example`](./.env.example). The app reads two, both public and both required since
+authentication landed: `NUXT_PUBLIC_SUPABASE_URL` and `NUXT_PUBLIC_SUPABASE_ANON_KEY`. Without them
+it fails at boot with an error naming both, rather than serving a sign-in form that can never work.
+
+They resolve at **runtime**, not build time — nothing in `nuxt.config.ts` reads `process.env` — which
+is what lets a deploy target change them without a rebuild. Every variable the app reads is listed in
+`.env.example` in the same change that starts reading it.
+
+The test suites need none of it: they read the local stack's credentials from `supabase status` and
+refuse any endpoint that is not on loopback.
 
 `.env` and `.env.*` are git-ignored, except `.env.example`, which is tracked.
 
@@ -58,7 +71,11 @@ app/            Nuxt 4 app directory (pages, layouts, components, composables, l
   lib/          App-level TypeScript, e.g. app/lib/navigation.ts (nav single source of truth)
   components/
     ui/         shadcn-vue vendor components — see "Adding a shadcn-vue component" below
+  middleware/   Route middleware. auth.global.ts is the door on every route.
+  plugins/      supabase.{client,server}.ts — the session, one per tab / per request
 domain/         Pure business logic. No Nuxt/Vue/Supabase/Node dependency — see domain/README.md
+shared/         Code both halves import (`#shared/...`): generated DB types, the auth utilities
+server/         Nitro. middleware/auth.ts validates the session; utils/supabase.ts is requireUser()
 supabase/       Migrations, config and the local seed — see docs/database/
 tests/
   support/      Shared test plumbing: stack resolution, auth contexts, seed helpers, assertions
@@ -115,6 +132,9 @@ bun run test:e2e:install                # once per machine
 bun run test:e2e                        # real user flows through the running app
 ```
 
+The E2E suite needs the local stack **and** a `.env` pointing the app at it: every route is behind
+sign-in, so every spec signs in.
+
 Two things worth knowing before you touch any of it:
 
 - **The integration and E2E suites cannot be pointed at the hosted database.**
@@ -142,3 +162,9 @@ branch-protection setting a repository admin has to add.
 
 `main` deploys to Netlify. Build configuration lives in [`netlify.toml`](./netlify.toml): the
 build command runs `bun install --frozen-lockfile && bun run build`, publishing `dist/`.
+
+The two `NUXT_PUBLIC_SUPABASE_*` variables must be set on the site (Site configuration →
+Environment variables). They are read at runtime, so changing them needs no rebuild — and a deploy
+without them serves a 500 rather than a broken sign-in page.
+[`docs/auth.md`](./docs/auth.md) lists what else a hosted Supabase project needs configured:
+redirect allow-list, SMTP, email confirmation, templates, password policy, and the migrations.

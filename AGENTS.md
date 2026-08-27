@@ -10,18 +10,23 @@ Runway answers one question: *given what is coming, when does my balance dip
 lowest, and does it clear my cushion?* Every screen is a view onto `domain/`'s
 projection of that.
 
-**Today the app runs on seeded data held in memory.** There are no accounts, no
-sign-in, and a reload starts over. That is a waypoint, not the architecture, and
-it is explicitly *not* a call for browser-local persistence: storing data in the
-browser was considered and dropped, because **authentication is the next feature
-to land** and a storage layer that sign-in would immediately replace is work
-done twice. Anything reaching for `localStorage` should be a Supabase call
-instead, once there is a session to make it under.
+**Sign-in has landed; the store has not.** Every route is behind a Supabase
+session (`docs/auth.md`), the server validates that session rather than trusting
+the client, and `user_id` is derived from it and never from a request. But the
+household on screen is still `domain/seed.ts`, held in memory and lost on
+reload: issue #6 delivered authentication, and moving `useRunwayData` onto
+Supabase belongs to the feature issues that own each screen, starting with #7.
 
-**Supabase exists in this repo ahead of the app needing it**, deliberately. The
-schema, the deny-by-default RLS posture and the migrations are built and tested
-(`docs/database/`) so that the day accounts land, it is a change of *storage*
-rather than a redesign. Nothing under `app/` reads or writes Supabase yet.
+That remains explicitly *not* a call for browser-local persistence. Anything
+reaching for `localStorage` to hold user data should be a Supabase call — and
+now there **is** a session to make it under. `useSupabaseClient()` in a
+component, `serverSupabaseClient(event)` plus `requireUser(event)` in a Nitro
+handler.
+
+**The rest of Supabase was built ahead of the app needing it**, deliberately.
+The schema, the deny-by-default RLS posture and the migrations are built and
+tested (`docs/database/`) so that moving a screen onto real rows is a change of
+*storage* rather than a redesign.
 
 What that means while writing code:
 
@@ -31,8 +36,14 @@ What that means while writing code:
   `docs/database/schema.md`. A field that exists only in memory is a field that
   gets lost the day sign-in ships.
 - **`app/composables/useRunwayData.ts` is the seam.** It holds all state and
-  every mutation. Putting Supabase behind sign-in should mean changing that file
+  every mutation. Putting Supabase behind it should mean changing that file
   and nothing downstream of it, so screens must not reach around it.
+- **Authentication is a seam too, and it is already closed.** Read
+  `docs/auth.md` before touching a route, a session, or anything that needs to
+  know who the user is. Two rules from it are absolute: a handler learns the
+  caller from `requireUser(event)` and never from a request parameter, and a
+  message shown to a signed-out visitor comes from `#shared/auth/errors` so it
+  cannot reveal whether an email address is registered.
 - **Per-user isolation is already the model.** Every domain table carries
   `user_id`; do not write code that assumes a single user just because there is
   currently exactly one.
