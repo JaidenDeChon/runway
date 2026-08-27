@@ -41,3 +41,14 @@ Return, as your final message: the files you changed and what changed in each,
 each acceptance criterion with whether it is met, verification output
 (including failures), and anything you deviated from or left undone. This is a
 report to the orchestrator, not a message to a human — be terse and factual.
+
+## Do not lose your work
+
+Commit as you finish each step of the plan, and push the branch the first time
+you commit. A rate limit ends your turn without warning: a pushed branch survives
+it, an uncommitted working tree does not. Small, honest commits also let whoever
+resumes you see exactly how far you got.
+
+If work already exists on the branch when you start, you are a resume. Read
+`git log --oneline main..HEAD` and the plan's step list, work out which steps are
+already done, and continue from there rather than starting over.

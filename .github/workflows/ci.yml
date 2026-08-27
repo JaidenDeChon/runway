@@ -60,7 +60,7 @@ jobs:
       # gen types` output varies between CLI versions, and the types check below
       # compares against a file generated on a developer's machine — so when the
       # documented local version moves, move this with it.
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v3
         with:
           version: 2.76.15
 

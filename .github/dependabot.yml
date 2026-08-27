@@ -1,24 +1,21 @@
 version: 2
 updates:
+  # GitHub Actions only. npm moved to Renovate (.github/renovate.json).
+  #
+  # Dependabot does open npm PRs, but it cannot finish them: it edits
+  # package.json and leaves bun.lock untouched, so every one of them dies at
+  # `bun install --frozen-lockfile` before a single check runs. That is
+  # dependabot-core#11602, open upstream — not a misconfiguration here, and
+  # not something a setting on this file fixes. Four such PRs (#37-#40)
+  # were closed rather than merged.
+  #
+  # Renovate's bun manager regenerates the lockfile in the same commit, which
+  # is the whole reason for the split. Actions updates stay here because
+  # Dependabot handles them correctly and Renovate is scoped to the bun
+  # manager, so the two never contend for the same file.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     commit-message:
       prefix: 'chore(ci)'
-
-  # Dependabot's Bun (bun.lock) support is newer than its npm support. If it
-  # does not open PRs within a week, switch this ecosystem to Renovate, which
-  # has had bun.lock support longer.
-  - package-ecosystem: npm
-    directory: /
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: 'chore(deps)'
-    groups:
-      nuxt:
-        patterns: ['nuxt', '@nuxt/*', '@nuxtjs/*']
-      shadcn:
-        patterns: ['shadcn-vue', 'reka-ui', '@lucide/vue', 'tailwind*', '@tailwindcss/*']
