@@ -145,7 +145,7 @@ For every new table:
 - [ ] Money columns are `bigint` cents; calendar dates are `date`
 - [ ] Added to `supabase/seed.sql` under both seed users, so the RLS suite covers it
 - [ ] `bun run db:types` re-run and the result committed
-- [ ] `bun run test:rls` passes
+- [ ] `bun run test:integration` passes
 
 ---
 

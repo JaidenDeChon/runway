@@ -1,0 +1,173 @@
+/**
+ * Issue #5: "Auth helpers support: valid user, second user, unauthenticated,
+ * expired session."
+ *
+ * This is the file that proves those four helpers describe four genuinely
+ * different callers, rather than four names for the same request. Each one is
+ * asked the same question of the same table, and the answers have to differ in
+ * the ways the security model says they should.
+ *
+ * Two of the acceptance criteria live here as well — cross-user read denial and
+ * unauthenticated denial — asserted through the reusable invariants in
+ * `tests/support/assertions.ts` rather than inline, so the same assertion
+ * objects the RLS negative control can be pointed at.
+ */
+
+import { beforeAll, describe, expect, it } from 'vitest'
+import {
+  assertCannotReadAnotherUsersRows,
+  assertUnauthenticatedReadsNothing,
+} from '../support/assertions'
+import {
+  type AuthContext,
+  expiredSessionContext,
+  secondUserContext,
+  unauthenticatedContext,
+  validUserContext,
+} from '../support/auth'
+import { DOMAIN_TABLES, LOCAL_STACK, USER_A, USER_B } from '../support/database'
+import { describeSecretAvailability } from '../support/jwt'
+
+describe.skipIf(LOCAL_STACK === null)('auth contexts', () => {
+  describe('a valid user', () => {
+    it('reads its own rows, and only its own', async () => {
+      const context = await validUserContext()
+      expect(context.userId).toBe(USER_A.id)
+
+      const visible = await assertCannotReadAnotherUsersRows(context, 'accounts')
+      // Not vacuous: "sees nothing at all" would pass an isolation check for
+      // entirely the wrong reason, and is what a stale seed looks like.
+      expect(visible).toBeGreaterThan(0)
+    })
+  })
+
+  describe('a second user', () => {
+    it('is a different user, with its own rows', async () => {
+      const context = await secondUserContext()
+      expect(context.userId).toBe(USER_B.id)
+      expect(context.userId).not.toBe(USER_A.id)
+
+      const visible = await assertCannotReadAnotherUsersRows(context, 'accounts')
+      expect(visible).toBeGreaterThan(0)
+    })
+
+    it('shares no row with the first user, on any domain table', async () => {
+      const a = await validUserContext()
+      const b = await secondUserContext()
+
+      for (const table of DOMAIN_TABLES) {
+        // `user_id` rather than `id`: `user_settings` has no `id` column — its
+        // primary key is `user_id` — and ownership is the property under test
+        // anyway. Asking each side who owns what it can see is a stronger
+        // statement than comparing id sets, because it also fails when a table
+        // is empty for the wrong reason.
+        const seenByA = await a.restSelect(table, 'user_id')
+        const seenByB = await b.restSelect(table, 'user_id')
+        expect({ table, status: seenByA.status }).toEqual({ table, status: 200 })
+        expect({ table, status: seenByB.status }).toEqual({ table, status: 200 })
+
+        const foreignToA = seenByA.rows.filter((row) => row.user_id !== USER_A.id)
+        const foreignToB = seenByB.rows.filter((row) => row.user_id !== USER_B.id)
+        expect({ table, foreignToA: foreignToA.length, foreignToB: foreignToB.length }).toEqual({
+          table,
+          foreignToA: 0,
+          foreignToB: 0,
+        })
+      }
+    })
+  })
+
+  describe('an unauthenticated caller', () => {
+    it('reads nothing from any domain table', async () => {
+      const anonymous = unauthenticatedContext()
+      for (const table of DOMAIN_TABLES) {
+        await expect(assertUnauthenticatedReadsNothing(anonymous, table)).resolves.toBeUndefined()
+      }
+    })
+
+    it('has no user of its own', () => {
+      expect(unauthenticatedContext().userId).toBeNull()
+    })
+  })
+
+  describe('an expired session', () => {
+    let context: AuthContext
+
+    beforeAll(async () => {
+      const resolved = await expiredSessionContext()
+      if (!resolved) {
+        // Never silently downgraded to a weaker assertion: a malformed token is
+        // rejected by a different code path than an expired one, so asserting
+        // on a malformed token here would be a different test wearing this
+        // test's name. And never skipped, because "we could not test the
+        // expired-session helper" must not read as "the expired-session helper
+        // works".
+        throw new Error(
+          'Could not mint an expired token for the local stack, so the expired-session ' +
+            `context is untestable in this environment (${describeSecretAvailability()}). ` +
+            'Fix the secret resolution in tests/support/jwt.ts rather than weakening this test.',
+        )
+      }
+      context = resolved
+    })
+
+    it('is refused, and refused for being expired', async () => {
+      const result = await context.restSelect('accounts', 'id')
+
+      expect(result.status).toBe(401)
+      expect(result.rows).toEqual([])
+
+      // `PGRST303`, not `PGRST301`, and the difference is the entire point of
+      // this test.
+      //
+      // PostgREST distinguishes them: `PGRST301` is the generic "this JWT is
+      // not acceptable" — wrong signature, malformed, bad claims — while
+      // `PGRST303` is specifically "the `exp` claim has passed". Asserting the
+      // generic code, or accepting either, would turn this into a test that
+      // some refusal happened, which any broken token would satisfy. What is
+      // being proved here is that the helper produces a token the stack rejects
+      // *for having expired*, so the expiry-specific code is the assertion.
+      //
+      // The first CI run returned `PGRST303` where this said `PGRST301`. The
+      // original comment's instinct was right — assert the code, not the
+      // message, because message text moves between versions — it just did not
+      // anticipate that the code would move too. Pinning to the narrower code
+      // is safe because the Supabase CLI version is pinned in
+      // .github/workflows/ci.yml and named in docs/database/local-development.md;
+      // if that pin moves and this fails, the fix is to re-read PostgREST's
+      // error table, not to widen the assertion.
+      expect(result.code).toBe('PGRST303')
+    })
+
+    it('is refused on every domain table, not just the one', async () => {
+      for (const table of DOMAIN_TABLES) {
+        // `user_id`, not `id` — `user_settings` has no `id` column.
+        const result = await context.restSelect(table, 'user_id')
+        expect({ table, status: result.status, rows: result.rows.length }).toEqual({
+          table,
+          status: 401,
+          rows: 0,
+        })
+      }
+    })
+  })
+
+  describe('the four contexts', () => {
+    it('are genuinely distinct callers', async () => {
+      const contexts: AuthContext[] = [
+        await validUserContext(),
+        await secondUserContext(),
+        unauthenticatedContext(),
+      ]
+      const expired = await expiredSessionContext()
+      if (expired) contexts.push(expired)
+
+      const names = contexts.map((context) => context.name)
+      expect(new Set(names).size).toBe(names.length)
+
+      // The two signed-in ones must not be the same person.
+      const userIds = contexts.map((context) => context.userId).filter((id) => id !== null)
+      expect(new Set(userIds).size).toBeGreaterThanOrEqual(2)
+    })
+  })
+})
