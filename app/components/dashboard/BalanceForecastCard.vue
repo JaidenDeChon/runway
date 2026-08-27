@@ -132,10 +132,19 @@ function setHorizon(value: unknown): void {
       Directly above the chart, and inside the card, because it is a warning
       about the very lines drawn below it: everything under this alert is
       derived from readings that do not describe one moment.
+
+      `mx-*`, not `px-*`, and it matters. The Alert primitive draws its own
+      border and background, so a horizontal *padding* here moved the text
+      inward while the box itself still ran edge to edge — the card's only
+      element not sitting on the `px-4 lg:px-5` gutter every other row uses, and
+      the only one whose border touched the card's. Margin puts the box on that
+      gutter and leaves the primitive's own `px-4 py-3` to space the contents.
+      `w-auto` cancels the primitive's `w-full`, which would otherwise be 100%
+      of the card *plus* these margins, and overflow.
     -->
     <StaleBalancesAlert
       v-if="!props.readings.isConsistent"
-      class="mt-3.5 w-auto px-4 lg:px-5"
+      class="mx-4 mt-3.5 w-auto lg:mx-5"
       :readings="props.readings"
       :accounts-by-id="props.accountsById"
       @update="emit('updateBalances')"
