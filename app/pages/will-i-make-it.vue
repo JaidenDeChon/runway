@@ -17,7 +17,7 @@ import { useToday } from '@/composables/useToday'
 import type { IsoDate } from '~~/domain/dates'
 import { addDays } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
-import { evaluate, project, upcomingBills } from '~~/domain/projection'
+import { shortfallThrough, upcomingBills } from '~~/domain/projection'
 
 useHead({ title: 'Will I Make It? - Runway' })
 
@@ -49,14 +49,21 @@ const targetDate = computed<IsoDate>(() => {
   return bill?.date ?? selectedDate.value
 })
 
-const projection = computed(() =>
-  project(data.value, { start: today.value, end: targetDate.value }),
+// One engine call answers the whole screen. The shortfall is measured against
+// the running minimum over `[today, target]` inclusive, not the closing balance
+// — a window can end comfortably up and still dip below the cushion in the
+// middle, and that dip is the thing this page exists to catch.
+// `answer.through` rather than `targetDate` reaches the card below: a target in
+// the past is raised to today by the engine, and labelling the answer with the
+// date that was asked for would caption a verdict about today with a day that
+// has already been and gone.
+const answer = computed(() =>
+  shortfallThrough(data.value, {
+    today: today.value,
+    through: targetDate.value,
+    cushion: cushion.value,
+  }),
 )
-// `from: 0` includes today in the search window, matching the spec's "lowest
-// point in [today, target]" — unlike the dashboard's forward-looking verdict,
-// this screen's own copy states the window is inclusive of today.
-const verdict = computed(() => evaluate(projection.value.combined, cushion.value, { from: 0 }))
-const todayBalance = computed<MinorUnits>(() => projection.value.combined[0]?.balance ?? 0)
 </script>
 
 <template>
@@ -78,9 +85,9 @@ const todayBalance = computed<MinorUnits>(() => projection.value.combined[0]?.ba
       @update:cushion="cushion = $event"
     />
     <VerdictCard
-      :verdict="verdict"
-      :today-balance="todayBalance"
-      :target-date="targetDate"
+      :verdict="answer"
+      :today-balance="answer.startingBalance"
+      :target-date="answer.through"
       :cushion="cushion"
       :today="today"
     />

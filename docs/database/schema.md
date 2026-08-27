@@ -111,6 +111,7 @@ positive amount — see [One row, not two legs](#one-row-not-two-legs).
 | `user_id` | `uuid` | PK **and** FK → `auth.users`, cascade delete — one row per user, structurally |
 | `cushion_cents` | `bigint` | default `60000` |
 | `monthly_discretionary_cents` | `bigint` | default `0` |
+| `time_zone` | `text`, nullable | IANA zone **override**. Null — the default — means follow the device. A browser-resolved zone is never written here; see the migration for why |
 | `discretionary_account_id` | `uuid`, nullable | composite FK → `accounts (user_id, id)`, `on delete set null (discretionary_account_id)` — deleting the account nulls only this column, never `user_id` |
 | `default_horizon_days` | `smallint` | default `30`; `check` is a sanity range, `1`–`730`. The dashboard's toggle offering 30/60/90 is a fact about that screen, not about the data — see [The horizon is not a menu](#the-horizon-is-not-a-menu) |
 
@@ -245,6 +246,27 @@ and the toggle constrains its own values in the UI regardless. The range that
 remains is a sanity bound, catching `0` and `32767` while staying out of the
 way of any horizon a person might actually want.
 
+### The timezone override has no writer, on purpose
+
+`user_settings.time_zone` is readable, mapped, and resolved
+(`override ?? device ?? UTC`), and nothing in the app writes it. That is a
+decision, not an unfinished edge.
+
+Following the device is the right default for very nearly everybody: "what day
+is it" should track the phone in your hand, not a setting you changed once and
+forgot. The override exists for the minority it is wrong for — somebody working
+abroad who still budgets on home dates — and for a reason that outlives them:
+the answer has to be *storable* to survive the move from browser storage to an
+account, and a column added later is a migration plus a backfill, where a column
+carried from the start is free.
+
+So the writer waits for the settings screen, which does not exist yet.
+`useRunwayData().setTimeZoneOverride` is the seam it will call; it is exercised
+by tests and by nothing else, and that is the intended state until then. What
+must **not** happen in the meantime is the device-resolved zone being written
+into this column as a convenience — that freezes the first device the user ever
+opened the app on. See `app/composables/useTimeZone.ts`.
+
 ### The regeneration contract
 
 `projected_date` is written by the occurrence generator and never by a user.
@@ -312,7 +334,8 @@ The table `domain/*` code should consult when wiring a store to this schema:
 | `Transfer.date` | `transfers.occurs_on` | |
 | `Transfer.createdAt` | `transfers.created_at` | epoch ms at the mapping edge; only ever a same-day tie-breaker |
 | `RunwayData.safetyCushion` | `user_settings.cushion_cents` | |
-| `RunwayData.dailyDiscretionarySpend` | *derived* | `dailyFromMonthly(monthly_discretionary_cents)` — see `domain/discretionary.ts` |
+| `RunwayData.timeZone` | `user_settings.time_zone` | an override, not the effective zone. `app/composables/useTimeZone.ts` resolves `override ?? device ?? UTC` |
+| `RunwayData.monthlyDiscretionarySpend` | `user_settings.monthly_discretionary_cents` | carried across unconverted; the engine divides it by the length of each month — see `domain/discretionary.ts` |
 | `Occurrence.date` / `.amount` | *derived* | `coalesce(actual_*, projected_*)` |
 | `OccurrenceOverride` scope `once` | `actual_*` + `is_overridden = true` | |
 | `OccurrenceOverride` scope `future` | **a rule split**, not an occurrence write | |

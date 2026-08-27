@@ -9,7 +9,6 @@
  * they are readable; see the note in the parent about the slider thumb's
  * accessible name, which this component cannot reach.
  */
-import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import type { ChartDensity } from '@/lib/burndown'
@@ -27,8 +26,9 @@ function update(key: keyof ChartDensity, value: number[] | undefined): void {
 </script>
 
 <template>
-  <Card size="sm" class="gap-3 bg-accent py-3 shadow-none ring-0">
-    <div class="flex flex-col gap-3 px-4" role="group" aria-label="Chart density">
+  <!-- No card chrome: the dialog is the surface now, and a filled card inside
+       one reads as a second, nested panel. -->
+  <div class="flex flex-col gap-4" role="group" aria-label="Chart density">
       <div class="flex flex-col gap-2">
         <div class="flex items-center justify-between">
           <Label for="density-line-weight">Line weight</Label>
@@ -78,7 +78,6 @@ function update(key: keyof ChartDensity, value: number[] | undefined): void {
           :thumb-value-text="props.density.markerSize.toFixed(1)"
           @update:model-value="(value) => update('markerSize', value)"
         />
-      </div>
     </div>
-  </Card>
+  </div>
 </template>

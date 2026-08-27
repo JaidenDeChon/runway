@@ -6,14 +6,22 @@
  * real store means changing this file and nothing else. The mutation surface
  * below is deliberately the shape a persistence layer would need.
  *
+ * The store it is waiting for is **Supabase behind sign-in**, not the browser.
+ * Persisting to `localStorage` first was considered and dropped: authentication
+ * is the next feature, and a storage layer it would immediately replace is work
+ * done twice. Reloading loses your edits until then, deliberately.
+ *
  * All mutations delegate their *rules* to `domain/`; this composable only holds
  * state and generates ids.
  */
 
+import type { BalanceReading } from '~~/domain/accounts'
 import {
+  applyBalanceReadings,
   deleteAccount as domainDeleteAccount,
   upsertAccount as domainUpsertAccount,
 } from '~~/domain/accounts'
+import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
 import { resolveAmount } from '~~/domain/prediction'
 import { createSeedData } from '~~/domain/seed'
@@ -41,6 +49,12 @@ export function useRunwayData() {
   const recurringItems = computed(() => data.value.recurringItems)
   const transfers = computed(() => data.value.transfers)
   const safetyCushion = computed(() => data.value.safetyCushion)
+  /**
+   * The user's stored timezone *override*, not their effective zone. `null`
+   * means "follow the device", which `useTimeZone` resolves — a device-derived
+   * zone is a fact about a device and does not belong in the user's data.
+   */
+  const timeZoneOverride = computed(() => data.value.timeZone)
 
   const accountsById = computed(
     () => new Map(data.value.accounts.map((account) => [account.id, account])),
@@ -54,6 +68,21 @@ export function useRunwayData() {
     const saved: Account = { ...account, id: account.id ?? createId('acct') }
     data.value = { ...data.value, accounts: domainUpsertAccount(data.value.accounts, saved) }
     return saved
+  }
+
+  /**
+   * Records observed balances against `asOf`, for every account reported.
+   *
+   * The one entry point for "here is what these accounts hold now", whether the
+   * numbers came from the user typing them or, later, from a bank connection.
+   * Both hand the same readings to the same domain function — an automatic
+   * source should be a different caller, not a second code path.
+   */
+  function saveBalances(readings: readonly BalanceReading[], asOf: IsoDate): void {
+    data.value = {
+      ...data.value,
+      accounts: applyBalanceReadings(data.value.accounts, readings, asOf),
+    }
   }
 
   /**
@@ -96,8 +125,13 @@ export function useRunwayData() {
     const saved: Transfer = {
       ...transfer,
       id: createId('xfer'),
-      // Monotonic within a session; only ever used to break same-day ties.
-      createdAt: data.value.transfers.length + 1,
+      // Epoch milliseconds, which is what `transfers.created_at` maps to (see
+      // the mapping table in docs/database/schema.md). It was the transfer
+      // count, which is monotonic only within one session: once rows are loaded
+      // from storage rather than built from scratch, a count restarts and two
+      // transfers can claim the same tie-breaker. Reading the clock is fine
+      // here and only here — the domain never does it.
+      createdAt: Date.now(),
     }
     data.value = { ...data.value, transfers: [...data.value.transfers, saved] }
     return saved
@@ -107,10 +141,15 @@ export function useRunwayData() {
     data.value = { ...data.value, safetyCushion: Math.max(0, Math.round(cushion)) }
   }
 
-  function setDailyDiscretionarySpend(amount: MinorUnits): void {
+  /** Pass `null` to go back to following the device. */
+  function setTimeZoneOverride(timeZone: string | null): void {
+    data.value = { ...data.value, timeZone: timeZone?.trim() || null }
+  }
+
+  function setMonthlyDiscretionarySpend(amount: MinorUnits): void {
     data.value = {
       ...data.value,
-      dailyDiscretionarySpend: Math.max(0, Math.round(amount)),
+      monthlyDiscretionarySpend: Math.max(0, Math.round(amount)),
     }
   }
 
@@ -134,15 +173,18 @@ export function useRunwayData() {
     recurringItems,
     transfers,
     safetyCushion,
+    timeZoneOverride,
     isEmpty,
     accountName,
     saveAccount,
+    saveBalances,
     removeAccount,
     saveRecurringItem,
     removeRecurringItem,
     addTransfer,
     setSafetyCushion,
-    setDailyDiscretionarySpend,
+    setTimeZoneOverride,
+    setMonthlyDiscretionarySpend,
     clearRecords,
   }
 }

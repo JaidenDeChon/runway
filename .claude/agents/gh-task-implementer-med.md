@@ -21,7 +21,12 @@ Read each file before editing it. Change only what the plan names — no
 unrelated refactors or reformatting. Then run `bun run build` if the change
 could affect it.
 
-Do not commit, push, open a PR, or comment on the issue.
+**Commit each phase of the plan as it completes** — you are already on the branch
+the orchestrator cut, and work that is only in the working tree is work a
+budget-exhausted session loses. Match the house style in `git log --oneline -10`:
+messages here explain *why*, not what.
+
+Do not push, do not open a PR, do not comment on the issue, do not touch `main`.
 
 Return: files changed and what changed in each, each acceptance criterion with
 whether it is met, verification output including any failures, and anything

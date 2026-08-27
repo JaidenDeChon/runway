@@ -1,0 +1,38 @@
+{
+  // The Playwright suite typechecks under its own config, and the reason is
+  // `lib`. `tsconfig.tests.json` compiles the integration suite with
+  // `"lib": ["ES2023"]` and no DOM — correct there, because a node test that
+  // can see `window` is a node test that will eventually reach for it.
+  //
+  // E2E code genuinely runs in a browser: `page.evaluate` callbacks touch
+  // `window` and `localStorage` by definition. Rather than widen the node
+  // config's lib and lose that guarantee for every other test, the browser half
+  // gets its own config, and `tsconfig.tests.json` excludes `tests/e2e/`.
+  //
+  // `bun run typecheck` runs all of them.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "paths": {
+      "#shared/*": ["./shared/*"],
+      "~~/*": ["./*"],
+      "@@/*": ["./*"]
+    }
+  },
+  // `tests/support/**` comes along because the E2E fixtures import it; it is
+  // checked by tsconfig.tests.json too, under the stricter node lib.
+  "include": ["tests/e2e/**/*.ts", "tests/support/**/*.ts", "playwright.config.ts"]
+}

@@ -23,6 +23,7 @@ import BalanceForecastCard from '@/components/dashboard/BalanceForecastCard.vue'
 import DayDetailEditor from '@/components/dashboard/DayDetailEditor.vue'
 import LowestBalanceCard from '@/components/dashboard/LowestBalanceCard.vue'
 import UpcomingCard from '@/components/dashboard/UpcomingCard.vue'
+import UpdateBalancesEditor from '@/components/dashboard/UpdateBalancesEditor.vue'
 import { Card } from '@/components/ui/card'
 import { useChartDensity } from '@/composables/useChartDensity'
 import { useIsDesktop } from '@/composables/useIsDesktop'
@@ -30,6 +31,8 @@ import { useRunwayData } from '@/composables/useRunwayData'
 import { useToday } from '@/composables/useToday'
 import { accountColorVar } from '@/lib/account-colors'
 import type { ChartSeries, LegendEntry } from '@/lib/burndown'
+import type { BalanceReading } from '~~/domain/accounts'
+import { balanceReadings } from '~~/domain/accounts'
 import type { IsoDate } from '~~/domain/dates'
 import { addDays, compareDates, daysBetween } from '~~/domain/dates'
 import type { OccurrenceOverride } from '~~/domain/overrides'
@@ -45,7 +48,7 @@ const LOOKBACK_DAYS = 14
 /** How long the export holds the skeleton before swapping in the chart. */
 const LOAD_DELAY_MS = 550
 
-const { data, accounts, accountsById, safetyCushion, isEmpty } = useRunwayData()
+const { data, accounts, accountsById, safetyCushion, isEmpty, saveBalances } = useRunwayData()
 const today = useToday()
 const isDesktop = useIsDesktop()
 
@@ -88,12 +91,31 @@ const overrides = computed(() =>
   whatIf.value ? [...savedOverrides.value, ...whatIfOverrides.value] : savedOverrides.value,
 )
 
+/**
+ * Whether the accounts' readings describe one moment.
+ *
+ * The check is the domain's — a component must not decide what "stale" means —
+ * and it gates a warning inside the forecast card, directly above the chart,
+ * rather than changing the forecast.
+ * The engine projects what it is given; this tells the user that what it was
+ * given disagrees with itself.
+ */
+const readings = computed(() => balanceReadings(accounts.value))
+const balancesOpen = ref(false)
+
+function recordBalances(readings: BalanceReading[]): void {
+  saveBalances(readings, today.value)
+}
+
 const projection = computed(() =>
   project(data.value, {
     start: windowStart.value,
     end: windowEnd.value,
     accountIds: selectedAccountIds.value,
     overrides: overrides.value,
+    // A dip that has already happened is history, not a forecast, so the
+    // verdict starts the day after today even though the chart opens earlier.
+    verdictFrom: addDays(today.value, 1),
   }),
 )
 
@@ -135,16 +157,11 @@ const series = computed<ChartSeries[]>(() =>
   }),
 )
 
-/** The line the verdict is read from: combined when there is one, else the only account. */
-const verdictPoints = computed<readonly DayPoint[]>(
-  () => combined.value ?? series.value[0]?.points ?? [],
-)
-
-const verdict = computed(() =>
-  // `from` is the day after today: a dip that has already happened is history,
-  // not a forecast.
-  evaluate(verdictPoints.value, safetyCushion.value, { from: todayIndex.value + 1 }),
-)
+// The projection is already narrowed to the selected accounts, so its combined
+// line *is* the single account's line when only one is selected — the verdict
+// reads one summary either way, and the engine found that low point in the same
+// pass that built the series.
+const verdict = computed(() => evaluate(projection.value.combinedSummary, safetyCushion.value))
 
 const occurrencesByDay = computed(() => {
   const byDay = new Map<IsoDate, Occurrence[]>()
@@ -254,13 +271,16 @@ function saveOverride(override: OccurrenceOverride): void {
       </div>
     </Card>
 
-    <div v-else class="grid gap-3.5 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-5">
+    <template v-else>
+      <div class="grid gap-3.5 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-5">
       <BalanceForecastCard
         :days="projection.days"
         :series="series"
         :combined="combined"
         :occurrences-by-day="occurrencesByDay"
         :legend="legend"
+        :readings="readings"
+        :accounts-by-id="accountsById"
         :cushion="safetyCushion"
         :today-index="todayIndex"
         :lowest="verdict.lowest"
@@ -275,20 +295,31 @@ function saveOverride(override: OccurrenceOverride): void {
         @update:density="(value) => (density = value)"
         @update:density-open="(value) => (densityOpen = value)"
         @update:account-checked="setAccountChecked"
+        @update-balances="balancesOpen = true"
         @select-day="openDay"
       />
 
       <LowestBalanceCard :verdict="verdict" :today="today" />
 
-      <UpcomingCard
-        class="lg:col-span-2"
-        :occurrences="upcoming"
-        :accounts-by-id="accountsById"
-        :horizon-days="horizonDays"
+        <UpcomingCard
+          class="lg:col-span-2"
+          :occurrences="upcoming"
+          :accounts-by-id="accountsById"
+          :horizon-days="horizonDays"
+          :today="today"
+          @select-day="openDay"
+        />
+      </div>
+
+      <UpdateBalancesEditor
+        :open="balancesOpen"
+        :accounts="accounts"
         :today="today"
-        @select-day="openDay"
+        :newest-on-file="readings.newest"
+        @update:open="(value) => (balancesOpen = value)"
+        @save="recordBalances"
       />
-    </div>
+    </template>
 
     <DayDetailEditor
       :open="editorOpen"

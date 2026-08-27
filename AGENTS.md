@@ -4,6 +4,47 @@
 
 ---
 
+## What Runway is, and where it runs
+
+Runway answers one question: *given what is coming, when does my balance dip
+lowest, and does it clear my cushion?* Every screen is a view onto `domain/`'s
+projection of that.
+
+**Today the app runs on seeded data held in memory.** There are no accounts, no
+sign-in, and a reload starts over. That is a waypoint, not the architecture, and
+it is explicitly *not* a call for browser-local persistence: storing data in the
+browser was considered and dropped, because **authentication is the next feature
+to land** and a storage layer that sign-in would immediately replace is work
+done twice. Anything reaching for `localStorage` should be a Supabase call
+instead, once there is a session to make it under.
+
+**Supabase exists in this repo ahead of the app needing it**, deliberately. The
+schema, the deny-by-default RLS posture and the migrations are built and tested
+(`docs/database/`) so that the day accounts land, it is a change of *storage*
+rather than a redesign. Nothing under `app/` reads or writes Supabase yet.
+
+What that means while writing code:
+
+- **The domain shapes map to the schema one-to-one, on purpose.** `RunwayData`
+  is what `user_settings` and the user's rows will deserialize into. Add a field
+  to one and you add it to the other, and to the mapping table in
+  `docs/database/schema.md`. A field that exists only in memory is a field that
+  gets lost the day sign-in ships.
+- **`app/composables/useRunwayData.ts` is the seam.** It holds all state and
+  every mutation. Putting Supabase behind sign-in should mean changing that file
+  and nothing downstream of it, so screens must not reach around it.
+- **Per-user isolation is already the model.** Every domain table carries
+  `user_id`; do not write code that assumes a single user just because there is
+  currently exactly one.
+- **Device-derived facts are not user data.** The browser's timezone, viewport
+  and colour-scheme preference belong to the device and are re-derived there.
+  What the *user* chose is data and gets stored. Keeping those apart is what
+  lets the same account behave correctly on a second device.
+- **No real financial data, ever.** Seeds and fixtures are synthetic, and that
+  does not change when storage does.
+
+---
+
 ## Design reference
 
 Design artifacts live in `docs/design/<screen-slug>/`. The index is `docs/design/README.md`.
@@ -47,6 +88,28 @@ using `(select auth.uid())` — the subquery form, not bare `auth.uid()`.
 - `bun run test:rls` proves the posture holds. It needs the local stack up; a
   green `bun run test` with those tests skipped proves nothing.
 
+---
+
+## Projection engine
+
+`domain/` is the pure calculation engine every screen is a view onto. Read
+`docs/engine/README.md` before changing anything in it — the public API with
+worked examples, and the rules that are easy to get wrong.
+
+- **Pure and enforced.** No Nuxt, Supabase, network, filesystem or clock.
+  `today` is a parameter. `tests/domain/purity.test.ts` reads the source and
+  fails the build if that stops being true.
+- **Integer minor units everywhere.** Not one floating-point monetary value.
+- **Calendar days, never instants.** `YYYY-MM-DD`. `domain/dates.ts` `todayIn`
+  is the only function in the domain where a timezone means anything.
+- **One walk.** `project` computes the series, the running minimum and the
+  closing balance in a single pass; `evaluate` reads that summary. If you are
+  looping over points to find a minimum, the engine already found it.
+- **Golden fixtures are load-bearing.** `bun run test:golden:update` regenerates
+  `domain/fixtures/golden.json` — read the diff, and name the behaviour change
+  that caused it in the commit. If you cannot, it is a bug.
+- **The engine never logs.** A balance must not reach an application log.
+
 ## UI conventions
 
 - Vue 3 with `<script setup>` and TypeScript, strict mode
@@ -57,3 +120,33 @@ using `(select auth.uid())` — the subquery form, not bare `auth.uid()`.
 - Money is displayed from integer cents, formatted at the edge — never stored or passed as a float
 - Components perform no financial calculation. All projection arithmetic comes from the engine. Arithmetic on balances inside a component is a bug.
 - No balance values in logs, analytics events, or URL parameters
+
+---
+
+## Testing
+
+Full guide: `docs/testing.md`. What an agent must not get wrong:
+
+- **Four suites.** `bun run test:unit` (pure logic, needs nothing),
+  `bun run test:integration` (live local Supabase), `bun run test:rls` (a subset
+  of it), `bun run test:e2e` (Playwright against the running app). `bun run test`
+  runs the Vitest projects — unit and integration — and not E2E.
+- **Never point a suite at the hosted database.** Endpoints are resolved and
+  loopback-checked in `tests/support/stack.ts`, including values arriving through
+  `RUNWAY_RLS_*` environment variables. Do not add a second way to configure a
+  connection, and do not weaken that guard to make something run.
+- **A skipped suite is not a passing one.** The database tests skip themselves
+  when the stack is down so `bun run test` stays green without Docker; CI sets
+  `RUNWAY_RLS_REQUIRE_STACK=1` to ban that. If a test cannot run, make it fail
+  loudly — do not substitute a weaker assertion under the same test name.
+- **Seed fixtures go in through a user's own session**, never the admin
+  connection, so seeding exercises the INSERT policies and cannot create rows the
+  app could not. Build them from `domain/types.ts`; `tests/support/fixtures.ts`
+  is the helper.
+- **Never log a balance, a token or a connection string** — not in an assertion
+  message, not in CI output. Errors name hosts, ids and counts.
+- **Broken behaviour gets `test.fail()`, not deletion.** It runs, and the suite
+  goes red when someone fixes the bug and forgets to remove the annotation.
+  `test.fixme` is only for what cannot run at all yet.
+- Playwright traces and screenshots contain rendered balances. They are failure-
+  only CI artifacts; never commit them and never echo them into a log.

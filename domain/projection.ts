@@ -9,7 +9,8 @@
 
 import { occurrenceDates } from './cadence'
 import type { IsoDate } from './dates'
-import { addDays, compareDates, daysBetween, eachDay, minDate } from './dates'
+import { addDays, compareDates, daysBetween, eachDay, maxDate, minDate } from './dates'
+import { dailyDiscretionary } from './discretionary'
 import type { MinorUnits } from './money'
 import type { OccurrenceOverride } from './overrides'
 import { applyOverrides } from './overrides'
@@ -39,9 +40,37 @@ export interface DayPoint {
   readonly balance: MinorUnits
 }
 
+export interface LowestPoint {
+  readonly date: IsoDate
+  readonly balance: MinorUnits
+}
+
+/**
+ * What a caller asks a balance series for, produced by the same walk that
+ * produced the series itself.
+ *
+ * The issue is explicit that the series and the shortfall must not be computed
+ * twice, and this is how that holds: the running minimum and the endpoint fall
+ * out of the one pass that accumulates the balances. Nothing re-scans a series
+ * afterwards to find its low point, and no screen may either.
+ */
+export interface SeriesSummary {
+  /**
+   * The lowest balance at or after the window's `verdictFrom`, earliest date
+   * winning a tie — that is the day the user still has time to act on.
+   *
+   * `null` only when `verdictFrom` falls past the end of the window, i.e. there
+   * is no future left in this projection to have a low point in.
+   */
+  readonly lowest: LowestPoint | null
+  /** The balance on the window's last day. */
+  readonly ending: MinorUnits
+}
+
 export interface AccountSeries {
   readonly accountId: string
   readonly points: readonly DayPoint[]
+  readonly summary: SeriesSummary
 }
 
 export interface Projection {
@@ -49,6 +78,8 @@ export interface Projection {
   readonly byAccount: readonly AccountSeries[]
   /** Sum across the accounts included in this projection, day by day. */
   readonly combined: readonly DayPoint[]
+  /** The combined line's low point and endpoint, from the walk that built it. */
+  readonly combinedSummary: SeriesSummary
   readonly occurrences: readonly Occurrence[]
 }
 
@@ -65,6 +96,22 @@ export interface ProjectionWindow {
    * the same records and can be dropped by simply not passing it again.
    */
   readonly overrides?: readonly OccurrenceOverride[]
+  /**
+   * The first day the running minimum is allowed to consider. Defaults to
+   * `start`.
+   *
+   * The dashboard charts a window that opens two weeks *before* today but must
+   * judge only what is coming — a dip the user has already lived through is
+   * history, not a forecast. The chart window and the verdict window are
+   * therefore different spans, and the window carries both rather than the
+   * screen re-scanning the series with an offset.
+   *
+   * A `verdictFrom` before `start` is treated as `start`. One past `end` leaves
+   * every summary's `lowest` null rather than throwing — there is genuinely no
+   * future in that window to have a low point in, and that is worth being able
+   * to say.
+   */
+  readonly verdictFrom?: IsoDate
 }
 
 /**
@@ -153,9 +200,12 @@ function buildDeltas(
       add(transfer.toAccountId, transfer.date, transfer.amount)
   }
 
+  // Divided by the length of the month each day falls in, so a month costs
+  // exactly what the user said it costs — see `domain/discretionary.ts`.
   const source = accounts.find((account) => account.isDiscretionarySource)
-  if (source && data.dailyDiscretionarySpend > 0) {
-    for (const date of days) add(source.id, date, -data.dailyDiscretionarySpend)
+  if (source && data.monthlyDiscretionarySpend > 0) {
+    for (const date of days)
+      add(source.id, date, -dailyDiscretionary(data.monthlyDiscretionarySpend, date))
   }
 
   return deltas
@@ -172,14 +222,12 @@ function integrate(
   account: Account,
   days: readonly IsoDate[],
   deltas: Map<IsoDate, MinorUnits>,
-): DayPoint[] {
-  const points: DayPoint[] = days.map((date) => ({ date, balance: 0 }))
-  if (days.length === 0) return points
+): MinorUnits[] {
+  const balances = new Array<MinorUnits>(days.length).fill(0)
+  if (days.length === 0) return balances
 
   let anchorIndex = days.findIndex((date) => compareDates(date, account.balanceAsOf) >= 0)
   if (anchorIndex === -1) anchorIndex = days.length - 1
-
-  const balances = new Array<MinorUnits>(days.length).fill(0)
   balances[anchorIndex] = account.balance
 
   for (let i = anchorIndex + 1; i < days.length; i++) {
@@ -189,10 +237,16 @@ function integrate(
     balances[i] = (balances[i + 1] ?? 0) - (deltas.get(days[i + 1] as IsoDate) ?? 0)
   }
 
-  return days.map((date, i) => ({ date, balance: balances[i] ?? 0 }))
+  return balances
 }
 
-/** Builds the day-by-day balance series for a window. */
+/**
+ * Builds the day-by-day balance series for a window, per account and combined,
+ * along with each line's low point and closing balance.
+ *
+ * Everything a screen needs comes out of this one call. See
+ * `docs/engine/README.md` for worked examples.
+ */
 export function project(data: RunwayData, window: ProjectionWindow): Projection {
   const accounts = accountsFor(data, window.accountIds)
   const earliestAsOf = accounts.reduce<IsoDate>(
@@ -211,57 +265,66 @@ export function project(data: RunwayData, window: ProjectionWindow): Projection 
   })
   const deltas = buildDeltas(data, accounts, seriesDays, occurrences)
 
-  const fullSeries = accounts.map((account) => ({
-    accountId: account.id,
-    points: integrate(account, seriesDays, deltas.get(account.id) ?? new Map()),
-  }))
-
   const days = eachDay(window.start, window.end)
+  // Where the visible window begins inside the (possibly earlier-starting)
+  // integration range. Both ranges end on the same day.
+  const offset = Math.max(0, seriesDays.length - days.length)
+  // Days before this index are drawn but not judged.
+  //
+  // `Math.max(0, …)` is what raises a `verdictFrom` that precedes the window to
+  // its start — judging days the caller did not ask to see is never what was
+  // meant. It is deliberately not clamped at the other end: a `verdictFrom`
+  // past `end` yields `days.length`, no day is ever judged, and every `lowest`
+  // comes back null, which is how "no future left in this window" stays
+  // distinguishable from "judge its last day".
+  const verdictFrom = window.verdictFrom ?? window.start
+  const verdictIndex =
+    compareDates(verdictFrom, window.end) > 0
+      ? days.length
+      : Math.max(0, daysBetween(window.start, verdictFrom))
+
+  // One pass per account: it slices the visible span out of the integration
+  // range, accumulates the combined line as it goes, and tracks that account's
+  // own low point and closing balance. No series is walked a second time.
+  const combinedBalances = new Array<MinorUnits>(days.length).fill(0)
+  const byAccount: AccountSeries[] = accounts.map((account) => {
+    const balances = integrate(account, seriesDays, deltas.get(account.id) ?? new Map())
+    const points: DayPoint[] = []
+    let lowest: LowestPoint | null = null
+    for (let i = 0; i < days.length; i++) {
+      const date = days[i] as IsoDate
+      const balance = balances[offset + i] ?? 0
+      points.push({ date, balance })
+      combinedBalances[i] = (combinedBalances[i] ?? 0) + balance
+      // Strictly less-than, so an equal balance later in the window does not
+      // displace the earliest day the user could act on.
+      if (i >= verdictIndex && (!lowest || balance < lowest.balance)) lowest = { date, balance }
+    }
+    const ending = points.at(-1)?.balance ?? 0
+    return { accountId: account.id, points, summary: { lowest, ending } }
+  })
+
+  // The combined low point is not derivable from the per-account low points —
+  // two accounts can bottom out on different days — so it is tracked here, in
+  // the single walk that turns the accumulated sums into points.
+  const combined: DayPoint[] = []
+  let combinedLowest: LowestPoint | null = null
+  for (let i = 0; i < days.length; i++) {
+    const date = days[i] as IsoDate
+    const balance = combinedBalances[i] ?? 0
+    combined.push({ date, balance })
+    if (i >= verdictIndex && (!combinedLowest || balance < combinedLowest.balance))
+      combinedLowest = { date, balance }
+  }
+
   const visible = new Set(days)
-  const byAccount: AccountSeries[] = fullSeries.map((series) => ({
-    accountId: series.accountId,
-    points: series.points.filter((point) => visible.has(point.date)),
-  }))
-
-  const combined: DayPoint[] = days.map((date, index) => ({
-    date,
-    balance: byAccount.reduce((total, series) => total + (series.points[index]?.balance ?? 0), 0),
-  }))
-
   return {
     days,
     byAccount,
     combined,
+    combinedSummary: { lowest: combinedLowest, ending: combined.at(-1)?.balance ?? 0 },
     occurrences: occurrences.filter((occurrence) => visible.has(occurrence.date)),
   }
-}
-
-export interface LowestPoint {
-  readonly date: IsoDate
-  readonly balance: MinorUnits
-}
-
-/**
- * The lowest point of a series.
- *
- * `from` defaults to `1` because the dashboard's verdict is about what is
- * *coming*: today's balance is a fact the user can already see, so including it
- * would let a dip that has already happened masquerade as a forecast. Ties
- * resolve to the earliest date, which is the one the user needs to act on.
- */
-export function findLowestPoint(
-  points: readonly DayPoint[],
-  options: { readonly from?: number } = {},
-): LowestPoint | null {
-  const from = options.from ?? 1
-  let lowest: LowestPoint | null = null
-  for (let i = from; i < points.length; i++) {
-    const point = points[i]
-    if (!point) continue
-    if (!lowest || point.balance < lowest.balance)
-      lowest = { date: point.date, balance: point.balance }
-  }
-  return lowest
 }
 
 export type RunwayStatus = 'covered' | 'tight' | 'short'
@@ -295,12 +358,14 @@ export interface Verdict {
   readonly shortfall: MinorUnits
 }
 
-export function evaluate(
-  points: readonly DayPoint[],
-  cushion: MinorUnits,
-  options: { readonly from?: number } = {},
-): Verdict {
-  const lowest = findLowestPoint(points, options)
+/**
+ * The verdict a summary implies against a cushion.
+ *
+ * Takes the summary rather than the series precisely so that it cannot walk
+ * anything: the low point was already found, once, by `project`.
+ */
+export function evaluate(summary: SeriesSummary, cushion: MinorUnits): Verdict {
+  const lowest = summary.lowest
   const margin = (lowest?.balance ?? 0) - cushion
   return {
     status: classifyMargin(margin),
@@ -308,6 +373,73 @@ export function evaluate(
     margin,
     isCovered: margin >= 0,
     shortfall: margin < 0 ? -margin : 0,
+  }
+}
+
+export interface ShortfallQuestion {
+  /** The day the window opens on, and the first day the cushion has to hold. */
+  readonly today: IsoDate
+  /**
+   * The day being asked about — a bill's due date, or a date the user picked.
+   *
+   * Raised to `today` if it precedes it, so a stale selection asks a
+   * degenerate question ("does the cushion hold today?") rather than an
+   * inverted one.
+   */
+  readonly through: IsoDate
+  /** The balance the user is unwilling to drop below. */
+  readonly cushion: MinorUnits
+  /** Limits the question to these accounts. Omit for all of them. */
+  readonly accountIds?: readonly string[]
+  readonly overrides?: readonly OccurrenceOverride[]
+}
+
+export interface ShortfallAnswer extends Verdict {
+  /** The target the answer is about, after the raise-to-today rule above. */
+  readonly through: IsoDate
+  /** The combined balance on `today` — the figure the screen shows beside it. */
+  readonly startingBalance: MinorUnits
+  /** The combined balance on `through`. */
+  readonly endingBalance: MinorUnits
+}
+
+/**
+ * Whether the cushion survives to a given day, and by how much it misses.
+ *
+ * The shortfall is what it takes to hold the **running minimum** at or above
+ * the cushion for every day in `[today, through]` — not what it takes to end
+ * the window above it. Those are different numbers whenever a bill lands before
+ * the paycheck that covers it, which is the exact situation this screen exists
+ * for: a window can close $2,000 up and still bounce a payment in the middle.
+ * Reading the endpoint alone would answer "yes, you make it" on a window the
+ * user does not make it through.
+ *
+ * ```ts
+ * const answer = shortfallThrough(data, { today, through: rent.date, cushion })
+ * answer.isCovered  // false
+ * answer.shortfall  // 140_400 — $1,404 short, on answer.lowest.date
+ * ```
+ *
+ * This walks the projection once, through `project`. There is no second scan
+ * and no separate shortfall arithmetic: the number comes from the same summary
+ * the dashboard's verdict reads.
+ */
+export function shortfallThrough(data: RunwayData, question: ShortfallQuestion): ShortfallAnswer {
+  const through = maxDate(question.today, question.through)
+  const projection = project(data, {
+    start: question.today,
+    end: through,
+    // Explicit rather than defaulted: this screen's promise is about the whole
+    // span *including* today, unlike the dashboard's forward-looking verdict.
+    verdictFrom: question.today,
+    ...(question.accountIds ? { accountIds: question.accountIds } : {}),
+    ...(question.overrides ? { overrides: question.overrides } : {}),
+  })
+  return {
+    ...evaluate(projection.combinedSummary, question.cushion),
+    through,
+    startingBalance: projection.combined[0]?.balance ?? 0,
+    endingBalance: projection.combinedSummary.ending,
   }
 }
 

@@ -4,9 +4,9 @@ import { toMinorUnits } from './money'
 import {
   classifyMargin,
   evaluate,
-  findLowestPoint,
   occurrencesIn,
   project,
+  shortfallThrough,
   signedAmount,
   TIGHT_THRESHOLD,
   upcomingBills,
@@ -42,8 +42,9 @@ const data = (over: Partial<RunwayData> = {}): RunwayData => ({
   accounts: [account()],
   recurringItems: [],
   transfers: [],
-  dailyDiscretionarySpend: 0,
+  monthlyDiscretionarySpend: 0,
   safetyCushion: 0,
+  timeZone: null,
   ...over,
 })
 
@@ -113,13 +114,15 @@ describe('project', () => {
   })
 
   it('drains the daily discretionary spend from the source account only', () => {
+    // $310 across a 31-day August is exactly $10 a day, which is the only reason
+    // the expected balances below are round numbers.
     const result = project(
       data({
         accounts: [
           account({ id: 'a', isDiscretionarySource: true }),
           account({ id: 'b', balance: toMinorUnits(500) }),
         ],
-        dailyDiscretionarySpend: toMinorUnits(10),
+        monthlyDiscretionarySpend: toMinorUnits(310),
       }),
       { start: SEED_TODAY, end: addDays(SEED_TODAY, 2) },
     )
@@ -201,28 +204,186 @@ describe('transfers are balance-neutral', () => {
   })
 })
 
-describe('findLowestPoint', () => {
-  const points = [
-    { date: '2026-08-15', balance: 10 },
-    { date: '2026-08-16', balance: 50 },
-    { date: '2026-08-17', balance: 30 },
-    { date: '2026-08-18', balance: 30 },
-  ]
+describe('events between a stale reading and the window', () => {
+  const onceOn = (date: string, over: Partial<RecurringItem>): RecurringItem =>
+    item({ nextOccurrence: date, startsOn: date, endsOn: date, ...over })
 
-  it('ignores today by default, because the verdict is about what is coming', () => {
-    expect(findLowestPoint(points)).toEqual({ date: '2026-08-17', balance: 30 })
+  it('applies them, even though none of them is drawn', () => {
+    // The reading is true as of 2026-05-01 and already contains that day. The
+    // window opens two weeks later, so everything in between is integrated
+    // across without ever appearing on the chart — and if it were dropped, the
+    // opening balance would be too high by exactly the events nobody can see.
+    const data_ = data({
+      accounts: [
+        account({
+          id: 'a',
+          balance: toMinorUnits(5000),
+          balanceAsOf: '2026-05-01',
+          isDiscretionarySource: true,
+        }),
+      ],
+      recurringItems: [
+        onceOn('2026-05-05', { id: 'rent', amount: toMinorUnits(1200) }),
+        onceOn('2026-05-10', { id: 'pay', kind: 'income', amount: toMinorUnits(3000) }),
+      ],
+      monthlyDiscretionarySpend: toMinorUnits(1000),
+    })
+    const result = project(data_, { start: '2026-05-15', end: '2026-05-16' })
+
+    // 14 drained days (the 2nd through the 15th) at 3226c — May has 31 days, so
+    // the remainder of 25 puts the 1st through the 25th one cent above the share.
+    const drained = 14 * 3226
+    expect(result.combined[0]?.balance).toBe(
+      toMinorUnits(5000) - drained - toMinorUnits(1200) + toMinorUnits(3000),
+    )
+    // Neither of them is an occurrence of this window; they moved the opening
+    // balance and left no other trace.
+    expect(result.occurrences).toEqual([])
   })
 
-  it('includes today when explicitly asked', () => {
-    expect(findLowestPoint(points, { from: 0 })).toEqual({ date: '2026-08-15', balance: 10 })
+  it('would report a balance that is too high if they were dropped', () => {
+    // The same portfolio with the gap emptied. If the engine ever stopped
+    // integrating the gap, the test above would produce this number instead —
+    // which is the app telling someone they have $1,651.64 they do not have.
+    const withoutGap = project(
+      data({
+        accounts: [account({ id: 'a', balance: toMinorUnits(5000), balanceAsOf: '2026-05-01' })],
+      }),
+      { start: '2026-05-15', end: '2026-05-16' },
+    )
+    expect(withoutGap.combined[0]?.balance).toBe(toMinorUnits(5000))
+  })
+})
+
+describe('a stale reading breaks transfer neutrality, and that is correct', () => {
+  it('moves the combined line when the two legs straddle their as-of readings', () => {
+    // Checking was last read *today*, so today's activity is already inside its
+    // $1,000. Savings was last read five days ago, so it is not inside its $500.
+    // A transfer between them today is therefore counted once, not twice — and
+    // the combined line legitimately drops by it.
+    //
+    // This is not the engine losing money. It is two readings taken on
+    // different days disagreeing about whether the transfer has happened yet,
+    // and the honest total is the one that believes the fresher reading.
+    const straddling = data({
+      accounts: [
+        account({ id: 'checking', balance: toMinorUnits(1000), balanceAsOf: SEED_TODAY }),
+        account({ id: 'savings', balance: toMinorUnits(500), balanceAsOf: '2026-08-10' }),
+      ],
+      transfers: [
+        {
+          id: 'x',
+          fromAccountId: 'savings',
+          toAccountId: 'checking',
+          amount: toMinorUnits(100),
+          date: SEED_TODAY,
+          createdAt: 1,
+        },
+      ],
+    })
+    const window = { start: SEED_TODAY, end: SEED_TODAY }
+    const without = project({ ...straddling, transfers: [] }, window)
+    const withIt = project(straddling, window)
+
+    expect(without.combined[0]?.balance).toBe(toMinorUnits(1500))
+    expect(withIt.combined[0]?.balance).toBe(toMinorUnits(1400))
+    // Checking already had it; savings had not yet paid it.
+    expect(withIt.byAccount[0]?.points[0]?.balance).toBe(toMinorUnits(1000))
+    expect(withIt.byAccount[1]?.points[0]?.balance).toBe(toMinorUnits(400))
   })
 
-  it('resolves ties to the earliest date', () => {
-    expect(findLowestPoint(points)?.date).toBe('2026-08-17')
+  it('is neutral again once the transfer post-dates both readings', () => {
+    const clean = data({
+      accounts: [
+        account({ id: 'checking', balance: toMinorUnits(1000) }),
+        account({ id: 'savings', balance: toMinorUnits(500) }),
+      ],
+      transfers: [
+        {
+          id: 'x',
+          fromAccountId: 'savings',
+          toAccountId: 'checking',
+          amount: toMinorUnits(100),
+          date: addDays(SEED_TODAY, 1),
+          createdAt: 1,
+        },
+      ],
+    })
+    const window = { start: SEED_TODAY, end: addDays(SEED_TODAY, 2) }
+    expect(project(clean, window).combined.map((point) => point.balance)).toEqual(
+      project({ ...clean, transfers: [] }, window).combined.map((point) => point.balance),
+    )
+  })
+})
+
+describe('the low point, found in the same walk as the series', () => {
+  /** A one-off event: a monthly rule whose window is a single day. */
+  const onceOn = (date: string, over: Partial<RecurringItem>): RecurringItem =>
+    item({ nextOccurrence: date, startsOn: date, endsOn: date, ...over })
+
+  // 15th: $1,000. 16th: +$400. 17th: −$200. 18th: flat.
+  //   -> 1000, 1400, 1200, 1200
+  const dipping = data({
+    recurringItems: [
+      onceOn('2026-08-16', { id: 'up', kind: 'income', amount: toMinorUnits(400) }),
+      onceOn('2026-08-17', { id: 'down', kind: 'bill', amount: toMinorUnits(200) }),
+    ],
+  })
+  const window = { start: SEED_TODAY, end: '2026-08-18' }
+
+  it('searches the whole window when verdictFrom is left to default', () => {
+    const { combinedSummary } = project(dipping, window)
+    expect(combinedSummary.lowest).toEqual({ date: SEED_TODAY, balance: toMinorUnits(1000) })
   })
 
-  it('returns null when there is no future to search', () => {
-    expect(findLowestPoint([{ date: '2026-08-15', balance: 1 }])).toBeNull()
+  it('ignores days before verdictFrom, because a past dip is not a forecast', () => {
+    const { combinedSummary } = project(dipping, { ...window, verdictFrom: '2026-08-16' })
+    expect(combinedSummary.lowest).toEqual({ date: '2026-08-17', balance: toMinorUnits(1200) })
+  })
+
+  it('resolves ties to the earliest date, the one still worth acting on', () => {
+    const { combinedSummary } = project(dipping, { ...window, verdictFrom: '2026-08-16' })
+    // The 17th and the 18th are both $1,200; the 17th wins.
+    expect(combinedSummary.lowest?.date).toBe('2026-08-17')
+  })
+
+  it('treats a verdictFrom before the window as the window itself', () => {
+    const { combinedSummary } = project(dipping, { ...window, verdictFrom: '2020-01-01' })
+    expect(combinedSummary.lowest).toEqual({ date: SEED_TODAY, balance: toMinorUnits(1000) })
+  })
+
+  it('has no low point when verdictFrom leaves no future to search', () => {
+    const { combinedSummary } = project(dipping, {
+      start: SEED_TODAY,
+      end: SEED_TODAY,
+      verdictFrom: addDays(SEED_TODAY, 1),
+    })
+    expect(combinedSummary.lowest).toBeNull()
+  })
+
+  it('reports the closing balance alongside it, from that same walk', () => {
+    const { combinedSummary, byAccount } = project(dipping, window)
+    expect(combinedSummary.ending).toBe(toMinorUnits(1200))
+    expect(byAccount[0]?.summary.ending).toBe(toMinorUnits(1200))
+  })
+
+  it('finds the combined low point on a day no single account bottoms out', () => {
+    // A dips on the 16th, B on the 17th; together they are lowest on neither.
+    const two = data({
+      accounts: [
+        account({ id: 'a', balance: toMinorUnits(1000) }),
+        account({ id: 'b', balance: toMinorUnits(1000) }),
+      ],
+      recurringItems: [
+        onceOn('2026-08-16', { id: 'a-bill', accountId: 'a', amount: toMinorUnits(300) }),
+        onceOn('2026-08-17', { id: 'b-bill', accountId: 'b', amount: toMinorUnits(300) }),
+      ],
+    })
+    const { byAccount, combinedSummary } = project(two, window)
+    expect(byAccount[0]?.summary.lowest?.date).toBe('2026-08-16')
+    expect(byAccount[1]?.summary.lowest?.date).toBe('2026-08-17')
+    // Both bills have landed by the 17th: 2000 − 300 − 300.
+    expect(combinedSummary.lowest).toEqual({ date: '2026-08-17', balance: toMinorUnits(1400) })
   })
 })
 
@@ -241,15 +402,20 @@ describe('classifyMargin', () => {
 describe('evaluate', () => {
   it('reports the shortfall as a negative margin', () => {
     const verdict = evaluate(
-      [
-        { date: '2026-08-15', balance: toMinorUnits(5000) },
-        { date: '2026-08-16', balance: toMinorUnits(4886) },
-      ],
+      { lowest: { date: '2026-08-16', balance: toMinorUnits(4886) }, ending: toMinorUnits(4886) },
       toMinorUnits(6000),
     )
     expect(verdict.status).toBe('short')
     expect(verdict.isCovered).toBe(false)
     expect(verdict.margin).toBe(toMinorUnits(-1114))
+  })
+
+  it('treats a window with no future in it as meeting nothing but zero', () => {
+    // No low point is not the same as a low point of zero, but the verdict has
+    // to say something: with nothing ahead, the margin is the cushion itself.
+    const verdict = evaluate({ lowest: null, ending: toMinorUnits(5000) }, toMinorUnits(600))
+    expect(verdict.lowest).toBeNull()
+    expect(verdict.margin).toBe(toMinorUnits(-600))
   })
 })
 
@@ -277,5 +443,87 @@ describe('upcomingBills', () => {
   it('is sorted by date ascending', () => {
     const dates = upcomingBills(seeded, SEED_TODAY).map((bill) => bill.date)
     expect([...dates].sort()).toEqual(dates)
+  })
+})
+
+describe('shortfallThrough', () => {
+  /** A one-off event: a monthly rule whose window is a single day. */
+  const onceOn = (date: string, over: Partial<RecurringItem>): RecurringItem =>
+    item({ nextOccurrence: date, startsOn: date, endsOn: date, ...over })
+
+  // Rent on the 18th empties the account; the paycheck on the 25th refills it.
+  // Ask about the 30th and the closing balance looks healthy — but the 18th
+  // through the 24th are spent under the cushion.
+  const dipping = data({
+    accounts: [account({ balance: toMinorUnits(2000) })],
+    recurringItems: [
+      onceOn('2026-08-18', { id: 'rent', name: 'Rent', amount: toMinorUnits(1800) }),
+      onceOn('2026-08-25', {
+        id: 'pay',
+        name: 'Paycheck',
+        kind: 'income',
+        amount: toMinorUnits(2500),
+      }),
+    ],
+  })
+
+  it('reports a mid-window dip the endpoint balance hides', () => {
+    const answer = shortfallThrough(dipping, {
+      today: SEED_TODAY,
+      through: '2026-08-30',
+      cushion: toMinorUnits(600),
+    })
+    // $2,700 on the last day — comfortably above a $600 cushion.
+    expect(answer.endingBalance).toBe(toMinorUnits(2700))
+    // And yet.
+    expect(answer.isCovered).toBe(false)
+    expect(answer.lowest).toEqual({ date: '2026-08-18', balance: toMinorUnits(200) })
+    expect(answer.shortfall).toBe(toMinorUnits(400))
+  })
+
+  it('is the amount that would actually fix the dip', () => {
+    const question = { today: SEED_TODAY, through: '2026-08-30', cushion: toMinorUnits(600) }
+    const short = shortfallThrough(dipping, question)
+    const topped = data({
+      ...dipping,
+      accounts: [account({ balance: toMinorUnits(2000) + short.shortfall })],
+    })
+    const after = shortfallThrough(topped, question)
+    expect(after.isCovered).toBe(true)
+    expect(after.shortfall).toBe(0)
+    // Exactly enough, not more: the low point now sits *on* the cushion.
+    expect(after.lowest?.balance).toBe(toMinorUnits(600))
+  })
+
+  it('counts today, unlike the dashboard verdict', () => {
+    const answer = shortfallThrough(data({ accounts: [account({ balance: toMinorUnits(100) })] }), {
+      today: SEED_TODAY,
+      through: '2026-08-30',
+      cushion: toMinorUnits(600),
+    })
+    expect(answer.lowest?.date).toBe(SEED_TODAY)
+    expect(answer.startingBalance).toBe(toMinorUnits(100))
+  })
+
+  it('raises a target in the past to today rather than inverting the window', () => {
+    const answer = shortfallThrough(data(), {
+      today: SEED_TODAY,
+      through: '2026-01-01',
+      cushion: toMinorUnits(600),
+    })
+    expect(answer.through).toBe(SEED_TODAY)
+    expect(answer.lowest).toEqual({ date: SEED_TODAY, balance: toMinorUnits(1000) })
+    expect(answer.isCovered).toBe(true)
+  })
+
+  it('is covered when nothing is scheduled and the balance already clears', () => {
+    const answer = shortfallThrough(data(), {
+      today: SEED_TODAY,
+      through: addDays(SEED_TODAY, 90),
+      cushion: toMinorUnits(600),
+    })
+    expect(answer.status).toBe('covered')
+    expect(answer.shortfall).toBe(0)
+    expect(answer.endingBalance).toBe(toMinorUnits(1000))
   })
 })

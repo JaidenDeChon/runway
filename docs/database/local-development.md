@@ -21,8 +21,9 @@ nothing outside your laptop — do not treat them as secrets, and do not copy
 them into `.env`.
 
 **You do not need a `.env` file to work locally.** Nothing in the local
-workflow reads one: the CLI knows its own stack, and `bun run test:rls` reads
-credentials from `supabase status` at run time. `.env` matters only when you
+workflow reads one: the CLI knows its own stack, and the test suites read
+credentials from `supabase status` at run time — and refuse any endpoint that
+is not on loopback (`tests/support/stack.ts`). `.env` matters only when you
 point the Nuxt app at the hosted project.
 
 ## The commands
@@ -33,7 +34,8 @@ point the Nuxt app at the hosted project.
 | `bun run db:stop` | Take it down. State survives. |
 | `bun run db:reset` | Drop, re-apply every migration from zero, re-seed. Your reset button. |
 | `bun run db:types` | Regenerate `shared/supabase/database.types.ts` from the running local schema. |
-| `bun run test:rls` | Run the RLS suite against the live stack. |
+| `bun run test:integration` | Run the whole integration project against the live stack. |
+| `bun run test:rls` | Run just the RLS files — a subset of the above. |
 
 Studio is at <http://127.0.0.1:54323>. Sent email lands in Mailpit at
 <http://127.0.0.1:54324> — nothing is delivered externally.
@@ -44,12 +46,13 @@ The `database` job in `.github/workflows/ci.yml` does on every pull request what
 you do locally: brings a stack up from nothing, applies every migration, loads
 the seed, and runs the suite. Three things about it are worth knowing.
 
-- **It runs `bun run test`, not `bun run test:rls`** — the full Vitest run,
-  every project. It is the only job with a database, so it is where any
-  integration or E2E project added later runs, with no workflow edit.
-- **It sets `RUNWAY_RLS_REQUIRE_STACK=1`.** Locally, the RLS project skips
-  itself when the stack is down so that someone without Docker still gets a
-  green `bun run test`. In CI that would be a green run proving nothing, so the
+- **It runs `bun run test`, not `bun run test:integration`** — the full Vitest
+  run, every project. It is the only job with a database, so it is where any
+  project added later runs, with no workflow edit. (Playwright has its own
+  runner and its own `E2E (Playwright)` job — see `docs/testing.md`.)
+- **It sets `RUNWAY_RLS_REQUIRE_STACK=1`.** Locally, the integration project
+  skips itself when the stack is down so that someone without Docker still gets
+  a green `bun run test`. In CI that would be a green run proving nothing, so the
   variable turns a missing stack into a hard failure. Set it locally too if you
   want the same strictness: `RUNWAY_RLS_REQUIRE_STACK=1 bun run test`.
 - **It fails when `shared/supabase/database.types.ts` is stale**, by
@@ -76,7 +79,7 @@ supabase migration new describe_the_change   # creates supabase/migrations/<ts>_
 # write the SQL — follow docs/database/rls.md, it is not optional
 bun run db:reset                             # prove it applies from zero
 bun run db:types                             # refresh the generated types
-bun run test:rls                             # prove the new table is closed
+bun run test:integration                     # prove the new table is closed
 git add supabase/migrations shared/supabase/database.types.ts
 ```
 
@@ -96,32 +99,35 @@ excluded from Biome for that reason.
 **never** sent by `supabase db push` and must never be run against the hosted
 project.
 
-It creates two synthetic users, because proving user A cannot read user B's
-rows takes two users:
+It creates three synthetic users. Two of them are there because proving user A
+cannot read user B's rows takes two users; the third is the short household,
+which the app needs and neither of the others is:
 
-| | id | credentials |
-| --- | --- | --- |
-| User A | `00000000-0000-4000-8000-00000000000a` | `user-a@runway.test` / `runway-local-a` |
-| User B | `00000000-0000-4000-8000-00000000000b` | `user-b@runway.test` / `runway-local-b` |
+| | id | credentials | scenario |
+| --- | --- | --- | --- |
+| User A | `00000000-0000-4000-8000-00000000000a` | `user-a@runway.test` / `runway-local-a` | mirrors `createSeedData()` — comfortably covered |
+| User B | `00000000-0000-4000-8000-00000000000b` | `user-b@runway.test` / `runway-local-b` | mirrors nothing; cross-user rows for the RLS probes |
+| User C | `00000000-0000-4000-8000-00000000000c` | `user-c@runway.test` / `runway-local-c` | mirrors `createShortSeedData()` — the short household |
 
 Ids are pinned constants so tests and future seed data can reference them
-directly. `tests/rls/helpers.ts` mirrors them — change one, change both.
+directly. `tests/support/database.ts` mirrors them — change one, change both.
 
 Everything in the seed is synthetic. No real balances, no real people, no real
 institution data, ever. That rule has no exceptions, including "just for a
 minute to debug something".
 
 Issue #3 adds `accounts` / `recurring_rules` / `occurrences` / `transfers` /
-`user_settings` rows to the bottom of the seed, owned by these same two ids.
-Do not invent new users.
+`user_settings` rows to the bottom of the seed, owned by these same ids. Do not
+invent new users: a fourth one is a fourth scenario to keep in step, and the
+three here already cover covered, short, and cross-user.
 
-### User A is a mirror. Put new fixtures on user B.
+### A and C are mirrors. Put new fixtures on user B.
 
-**User A's scenario must match `domain/seed.ts` rule for rule.** That module is
-what every screen renders today, and the figures quoted in
-`docs/design/*/spec.md` were computed from it — so a rule that exists in the seed
-and not in the module means your local database and the screenshots are showing
-different households.
+**User A's scenario must match `domain/seed.ts` rule for rule, and user C's must
+match `createShortSeedData()` the same way.** That module is what every screen
+renders today, and the figures quoted in `docs/design/*/spec.md` were computed
+from it — so a rule that exists in the seed and not in the module means your
+local database and the screenshots are showing different households.
 
 New fixtures — a cadence nobody had seeded yet, a state worth demonstrating —
 therefore go on **user B**, who mirrors nothing and exists so the RLS suite has
@@ -139,15 +145,32 @@ it exists to catch, both of which had already happened:
   the clamp forward, where `addMonthsClamped` returns to Mar 31. The seed steps
   over month starts and applies the day afterwards, which has no stickiness — so a
   rule anchored on the 29th, 30th or 31st is now safe to seed.
-- **The stored monthly discretionary figure has to survive the round trip.**
-  `dailyFromMonthly` is `round(monthly * 12 / 365)`, so `$1,034.00` comes back as
-  `$33.99` where the fixture says `$34.00` — a cent that then compounds on every
-  day of the burndown. Only `103402`–`103431` land on `$34.00`.
+- **The stored monthly discretionary figure has to match the fixture exactly.**
+  The engine divides the monthly figure by the length of the month each day falls
+  in, so the number crosses the boundary unconverted and the seed can simply hold
+  what `domain/seed.ts` holds. (It used to be converted — `round(monthly * 12 /
+  365)` — and the seed carried an odd `103417` chosen to survive that rounding.
+  Issue #4 removed the conversion; the odd number went with it.)
 
-One thing the seed deliberately does **not** cover: a *short* scenario. Both users
-are comfortably covered at every horizon, so the shortfall UI has no seeded data
-behind it. Worth adding when that screen is built — see
-`docs/design/dashboard/spec.md` for the state it should reproduce.
+### The short household
+
+User C exists because the seed used to cover only one of the app's two verdicts.
+Both of the other users are comfortably covered at every horizon, which left the
+Short band, the shortfall figure and the whole "you're $204 short on the 14th"
+half of the product with no seeded data behind it — and that is the half most
+people arrive at this app already living in.
+
+C mirrors `createShortSeedData()`: $1,104.28 in checking read on payday, rent on
+the 1st against semi-monthly pay that does not meet it, and $2,124 of monthly
+income against $2,176 of bills and discretionary spending. The $52/month bleed is
+deliberate. A household that recovers stops being a short fixture a few months
+after the day it was written, and nobody notices until a screenshot looks wrong.
+
+What makes it short is proven in `domain/seed.test.ts`, not here: the fixture is
+projected on every day for over a year and has to come back Short at 30, 60 and
+90 days each time, with the reported shortfall exact to the cent. This file's job
+is only to keep the database holding that same household —
+`tests/rls/seed-fidelity.test.ts` mirrors A and C alike.
 
 ## What is not connected to the hosted project
 
@@ -173,8 +196,13 @@ an unmounted volume. Check `docker info`.
 **Port already in use.** Another Supabase project is running. `supabase stop
 --project-id <other>`, or `supabase stop --all`.
 
-**The RLS tests skip with a warning.** The stack is down. `bun run db:start`.
-A green `bun run test` with the RLS tests skipped proves nothing about RLS.
+**The database tests skip with a warning.** The stack is down. `bun run
+db:start`. A green `bun run test` with them skipped proves nothing.
+
+**A suite refuses to start, saying an endpoint "is not this machine".** That is
+`tests/support/stack.ts` doing its job: something — most likely a stale
+`RUNWAY_RLS_API_URL` in your shell — is pointing the tests at a database that is
+not local. Unset it. Do not weaken the guard.
 
 **PostgREST returns 404 `PGRST205` for a table you just created.** The schema
 cache is stale, or — far more likely — the table has no `GRANT`. Check

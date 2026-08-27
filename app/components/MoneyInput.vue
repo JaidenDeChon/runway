@@ -61,11 +61,19 @@ const describedLabel = computed(() =>
     "
   >
     <span aria-hidden="true" class="font-mono text-sm text-muted-foreground">$</span>
+    <!--
+      `step="0.01"` because cents are valid input. `type="number"` defaults to
+      `step="1"`, which makes the browser reject "812.34" as a step mismatch:
+      the field stays invalid, the form will not submit, and nothing on screen
+      says why. For an app whose money *is* integer cents, a money field that
+      accepts only whole dollars is the wrong end of that rule.
+    -->
     <Input
       :id="props.id"
       :model-value="draft"
       type="number"
       inputmode="decimal"
+      step="0.01"
       :min="props.min"
       :placeholder="props.placeholder"
       :disabled="props.disabled"

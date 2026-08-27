@@ -7,6 +7,9 @@
  * copies as there are callers.
  */
 
+import type { IsoDate } from './dates'
+import { compareDates, daysBetween } from './dates'
+import type { MinorUnits } from './money'
 import type { Account, AccountColor, RecurringItem, Transfer } from './types'
 import { ACCOUNT_COLORS } from './types'
 
@@ -86,4 +89,101 @@ export function countDependents(
       (transfer) => transfer.fromAccountId === accountId || transfer.toAccountId === accountId,
     ).length,
   }
+}
+
+/** One account whose balance was last read before the others were. */
+export interface StaleReading {
+  readonly accountId: string
+  readonly asOf: IsoDate
+  /** How far behind the most recent reading this one is. Always at least 1. */
+  readonly daysBehind: number
+}
+
+export interface BalanceReadings {
+  /** The most recent `balanceAsOf` across the accounts; `null` when there are none. */
+  readonly newest: IsoDate | null
+  readonly oldest: IsoDate | null
+  /** Accounts read before `newest`, furthest behind first. */
+  readonly stale: readonly StaleReading[]
+  /** Days between the oldest and newest reading. `0` when they agree. */
+  readonly spreadDays: number
+  /** Every account was last read on the same day. Vacuously true for none. */
+  readonly isConsistent: boolean
+}
+
+/**
+ * How far the accounts' balance readings have drifted apart.
+ *
+ * This is a projection-quality fact, not a presentation one, which is why it
+ * lives here: a stored balance is true *as of* its own day and already contains
+ * everything up to it, so readings taken on different days do not describe one
+ * moment. The visible consequence is that recording a transfer between two
+ * such accounts moves the combined line — correctly, and bafflingly, because
+ * the transfer is inside one reading and not the other. See the worked example
+ * in `projection.test.ts`.
+ *
+ * The engine does not consult this. It projects what it is given; this is how a
+ * screen can tell the user that what it was given disagrees with itself.
+ */
+export function balanceReadings(accounts: readonly Account[]): BalanceReadings {
+  if (accounts.length === 0) {
+    return { newest: null, oldest: null, stale: [], spreadDays: 0, isConsistent: true }
+  }
+
+  let newest = accounts[0]?.balanceAsOf as IsoDate
+  let oldest = newest
+  for (const account of accounts) {
+    if (compareDates(account.balanceAsOf, newest) > 0) newest = account.balanceAsOf
+    if (compareDates(account.balanceAsOf, oldest) < 0) oldest = account.balanceAsOf
+  }
+
+  const stale = accounts
+    .filter((account) => account.balanceAsOf !== newest)
+    .map((account) => ({
+      accountId: account.id,
+      asOf: account.balanceAsOf,
+      daysBehind: daysBetween(account.balanceAsOf, newest),
+    }))
+    .sort((a, b) => b.daysBehind - a.daysBehind || a.accountId.localeCompare(b.accountId))
+
+  return {
+    newest,
+    oldest,
+    stale,
+    spreadDays: daysBetween(oldest, newest),
+    isConsistent: stale.length === 0,
+  }
+}
+
+/** A balance observed for one account. */
+export interface BalanceReading {
+  readonly accountId: string
+  readonly balance: MinorUnits
+}
+
+/**
+ * Records balances observed on `asOf`, leaving untouched accounts alone.
+ *
+ * **This is the seam for automatic balance refresh.** Whatever eventually
+ * supplies readings — a bank connection, an import, a scheduled job — hands the
+ * same `{ accountId, balance }[]` and the same `asOf` to this function, and
+ * every screen that reads `balanceAsOf` updates without knowing where the
+ * numbers came from. Keeping the shape identical to what the manual editor
+ * produces is the point: an automatic source should be a different *caller*,
+ * not a different code path, or the two will drift and only one of them will be
+ * tested.
+ *
+ * A reading naming an account that does not exist is ignored rather than
+ * inserted — a stale sync must not resurrect a deleted account.
+ */
+export function applyBalanceReadings(
+  accounts: readonly Account[],
+  readings: readonly BalanceReading[],
+  asOf: IsoDate,
+): Account[] {
+  const byId = new Map(readings.map((reading) => [reading.accountId, reading.balance]))
+  return accounts.map((account) => {
+    const balance = byId.get(account.id)
+    return balance === undefined ? account : { ...account, balance, balanceAsOf: asOf }
+  })
 }

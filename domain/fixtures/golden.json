@@ -1,0 +1,406 @@
+[
+  {
+    "name": "month-boundary-clamp",
+    "why": "A month-end bill lands on Feb 28 and then returns to Mar 31. The clamp must not stick.",
+    "window": {
+      "start": "2026-01-30",
+      "end": "2026-04-01",
+      "days": 62
+    },
+    "occurrences": [
+      "2026-01-31 Rent -180000",
+      "2026-02-28 Rent -180000",
+      "2026-03-31 Rent -180000"
+    ],
+    "combined": [
+      900000, 720000, 720000, 720000, 720000, 720000, 720000, 720000, 720000, 720000, 720000,
+      720000, 720000, 720000, 720000, 720000, 720000, 720000, 720000, 720000, 720000, 720000,
+      720000, 720000, 720000, 720000, 720000, 720000, 720000, 540000, 540000, 540000, 540000,
+      540000, 540000, 540000, 540000, 540000, 540000, 540000, 540000, 540000, 540000, 540000,
+      540000, 540000, 540000, 540000, 540000, 540000, 540000, 540000, 540000, 540000, 540000,
+      540000, 540000, 540000, 540000, 540000, 360000, 360000
+    ],
+    "combinedLowest": {
+      "date": "2026-03-31",
+      "balance": 360000
+    },
+    "combinedEnding": 360000,
+    "byAccount": [
+      {
+        "accountId": "checking",
+        "ending": 360000,
+        "lowest": {
+          "date": "2026-03-31",
+          "balance": 360000
+        }
+      }
+    ]
+  },
+  {
+    "name": "leap-day-present",
+    "why": "A rule on the 29th finds a 29th in February 2024 and lands on it.",
+    "window": {
+      "start": "2024-02-26",
+      "end": "2024-03-02",
+      "days": 6
+    },
+    "occurrences": ["2024-02-29 Insurance -12345"],
+    "combined": [500000, 500000, 500000, 487655, 487655, 487655],
+    "combinedLowest": {
+      "date": "2024-02-29",
+      "balance": 487655
+    },
+    "combinedEnding": 487655,
+    "byAccount": [
+      {
+        "accountId": "checking",
+        "ending": 487655,
+        "lowest": {
+          "date": "2024-02-29",
+          "balance": 487655
+        }
+      }
+    ]
+  },
+  {
+    "name": "leap-day-absent",
+    "why": "The same rule in 2026 has no 29th to land on and clamps to Feb 28.",
+    "window": {
+      "start": "2026-02-26",
+      "end": "2026-03-02",
+      "days": 5
+    },
+    "occurrences": ["2026-02-28 Insurance -12345"],
+    "combined": [500000, 500000, 487655, 487655, 487655],
+    "combinedLowest": {
+      "date": "2026-02-28",
+      "balance": 487655
+    },
+    "combinedEnding": 487655,
+    "byAccount": [
+      {
+        "accountId": "checking",
+        "ending": 487655,
+        "lowest": {
+          "date": "2026-02-28",
+          "balance": 487655
+        }
+      }
+    ]
+  },
+  {
+    "name": "dst-spring-forward",
+    "why": "Spans the US (Mar 8) and EU (Mar 29) spring transitions. Every day is one day.",
+    "window": {
+      "start": "2026-03-06",
+      "end": "2026-03-31",
+      "days": 26
+    },
+    "occurrences": [],
+    "combined": [
+      400000, 396774, 393548, 390322, 387096, 383870, 380644, 377418, 374192, 370966, 367740,
+      364514, 361288, 358062, 354836, 351610, 348384, 345158, 341932, 338706, 335481, 332256,
+      329031, 325806, 322581, 319356
+    ],
+    "combinedLowest": {
+      "date": "2026-03-31",
+      "balance": 319356
+    },
+    "combinedEnding": 319356,
+    "byAccount": [
+      {
+        "accountId": "checking",
+        "ending": 319356,
+        "lowest": {
+          "date": "2026-03-31",
+          "balance": 319356
+        }
+      }
+    ]
+  },
+  {
+    "name": "dst-fall-back",
+    "why": "Spans the EU (Oct 25) and US (Nov 1) autumn transitions, and a month boundary with them.",
+    "window": {
+      "start": "2026-10-23",
+      "end": "2026-11-03",
+      "days": 12
+    },
+    "occurrences": [],
+    "combined": [
+      400000, 396774, 393548, 390323, 387098, 383873, 380648, 377423, 374198, 370864, 367530, 364196
+    ],
+    "combinedLowest": {
+      "date": "2026-11-03",
+      "balance": 364196
+    },
+    "combinedEnding": 364196,
+    "byAccount": [
+      {
+        "accountId": "checking",
+        "ending": 364196,
+        "lowest": {
+          "date": "2026-11-03",
+          "balance": 364196
+        }
+      }
+    ]
+  },
+  {
+    "name": "bill-and-income-same-day",
+    "why": "Both land on 2026-02-10. The day nets out, and same-day order is by label, not by input order.",
+    "window": {
+      "start": "2026-02-08",
+      "end": "2026-02-12",
+      "days": 5
+    },
+    "occurrences": ["2026-02-10 Paycheck 310000", "2026-02-10 Rent -180000"],
+    "combined": [120000, 120000, 250000, 250000, 250000],
+    "combinedLowest": {
+      "date": "2026-02-08",
+      "balance": 120000
+    },
+    "combinedEnding": 250000,
+    "byAccount": [
+      {
+        "accountId": "checking",
+        "ending": 250000,
+        "lowest": {
+          "date": "2026-02-08",
+          "balance": 120000
+        }
+      }
+    ]
+  },
+  {
+    "name": "empty-window",
+    "why": "Accounts but no events at all. The line is flat and there is nothing to special-case.",
+    "window": {
+      "start": "2026-05-01",
+      "end": "2026-05-10",
+      "days": 10
+    },
+    "occurrences": [],
+    "combined": [
+      1314159, 1314159, 1314159, 1314159, 1314159, 1314159, 1314159, 1314159, 1314159, 1314159
+    ],
+    "combinedLowest": {
+      "date": "2026-05-01",
+      "balance": 1314159
+    },
+    "combinedEnding": 1314159,
+    "byAccount": [
+      {
+        "accountId": "checking",
+        "ending": 314159,
+        "lowest": {
+          "date": "2026-05-01",
+          "balance": 314159
+        }
+      },
+      {
+        "accountId": "savings",
+        "ending": 1000000,
+        "lowest": {
+          "date": "2026-05-01",
+          "balance": 1000000
+        }
+      }
+    ]
+  },
+  {
+    "name": "no-accounts",
+    "why": "Nothing at all. Every series is empty and the combined line is a flat zero, not a crash.",
+    "window": {
+      "start": "2026-05-01",
+      "end": "2026-05-05",
+      "days": 5
+    },
+    "occurrences": [],
+    "combined": [0, 0, 0, 0, 0],
+    "combinedLowest": {
+      "date": "2026-05-01",
+      "balance": 0
+    },
+    "combinedEnding": 0,
+    "byAccount": []
+  },
+  {
+    "name": "stale-reading-with-events",
+    "why": "A reading two weeks before the window, with a bill, income and a daily drain between the two. Every one of those has to be integrated across even though none of them is drawn.",
+    "window": {
+      "start": "2026-05-15",
+      "end": "2026-05-20",
+      "days": 6
+    },
+    "occurrences": ["2026-05-18 Card -40000"],
+    "combined": [634836, 631610, 628384, 585158, 581932, 578706],
+    "combinedLowest": {
+      "date": "2026-05-20",
+      "balance": 578706
+    },
+    "combinedEnding": 578706,
+    "byAccount": [
+      {
+        "accountId": "checking",
+        "ending": 578706,
+        "lowest": {
+          "date": "2026-05-20",
+          "balance": 578706
+        }
+      }
+    ]
+  },
+  {
+    "name": "short-household",
+    "why": "The seeded short household over the dashboard's own window. It is the only fixture whose verdict is Short, and every figure the Short state prints — the low point, its date, the closing balance above it — is pinned here so a change to the engine has to move them in a diff somebody reads.",
+    "window": {
+      "start": "2026-08-01",
+      "end": "2026-09-14",
+      "days": 45
+    },
+    "occurrences": [
+      "2026-08-01 Paycheck 106200",
+      "2026-08-01 Rent -115000",
+      "2026-08-06 Car insurance -12100",
+      "2026-08-12 Phone -5800",
+      "2026-08-15 Paycheck 106200",
+      "2026-08-22 Electric & water -13200",
+      "2026-08-24 Card minimum -9500",
+      "2026-09-01 Paycheck 106200",
+      "2026-09-01 Rent -115000",
+      "2026-09-06 Car insurance -12100",
+      "2026-09-12 Phone -5800"
+    ],
+    "combined": [
+      54628, 52628, 50628, 48628, 46628, 32528, 30528, 28528, 26528, 24528, 22528, 14728, 12728,
+      10728, 114928, 112928, 110928, 108928, 106928, 104928, 102928, 87728, 85728, 74228, 72228,
+      70228, 68228, 66228, 64228, 62228, 60228, 49361, 47294, 45227, 43160, 41093, 26926, 24859,
+      22792, 20725, 18658, 16591, 8724, 6657, 4590
+    ],
+    "combinedLowest": {
+      "date": "2026-09-14",
+      "balance": 4590
+    },
+    "combinedEnding": 4590,
+    "byAccount": [
+      {
+        "accountId": "acct-short-checking",
+        "ending": 90,
+        "lowest": {
+          "date": "2026-09-14",
+          "balance": 90
+        }
+      },
+      {
+        "accountId": "acct-short-savings",
+        "ending": 4500,
+        "lowest": {
+          "date": "2026-08-16",
+          "balance": 4500
+        }
+      }
+    ]
+  },
+  {
+    "name": "ninety-days-five-accounts",
+    "why": "The performance scenario, pinned as a golden too so the benchmark cannot drift silently.",
+    "window": {
+      "start": "2026-01-01",
+      "end": "2026-03-31",
+      "days": 90
+    },
+    "occurrences": [
+      "2026-01-01 Rent -180000",
+      "2026-01-04 Streaming -1899",
+      "2026-01-06 Gym -4500",
+      "2026-01-09 Paycheck 310000",
+      "2026-01-12 Utilities -14500",
+      "2026-01-13 Gym -4500",
+      "2026-01-20 Card -62000",
+      "2026-01-20 Gym -4500",
+      "2026-01-23 Paycheck 310000",
+      "2026-01-27 Gym -4500",
+      "2026-02-01 Rent -180000",
+      "2026-02-03 Gym -4500",
+      "2026-02-04 Streaming -1899",
+      "2026-02-06 Paycheck 310000",
+      "2026-02-10 Gym -4500",
+      "2026-02-12 Utilities -14500",
+      "2026-02-14 Premium -89900",
+      "2026-02-17 Gym -4500",
+      "2026-02-20 Card -62000",
+      "2026-02-20 Paycheck 310000",
+      "2026-02-24 Gym -4500",
+      "2026-03-01 Rent -180000",
+      "2026-03-03 Gym -4500",
+      "2026-03-04 Streaming -1899",
+      "2026-03-06 Paycheck 310000",
+      "2026-03-10 Gym -4500",
+      "2026-03-12 Utilities -14500",
+      "2026-03-17 Gym -4500",
+      "2026-03-20 Card -62000",
+      "2026-03-20 Paycheck 310000",
+      "2026-03-24 Gym -4500",
+      "2026-03-31 Gym -4500"
+    ],
+    "combined": [
+      1750000, 1746664, 1743328, 1738093, 1734757, 1726921, 1723585, 1720249, 2026913, 2023577,
+      2020241, 2002405, 1994569, 1991233, 1987897, 1984562, 1981227, 1977892, 1974557, 1904722,
+      1901387, 1898052, 2204717, 2201382, 2198047, 2194712, 2186877, 2183542, 2180207, 2176872,
+      2173537, 1989844, 1986151, 1977958, 1972366, 1968673, 2274980, 2271287, 2267594, 2263901,
+      2255708, 2252015, 2233822, 2230129, 2136536, 2132843, 2129150, 2120957, 2117264, 2113571,
+      2357878, 2354185, 2350492, 2346799, 2338606, 2334914, 2331222, 2327530, 2323838, 2140502,
+      2137166, 2129330, 2124095, 2120759, 2427423, 2424087, 2420751, 2417415, 2409579, 2406243,
+      2388407, 2385071, 2381735, 2378399, 2375064, 2367229, 2363894, 2360559, 2605224, 2601889,
+      2598554, 2595219, 2587384, 2584049, 2580714, 2577379, 2574044, 2570709, 2567374, 2559539
+    ],
+    "combinedLowest": {
+      "date": "2026-01-08",
+      "balance": 1720249
+    },
+    "combinedEnding": 2559539,
+    "byAccount": [
+      {
+        "accountId": "checking",
+        "ending": 1194736,
+        "lowest": {
+          "date": "2026-01-08",
+          "balance": 172148
+        }
+      },
+      {
+        "accountId": "savings",
+        "ending": 300000,
+        "lowest": {
+          "date": "2026-01-02",
+          "balance": 275000
+        }
+      },
+      {
+        "accountId": "bills",
+        "ending": 120500,
+        "lowest": {
+          "date": "2026-03-20",
+          "balance": 120500
+        }
+      },
+      {
+        "accountId": "travel",
+        "ending": 419303,
+        "lowest": {
+          "date": "2026-03-04",
+          "balance": 419303
+        }
+      },
+      {
+        "accountId": "buffer",
+        "ending": 525000,
+        "lowest": {
+          "date": "2026-01-02",
+          "balance": 500000
+        }
+      }
+    ]
+  }
+]
