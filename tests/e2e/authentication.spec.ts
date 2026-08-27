@@ -59,6 +59,18 @@ async function openUserMenu(page: import('@playwright/test').Page): Promise<void
   await trigger.click()
 }
 
+/**
+ * The password field on the sign-in page.
+ *
+ * `getByLabel('Password')` is ambiguous there, and correctly so: the tab is
+ * called "Password" and so is the field inside it, and Reka names the tabpanel
+ * after its trigger. Both are right; the locator has to say which one it means.
+ * Scoping to the panel keeps this role-based rather than reaching for an id.
+ */
+function signInPassword(page: import('@playwright/test').Page) {
+  return page.getByRole('tabpanel').getByLabel('Password')
+}
+
 test.beforeEach(({ baseURL }) => {
   assertBaseUrlIsLocal(baseURL)
   requireStackOrSkip()
@@ -82,7 +94,10 @@ test.describe('the sign-in door', () => {
   }) => {
     await gotoHydrated(page, '/accounts')
 
-    await expect(page).toHaveURL(/\/sign-in\?redirect=%2Faccounts/)
+    // `/accounts`, not `%2Faccounts`: vue-router leaves a slash unencoded in a
+    // query value. Both are accepted here so the test is about the round trip
+    // rather than about one router version's encoding taste.
+    await expect(page).toHaveURL(/\/sign-in\?redirect=(%2F|\/)accounts/)
     await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
   })
 
@@ -113,7 +128,7 @@ test.describe('the sign-in door', () => {
 
     // A seeded address that definitely exists, with the wrong password.
     await page.getByLabel('Email').first().fill(USER_A.email)
-    await page.getByLabel('Password').fill('definitely-not-the-password')
+    await signInPassword(page).fill('definitely-not-the-password')
     await page.getByRole('button', { name: 'Sign in' }).click()
 
     const alert = page.getByRole('alert')
@@ -122,7 +137,7 @@ test.describe('the sign-in door', () => {
 
     // An address that definitely does not.
     await page.getByLabel('Email').first().fill('nobody-here@runway.test')
-    await page.getByLabel('Password').fill('definitely-not-the-password')
+    await signInPassword(page).fill('definitely-not-the-password')
     await page.getByRole('button', { name: 'Sign in' }).click()
 
     await expect(alert).toBeVisible()
@@ -184,7 +199,7 @@ test.describe('the full lifecycle', () => {
 
     // ── sign back in ─────────────────────────────────────────────────────────
     await page.getByLabel('Email').first().fill(email)
-    await page.getByLabel('Password').fill(THROWAWAY_PASSWORD)
+    await signInPassword(page).fill(THROWAWAY_PASSWORD)
     await page.getByRole('button', { name: 'Sign in' }).click()
 
     // Back to where they were headed, because sign-in remembered.
