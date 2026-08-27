@@ -120,7 +120,8 @@ test.describe('first-run onboarding', () => {
     // first looked like "onboarding loses the balance" — twice, for two
     // unrelated reasons, neither of them the one originally reported. The first
     // was this test racing hydration (see `gotoHydrated` in ./fixtures.ts); the
-    // second is the genuine `step` defect isolated in the test below. Keeping
+    // second was the genuine `step` defect, now fixed and regression-tested
+    // below. Keeping
     // the value whole here means this test measures what it claims to — that
     // Back preserves state — and not the defect, which has its own test.
     await expect(page.locator('#onboarding-account-name')).toHaveValue('Everyday')
@@ -128,41 +129,56 @@ test.describe('first-run onboarding', () => {
   })
 
   /**
-   * A real, user-facing defect, found by this harness and verified at the
-   * browser level rather than inferred.
+   * A real, user-facing defect this harness found, and the regression test for
+   * the fix.
    *
-   * `MoneyInput` renders `<input type="number">` and sets no `step`, so the
-   * HTML default of `step=1` applies. Any amount with cents is then a
-   * `stepMismatch`: the input reports `checkValidity() === false`, and because
+   * `MoneyInput` rendered `<input type="number">` with no `step`, so the HTML
+   * default of `step=1` applied. Any amount with cents was then a
+   * `stepMismatch`: the input reported `checkValidity() === false`, and because
    * both first-run step cards wrap their fields in a real `<form>` with a
-   * `type="submit"` button, **the whole form becomes unsubmittable**. A user who
-   * types 812.34 as their opening balance cannot press Continue at all.
+   * `type="submit"` button, **the whole form became unsubmittable**. A user who
+   * typed 812.34 as their opening balance could not press Continue at all.
    *
-   * Measured directly, not deduced from a timeout:
+   * Measured directly at the time, not deduced from a timeout:
    *
    *     2500   -> { step: null, stepMismatch: false, formValid: true  }
    *     812.34 -> { step: null, stepMismatch: true,  formValid: false }
    *
-   * This is browser validation, so it is not specific to the dev server and not
-   * a hydration artifact — it reproduces against the production preview too.
-   * For an application whose stated rule is that money *is* integer cents, a
-   * money field that rejects cents is worth fixing deliberately.
-   *
-   * The fix is one attribute — `step="0.01"` on the input inside
-   * `app/components/MoneyInput.vue` — but it is an application change, and this
-   * pull request is the test scaffold. Raised rather than silently resolved,
-   * per CLAUDE.md. Delete this annotation when it lands.
+   * Fixed by `step="0.01"` on the input inside `app/components/MoneyInput.vue`.
+   * The assertions below are deliberately at both levels — the form advances,
+   * *and* the browser reports the field valid — because only the second one
+   * distinguishes "the fix is in place" from "some other change happened to
+   * make Continue clickable".
    */
-  test.fail('accepts an opening balance that has cents in it', async ({ page }) => {
+  test('accepts an opening balance that has cents in it', async ({ page }) => {
     await gotoHydrated(page, '/first-run')
 
     const continueButton = page.getByRole('button', { name: 'Continue' })
     await page.locator('#onboarding-account-name').fill('Everyday')
     await expect(continueButton).toBeEnabled()
-    await page.locator('#onboarding-account-balance').fill('812.34')
-    await continueButton.click()
+    const balance = page.locator('#onboarding-account-balance')
+    await balance.fill('812.34')
 
-    await expect(cardTitle(page, 'Add a bill or paycheck')).toBeVisible({ timeout: 5_000 })
+    // The defect, asserted where it actually lived. `stepMismatch` is the flag
+    // that was set; the form's own validity is what it cost the user.
+    const validity = await balance.evaluate((element) => {
+      const input = element as HTMLInputElement
+      return {
+        step: input.getAttribute('step'),
+        stepMismatch: input.validity.stepMismatch,
+        formValid: input.form?.checkValidity() ?? null,
+      }
+    })
+    expect(validity).toEqual({ step: '0.01', stepMismatch: false, formValid: true })
+
+    await clickUntil(continueButton, cardTitle(page, 'Add a bill or paycheck'))
+
+    // The cents survived the step, rather than being rounded away on the way in.
+    await clickUntil(
+      page.getByRole('button', { name: 'Back' }),
+      page.locator('#onboarding-account-name'),
+    )
+    await expect(page.locator('#onboarding-account-balance')).toHaveValue('812.34')
   })
 
   test('offers income as well as bills', async ({ page }) => {
