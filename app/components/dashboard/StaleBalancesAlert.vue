@@ -2,13 +2,13 @@
 /**
  * Says so when the accounts' balances were last read on different days.
  *
- * This is a warning about the *inputs*, not about the money, and it sits above
- * the forecast because everything below it is derived from readings that do not
- * describe one moment. A balance is true as of its own day and already contains
- * everything up to that day, so a chart built from a reading taken today and
- * one taken three weeks ago is quietly adding a stale number to a fresh one —
- * and recording a transfer between the two moves the combined line, which looks
- * exactly like the app losing money.
+ * This is a warning about the *inputs*, not about the money, and it sits inside
+ * the forecast card directly above the chart it is warning about. A balance is
+ * true as of its own day and already contains everything up to that day, so a
+ * chart built from a reading taken today and one taken three weeks ago is
+ * quietly adding a stale number to a fresh one — and recording a transfer
+ * between the two moves the combined line, which looks exactly like the app
+ * losing money.
  *
  * Amber rather than destructive: nothing is broken and nothing was lost. The
  * forecast is simply less trustworthy than it looks, and one action fixes it.
@@ -22,7 +22,7 @@ import { TriangleAlert } from '@lucide/vue'
 import { computed } from 'vue'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { formatDateLong } from '@/lib/format'
+import { formatDateShort } from '@/lib/format'
 import type { BalanceReadings } from '~~/domain/accounts'
 import type { Account } from '~~/domain/types'
 
@@ -39,16 +39,25 @@ const names = computed(() =>
   ),
 )
 
-/** "Savings", "Savings and Travel", "Savings, Travel and Buffer". */
+const isSingle = computed(() => names.value.length <= 1)
+
+/** `"Savings"`, `"Savings" and "Travel"`, `"Savings", "Travel" and "Buffer"`. */
 const nameList = computed(() => {
-  const list = names.value
-  if (list.length <= 1) return list[0] ?? 'One account'
-  return `${list.slice(0, -1).join(', ')} and ${list.at(-1)}`
+  const quoted = names.value.map((name) => `"${name}"`)
+  if (quoted.length <= 1) return quoted[0] ?? '"One account"'
+  return `${quoted.slice(0, -1).join(', ')} and ${quoted.at(-1)}`
 })
 
+/**
+ * How long the worst-off account has been behind.
+ *
+ * "up to" once more than one account is named, because a single figure cannot
+ * be true of all of them and the worst is the one that matters.
+ */
 const behind = computed(() => {
   const worst = props.readings.stale[0]?.daysBehind ?? 0
-  return worst === 1 ? 'a day' : `${worst} days`
+  const days = worst === 1 ? 'a day' : `${worst} days`
+  return isSingle.value ? days : `up to ${days}`
 })
 </script>
 
@@ -58,12 +67,17 @@ const behind = computed(() => {
     <AlertTitle class="font-medium">Some balances are older than others</AlertTitle>
     <AlertDescription class="text-muted-foreground">
       <p>
-        {{ nameList }}
-        {{ names.length === 1 ? 'was' : 'were' }} last updated {{ behind }} before your other
-        accounts, so this forecast is mixing a fresh balance with a stale one.
+        Your {{ nameList }} {{ isSingle ? 'account hasn\'t' : 'accounts haven\'t' }} been updated in
+        {{ behind }}.
+        {{
+          isSingle
+            ? 'Since that account has older data than your others,'
+            : 'Since those accounts have older data than your others,'
+        }}
+        this chart is not as accurate as it should be.
         <template v-if="props.readings.newest">
-          Bringing everything up to {{ formatDateLong(props.readings.newest) }} or later makes it
-          agree with itself.
+          Please bring everything up to {{ formatDateShort(props.readings.newest) }} for the most
+          accuracy.
         </template>
       </p>
       <Button
