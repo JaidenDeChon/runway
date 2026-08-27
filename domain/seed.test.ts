@@ -17,7 +17,7 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, compareDates, type IsoDate } from './dates'
 import { evaluate, project, shortfallThrough } from './projection'
-import { createSeedData, createShortSeedData, SEED_TODAY } from './seed'
+import { createEmptyData, createSeedData, createShortSeedData, SEED_TODAY } from './seed'
 import type { RunwayData } from './types'
 
 /** The horizons the dashboard's toggle offers. */
@@ -167,6 +167,60 @@ describe('the comfortable household', () => {
   it('is covered at every horizon, so the two fixtures cover both verdicts', () => {
     for (const horizonDays of HORIZONS) {
       expect(verdictAt(data, SEED_TODAY, horizonDays).status).toBe('covered')
+    }
+  })
+})
+
+describe('the zero state', () => {
+  const data = createEmptyData()
+
+  it('is genuinely empty — nothing to project from', () => {
+    expect(data.accounts).toEqual([])
+    expect(data.recurringItems).toEqual([])
+    expect(data.transfers).toEqual([])
+  })
+
+  it('spends nothing, because the user has not said what they spend yet', () => {
+    // Not a token figure carried over from the seeded household: a discretionary
+    // rate nobody entered would drain a dashboard the user has put no data into.
+    expect(data.monthlyDiscretionarySpend).toBe(0)
+  })
+
+  it('follows the device for its dates, like every other new record', () => {
+    // `null` means "follow the device". A zero state that shipped a concrete
+    // zone would freeze whichever machine happened to produce it.
+    expect(data.timeZone).toBeNull()
+  })
+
+  it('carries a cushion, so the verdict bands mean something on day one', () => {
+    expect(data.safetyCushion).toBeGreaterThan(0)
+  })
+
+  it('projects a flat line at zero rather than throwing', () => {
+    // This is what "Skip to dashboard" renders, so the engine has to survive it.
+    for (const horizonDays of HORIZONS) {
+      const { projection } = verdictAt(data, SEED_TODAY, horizonDays)
+      expect(projection.byAccount).toEqual([])
+      expect(projection.occurrences).toEqual([])
+      expect(projection.combined.every((point) => point.balance === 0)).toBe(true)
+      expect(projection.combined).toHaveLength(LOOKBACK_DAYS + horizonDays + 1)
+    }
+  })
+
+  it('reads as short of its own cushion, which is what the empty state is for', () => {
+    // Recorded rather than argued with. Zero is below any positive cushion, so
+    // the dashboard must not show this verdict as a finding about the user's
+    // money — `useRunwayData`'s `isEmpty` is what gates it, and this test is the
+    // reason that gate cannot be quietly removed.
+    const verdict = verdictAt(data, SEED_TODAY, 30)
+    expect(verdict.status).toBe('short')
+    expect(verdict.shortfall).toBe(data.safetyCushion)
+  })
+
+  it('shares no record with either seeded household', () => {
+    for (const seeded of [createSeedData(), createShortSeedData()]) {
+      expect(seeded.accounts.length).toBeGreaterThan(0)
+      expect(data.accounts).not.toEqual(seeded.accounts)
     }
   })
 })

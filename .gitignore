@@ -39,3 +39,9 @@ supabase/.branches/
 # `supabase start` output is captured to this file in CI so its key banner
 # never reaches the log. It holds those keys; never commit it.
 supabase-start.log
+
+# Agent run state. `.claude/agents/gh-board-runner.md` checkpoints the board
+# queue, the current task's phase, and each task's Opus plan here so a rate
+# limit costs a resume rather than a re-plan. Run state, not source — the
+# durable copy lives on the issues and the project board.
+.claude/runway-runner/

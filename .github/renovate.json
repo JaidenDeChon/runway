@@ -1,0 +1,32 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+
+  "//": "Renovate owns npm dependencies here; Dependabot keeps github-actions. See the comment in dependabot.yml for why the split exists.",
+
+  "//enabledManagers": "'bun', not 'npm'. Renovate's bun manager declares supersedesManagers=['npm'] and owns package.json wherever a bun lockfile sits beside it, and its updateArtifacts step regenerates bun.lock — which is the entire reason for this migration. Listing 'npm' here would disable the bun manager, hand package.json to npm, and reproduce the Dependabot bug exactly. This also leaves the github-actions manager off, so Renovate ignores .github/workflows and Dependabot keeps it.",
+  "enabledManagers": ["bun"],
+
+  "schedule": ["before 6am on monday"],
+  "prConcurrentLimit": 5,
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+
+  "packageRules": [
+    {
+      "//": "@types/node tracks the runtime major, not the newest release: Netlify builds on NODE_VERSION 22.13.0 and engines.node is >=22.13.0. Typing against a newer major would let a call to a Node-26-only API typecheck clean and fail in production. Minor and patch within 22 still come through. Raise the floor in netlify.toml and engines first, then this rule.",
+      "matchPackageNames": ["@types/node"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "groupName": "nuxt",
+      "matchPackageNames": ["nuxt", "@nuxt/**", "@nuxtjs/**"]
+    },
+    {
+      "groupName": "shadcn",
+      "matchPackageNames": ["shadcn-vue", "reka-ui", "@lucide/vue", "tailwind*", "@tailwindcss/**"]
+    }
+  ]
+}
