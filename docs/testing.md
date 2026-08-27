@@ -135,9 +135,16 @@ Chromium: a desktop viewport and a 375px one, because `CLAUDE.md` says every
 screen is built at 375px first and a harness that only drove desktop would let
 that rot unobserved.
 
-Playwright starts the app itself (`webServer`), against the Nuxt **dev** server.
-That makes the local loop instant and means this suite does not exercise the
-production build's output — `bun run build` is a separate CI gate that does.
+Playwright starts the app itself (`webServer`), against a **production
+preview** — `bun run build && bun run preview` — not the Nuxt dev server. It
+started as dev and moved: the dev server compiles routes lazily, and on a cold
+CI runner with no `.nuxt` cache it did not become ready inside 180s, so the
+whole job failed without running a test while passing locally on a warm cache.
+The preview server serves an already-built Nitro output, is listening in
+seconds, and exercises what actually ships. CI builds in an explicit step and
+overrides the command with `RUNWAY_E2E_SERVER_COMMAND=bun run preview`, so a
+compile error is reported as a failed build rather than as a server that never
+came up. See the header of `playwright.config.ts` for the long form.
 
 Traces, screenshots and video are kept **on failure only** and uploaded as CI
 artifacts. They contain rendered page content, which for this app means
