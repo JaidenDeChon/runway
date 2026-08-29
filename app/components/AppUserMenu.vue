@@ -1,11 +1,21 @@
 <script setup lang="ts">
-// PLACEHOLDER — intentionally non-functional.
-// The static user and the inert menu items exist to establish the visual shell
-// only. Real session data, avatar, and working Account / Settings / Log out
-// actions are wired up by issue #6 (Authentication). Do not build features on
-// the `user` constant below.
+/**
+ * The signed-in user, and the way out.
+ *
+ * This was a placeholder with a hardcoded "Jordan Rivers" waiting on issue #6.
+ * It now reads `useAuthUser()`, which is filled during server-side rendering
+ * from a validated session — so the correct name is in the first HTML the
+ * browser receives, not swapped in after hydration.
+ *
+ * Account and Settings stay inert. They are screens that do not exist yet
+ * (`user_settings` has no editor — see `docs/database/schema.md`), and this
+ * issue's scope is authentication, not building them. They are disabled rather
+ * than removed so the menu keeps the shape the design gave it, and so a click
+ * does nothing visible instead of navigating to a 404.
+ */
 
 import { BadgeCheck, ChevronsUpDown, LogOut, Settings } from '@lucide/vue'
+import { computed, ref } from 'vue'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -24,11 +34,27 @@ import {
 } from '@/components/ui/sidebar'
 
 const { isMobile } = useSidebar()
+const user = useAuthUser()
+const { signOut } = useAuthActions()
 
-const user = {
-  name: 'Jordan Rivers',
-  email: 'jordan@example.com',
-  initials: 'JR',
+const signingOut = ref(false)
+
+/**
+ * A rendered fallback for the moment before the session resolves, so the
+ * sidebar does not collapse and reflow. Never a real person's details.
+ */
+const displayName = computed(() => user.value?.displayName ?? 'Signed in')
+const email = computed(() => user.value?.email ?? '')
+const initials = computed(() => user.value?.initials ?? '·')
+
+async function onSignOut(): Promise<void> {
+  if (signingOut.value) return
+  signingOut.value = true
+  try {
+    await signOut()
+  } finally {
+    signingOut.value = false
+  }
 }
 </script>
 
@@ -42,11 +68,11 @@ const user = {
             class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
           >
             <Avatar class="size-8 rounded-lg">
-              <AvatarFallback class="rounded-lg">{{ user.initials }}</AvatarFallback>
+              <AvatarFallback class="rounded-lg">{{ initials }}</AvatarFallback>
             </Avatar>
             <div class="grid flex-1 text-left text-sm leading-tight">
-              <span class="truncate font-medium">{{ user.name }}</span>
-              <span class="truncate text-xs text-muted-foreground">{{ user.email }}</span>
+              <span class="truncate font-medium">{{ displayName }}</span>
+              <span class="truncate text-xs text-muted-foreground">{{ email }}</span>
             </div>
             <ChevronsUpDown class="ml-auto size-4" />
           </SidebarMenuButton>
@@ -60,29 +86,29 @@ const user = {
           <DropdownMenuLabel class="p-0 font-normal">
             <div class="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
               <Avatar class="size-8 rounded-lg">
-                <AvatarFallback class="rounded-lg">{{ user.initials }}</AvatarFallback>
+                <AvatarFallback class="rounded-lg">{{ initials }}</AvatarFallback>
               </Avatar>
               <div class="grid flex-1 text-left text-sm leading-tight">
-                <span class="truncate font-medium">{{ user.name }}</span>
-                <span class="truncate text-xs text-muted-foreground">{{ user.email }}</span>
+                <span class="truncate font-medium">{{ displayName }}</span>
+                <span class="truncate text-xs text-muted-foreground">{{ email }}</span>
               </div>
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
-            <DropdownMenuItem>
+            <DropdownMenuItem disabled>
               <BadgeCheck />
               Account
             </DropdownMenuItem>
-            <DropdownMenuItem>
+            <DropdownMenuItem disabled>
               <Settings />
               Settings
             </DropdownMenuItem>
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
-          <DropdownMenuItem>
+          <DropdownMenuItem :disabled="signingOut" @select="onSignOut">
             <LogOut />
-            Log out
+            {{ signingOut ? 'Signing out…' : 'Log out' }}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

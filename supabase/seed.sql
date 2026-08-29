@@ -150,7 +150,18 @@ insert into public.user_settings (
   -- discretionary spending against $2,124 of income. time_zone is null for the
   -- same reason A's is — the fixture follows the device.
   ('00000000-0000-4000-8000-00000000000c', 25000, 62000,
-   '10000000-0000-4000-8000-00000000000c', 30, null);
+   '10000000-0000-4000-8000-00000000000c', 30, null)
+-- The trigger added by 20260827160000_user_settings_on_signup.sql already
+-- created a defaults-only row for each of these users the moment the auth.users
+-- insert above landed. A plain insert would now fail on the primary key, so the
+-- seed states what it means: these three rows are the authority on what A, B
+-- and C hold, and they supersede the defaults rather than racing them.
+on conflict (user_id) do update set
+  cushion_cents = excluded.cushion_cents,
+  monthly_discretionary_cents = excluded.monthly_discretionary_cents,
+  discretionary_account_id = excluded.discretionary_account_id,
+  default_horizon_days = excluded.default_horizon_days,
+  time_zone = excluded.time_zone;
 
 -- recurring_rules.
 --

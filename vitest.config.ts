@@ -22,13 +22,19 @@ export default defineConfig({
           include: [
             'app/lib/**/*.test.ts',
             'app/utils/**/*.test.ts',
+            // `shared/` is Nuxt's both-sides directory: the session and route
+            // utilities there are imported by the browser, by server-side
+            // rendering and by Nitro handlers alike, so their tests belong in
+            // the project that boots none of those.
+            'shared/**/*.test.ts',
             'domain/**/*.test.ts',
             'tests/domain/**/*.test.ts',
           ],
         },
         resolve: {
-          // Mirrors Nuxt's aliases so `@/lib/...` resolves the same way it does at runtime.
-          alias: { '@': appDir, '~': appDir, '@@': rootDir, '~~': rootDir },
+          // Mirrors Nuxt's aliases so `@/lib/...` and `#shared/...` resolve the
+          // same way they do at runtime.
+          alias: { '@': appDir, '~': appDir, '@@': rootDir, '~~': rootDir, '#shared': sharedDir },
         },
       },
       // Component tests are deliberately absent. Nuxt-env component testing

@@ -63,9 +63,19 @@ If a design artifact appears to use a value that doesn't exist in the token set,
 | Recurring items | `recurring-items` | Recurring items, Income prediction | ☑ |
 | Transfers | `transfers` | Transfers | ☑ |
 | First run | `first-run` | First-run experience | ☑ |
+| Sign in / sign up / password reset | `auth` | Authentication | ☐ |
 
 The `occurrence-editor` row is unticked because that screen does not exist in the Claude Design
-project — there is no export to import. It is the one screen in this index with no artifacts.
+project — there is no export to import.
+
+The `auth` row is unticked for a different reason, and it is worth stating plainly: **those screens
+shipped without a design.** Issue #6 (Authentication) landed sign-in, sign-up, password reset and
+the emailed-link error page, and there was no `docs/design/auth/` to build them against. They were
+built from this repo's own conventions instead — the `max-w-[480px]` column and wordmark from
+`onboarding.vue`, `shadcn-vue` Card / Input / Label / Button / Tabs, tokens only, no hardcoded
+values — and `app/layouts/auth.vue` says so in its own comment. Nothing was invented from a
+screenshot, because there was no screenshot. If a design lands later, treat what is there as a
+placeholder to replace rather than as a decision to preserve.
 
 Tick a box when the screen's artifacts land. Screens are exported as they're designed, not in one batch — a partially populated directory with an accurate index is more useful than an empty one waiting on a big export.
 

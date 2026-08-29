@@ -8,7 +8,7 @@ checked anything is worse than no suite, because it gets mistaken for evidence.
 | Unit | `bun run test:unit` | nothing | Pure logic — the projection engine, money, dates, `app/lib`. |
 | Integration | `bun run test:integration` | local Supabase | RLS, tenancy, migrations, money at the storage boundary, the harness itself. |
 | RLS (a subset of integration) | `bun run test:rls` | local Supabase | Just the security posture — see [`database/rls.md`](./database/rls.md). |
-| E2E | `bun run test:e2e` | a browser (+ Supabase for the authenticated fixture) | Real user flows through the running app. |
+| E2E | `bun run test:e2e` | a browser **and** Supabase | Real user flows through the running app. |
 
 `bun run test` runs every Vitest project — unit and integration. E2E has its own
 runner and is not part of it.
@@ -27,10 +27,18 @@ bun run test:unit
 bun run db:start
 bun run test:integration
 
-# E2E. Downloads Chromium the first time.
+# E2E. Downloads Chromium the first time. Needs the stack up (above) and the
+# app pointed at it — every route is behind sign-in, so every spec signs in.
 bun run test:e2e:install
 bun run test:e2e
 ```
+
+Since issue #6 the E2E suite needs the local stack for **every** spec, not only
+the authenticated-session one: the app has no unauthenticated screen to drive
+except sign-in itself. The suite also needs the app configured — copy the local
+stack's URL and publishable key from `supabase status` into `.env` as
+`NUXT_PUBLIC_SUPABASE_URL` and `NUXT_PUBLIC_SUPABASE_ANON_KEY`. CI does the same
+thing in a step of its own; see `.github/workflows/ci.yml`.
 
 ---
 

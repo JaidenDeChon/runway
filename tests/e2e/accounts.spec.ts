@@ -18,7 +18,9 @@ test.beforeEach(({ baseURL }) => {
 })
 
 test.describe('the accounts screen', () => {
-  test('lists the household and opens an account for editing', async ({ page }) => {
+  test('lists the household and opens an account for editing', async ({
+    authenticatedPage: page,
+  }) => {
     await gotoHydrated(page, '/accounts')
 
     await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible()
@@ -40,7 +42,9 @@ test.describe('the accounts screen', () => {
     await expect(editor).toContainText('Edit account')
   })
 
-  test('keeps the "connect a bank" card out of the tab order', async ({ page }) => {
+  test('keeps the "connect a bank" card out of the tab order', async ({
+    authenticatedPage: page,
+  }) => {
     await gotoHydrated(page, '/accounts')
 
     // Scoped to the card itself rather than to the first `aria-disabled`
