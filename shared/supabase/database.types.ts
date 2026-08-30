@@ -11,6 +11,7 @@ export type Database = {
     Tables: {
       accounts: {
         Row: {
+          archived_on: string | null
           balance_as_of: string
           balance_cents: number
           color: string
@@ -21,6 +22,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          archived_on?: string | null
           balance_as_of: string
           balance_cents: number
           color: string
@@ -31,6 +33,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          archived_on?: string | null
           balance_as_of?: string
           balance_cents?: number
           color?: string
@@ -238,6 +241,7 @@ export type Database = {
       }
       user_settings: {
         Row: {
+          balance_stale_after_days: number
           created_at: string
           cushion_cents: number
           default_horizon_days: number
@@ -248,6 +252,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          balance_stale_after_days?: number
           created_at?: string
           cushion_cents?: number
           default_horizon_days?: number
@@ -258,6 +263,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          balance_stale_after_days?: number
           created_at?: string
           cushion_cents?: number
           default_horizon_days?: number

@@ -39,6 +39,7 @@ because mermaid treats `.` as a relationship separator.
 | `color` | `text` | `chart-2` / `chart-3` / `chart-4` — a design-token slot, `text` + `check` rather than an enum because the palette can churn. `chart-1` (combined line) and `chart-5` (what-if tint) are never assignable. Mirrors `domain/types.ts` `ACCOUNT_COLORS`. |
 | `balance_cents` | `bigint` | signed — an overdrawn account is a real reading |
 | `balance_as_of` | `date` | the anchor the projection engine runs forward from |
+| `archived_on` | `date`, nullable | null while active; the calendar day the account was archived. See [Archiving, not deleting](#archiving-not-deleting) |
 
 `unique (user_id, id)` is the anchor every child table's composite foreign key
 references — see [Cross-user integrity](#cross-user-integrity-composite-foreign-keys)
@@ -114,6 +115,7 @@ positive amount — see [One row, not two legs](#one-row-not-two-legs).
 | `time_zone` | `text`, nullable | IANA zone **override**. Null — the default — means follow the device. A browser-resolved zone is never written here; see the migration for why |
 | `discretionary_account_id` | `uuid`, nullable | composite FK → `accounts (user_id, id)`, `on delete set null (discretionary_account_id)` — deleting the account nulls only this column, never `user_id` |
 | `default_horizon_days` | `smallint` | default `30`; `check` is a sanity range, `1`–`730`. The dashboard's toggle offering 30/60/90 is a fact about that screen, not about the data — see [The horizon is not a menu](#the-horizon-is-not-a-menu) |
+| `balance_stale_after_days` | `smallint` | default `14`; `check` is a sanity range, `1`–`365`, in the same spirit as `default_horizon_days`. How old a manually-typed balance anchor may get before the accounts screen flags it |
 
 `user_id` being the primary key is itself the RLS-predicate index — no
 separate `user_settings_user_id_idx`.
@@ -311,14 +313,55 @@ exactly on-cadence, so no partial-month occurrence is produced at the seam.
 outputs are contiguous and non-overlapping across the split date —
 `domain/cadence.test.ts` asserts the exact array on both sides.
 
+### Archiving, not deleting
+
+Issue #7 gives the accounts screen a destructive action, and it is **Archive**,
+not delete: `accounts.archived_on` records the calendar day an account stopped
+being active, and nothing that referenced it — its rules, their occurrences,
+its transfer legs — is touched. `accountName(id)` still resolves for an
+archived account, and its history is exactly as queryable as it was.
+
+An archived account is required to hold no discretionary designation, because
+`user_settings.discretionary_account_id` names a *live* draw source. Deleting
+the account already clears the column (`on delete set null
+(discretionary_account_id)`, above); archiving is not a delete, so the same
+invariant needs its own enforcement, or it would be an invariant a reader has
+to remember rather than one the schema holds. `accounts_clear_discretionary_source_on_archive`
+is an `after update of archived_on` trigger, firing only on the
+`null -> not null` transition, that nulls the column when the account it names
+is archived:
+
+```sql
+create trigger accounts_clear_discretionary_source_on_archive
+  after update of archived_on on public.accounts
+  for each row
+  when (new.archived_on is not null and old.archived_on is null)
+  execute function private.clear_discretionary_source_on_archive();
+```
+
+The flag is cleared, never reassigned — leaving a household with no
+discretionary source is legal, and silently moving the drain to another
+account would be a change the user did not make. The application clears it
+too (belt and suspenders); the trigger is what makes forgetting impossible.
+
+The projection engine enforces the same fact independently: `domain/accounts.ts`
+`activeAccounts` filters archived rows out of `RunwayData.accounts` at the
+seam, and `domain/projection.ts` `accountsFor` filters them again, so naming an
+archived id in `ProjectionWindow.accountIds` cannot resurrect its balance in a
+forecast.
+
 ### Deletion cascades
 
 Deleting an account cascades to its rules, and from there to its occurrences
 — including confirmed ones. This is a deliberate default, not an oversight:
 an account that no longer exists cannot fund a rule, and a rule that no
-longer exists cannot own an occurrence. There is no soft-delete or archive
-path in this issue; if losing confirmed history on account deletion turns out
-to be the wrong default, that is a later decision, not a silent one made here.
+longer exists cannot own an occurrence.
+
+**The application no longer performs this.** The accounts screen archives
+(above) rather than deletes, precisely so this cascade is never triggered by
+ordinary use. What follows is now the shape of a cascade the *database* still
+performs if a row is ever hard-deleted by hand or by a future admin tool — not
+a path any screen offers today.
 
 ### Domain mapping
 
@@ -328,6 +371,7 @@ The table `domain/*` code should consult when wiring a store to this schema:
 |---|---|---|
 | `Account.balance` | `accounts.balance_cents` | |
 | `Account.isDiscretionarySource` | *derived* | `user_settings.discretionary_account_id = accounts.id` |
+| `Account.archivedOn` | `accounts.archived_on` | `null` maps to **absent**, not to `archivedOn: undefined` — see [Archiving, not deleting](#archiving-not-deleting) |
 | `RecurringItem.nextOccurrence` | `recurring_rules.anchor_date` | **names differ deliberately**: the domain expands in both directions from it, so it is an anchor, not a "next" |
 | `RecurringItem.daysOfMonth` / `.daysOfWeek` | `recurring_rules.days_of_month` / `.days_of_week` | same numbering on both sides, `-1` = month end, ISO weekdays. Optional in the domain, nullable here — both mean "the day the anchor names" |
 | `RecurringItem.depositHistory` | *derived* | `occurrences.actual_amount_cents where status = 'confirmed'`, ordered by `projected_date`. No array column — this is why occurrences are materialized |
