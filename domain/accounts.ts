@@ -57,6 +57,12 @@ export interface DeleteAccountResult {
 /**
  * Removes an account and everything that pointed at it.
  *
+ * The app no longer offers this — the accounts screen archives instead of
+ * deleting, so history survives (see `archiveAccount`). This stays because it
+ * is pure, tested, and it is the shape of the cascade the *database* still
+ * performs if a row is ever hard-deleted; #8 and #9 will need exactly this
+ * when rules and transfers move onto Supabase.
+ *
  * The design leaves the cascade unspecified. Orphaning is the one option that
  * is definitely wrong — a recurring item with a dangling `accountId` would keep
  * being projected against an account that no longer exists — so dependent
@@ -89,6 +95,119 @@ export function countDependents(
       (transfer) => transfer.fromAccountId === accountId || transfer.toAccountId === accountId,
     ).length,
   }
+}
+
+/** Whether `account` is archived — has an `archivedOn` day rather than being active. */
+export function isArchived(account: Account): boolean {
+  return account.archivedOn !== undefined
+}
+
+/** The active subset, in the order given. */
+export function activeAccounts(accounts: readonly Account[]): Account[] {
+  return accounts.filter((account) => !isArchived(account))
+}
+
+/** Archived accounts, most recently archived first, then by id for stability. */
+export function archivedAccounts(accounts: readonly Account[]): Account[] {
+  return accounts
+    .filter(isArchived)
+    .sort(
+      (a, b) =>
+        compareDates(b.archivedOn as IsoDate, a.archivedOn as IsoDate) || a.id.localeCompare(b.id),
+    )
+}
+
+/**
+ * Archives one account, clearing its discretionary flag.
+ *
+ * The flag is not reassigned: leaving the household with no discretionary
+ * source is legal (`upsertAccount` already takes that stance) and silently
+ * moving the drain to another account would be a change the user did not make.
+ * A no-op when `accountId` is not found.
+ */
+export function archiveAccount(
+  accounts: readonly Account[],
+  accountId: string,
+  on: IsoDate,
+): Account[] {
+  return accounts.map((account) =>
+    account.id === accountId
+      ? { ...account, archivedOn: on, isDiscretionarySource: false }
+      : account,
+  )
+}
+
+/** Restores an archived account. It comes back inactive as a discretionary source. */
+export function restoreAccount(accounts: readonly Account[], accountId: string): Account[] {
+  return accounts.map((account) => {
+    if (account.id !== accountId) return account
+    const { archivedOn: _archivedOn, ...restored } = account
+    return restored
+  })
+}
+
+/** Active accounts already drawn in `color`, excluding `exceptId`. Ordered as given. */
+export function accountsUsingColor(
+  accounts: readonly Account[],
+  color: AccountColor,
+  exceptId?: string,
+): Account[] {
+  return activeAccounts(accounts).filter(
+    (account) => account.color === color && account.id !== exceptId,
+  )
+}
+
+/** Two weeks: about how long a hand-typed balance goes on describing today. */
+export const DEFAULT_STALE_AFTER_DAYS = 14
+
+/** A sanity range, not a menu — see `default_horizon_days` in `docs/database/schema.md`. */
+export const STALE_AFTER_DAYS_BOUNDS = { min: 1, max: 365 } as const
+
+export interface AnchorAge {
+  readonly accountId: string
+  readonly asOf: IsoDate
+  /** `daysBetween(asOf, today)`. Negative when the reading is dated in the future. */
+  readonly ageDays: number
+  readonly isStale: boolean
+}
+
+/**
+ * **This is the *absolute* staleness question, and it is not the one
+ * `balanceReadings` answers.** `balanceReadings` measures *relative* drift
+ * between accounts (is the household's picture internally consistent?), which
+ * is already surfaced on the row and in `StaleBalancesAlert`. `anchorAges`
+ * measures *absolute* age against `today` (is this number still true?). Both
+ * are projection-quality facts; both live here; neither replaces the other.
+ */
+
+/** Every active account's anchor age, in the order given. Archived accounts are excluded. */
+export function anchorAges(
+  accounts: readonly Account[],
+  today: IsoDate,
+  staleAfterDays: number,
+): AnchorAge[] {
+  return activeAccounts(accounts).map((account) => {
+    const ageDays = daysBetween(account.balanceAsOf, today)
+    return {
+      accountId: account.id,
+      asOf: account.balanceAsOf,
+      ageDays,
+      // Strictly greater: a threshold of 14 flags on day 15, not day 14. A
+      // reading dated in the future gives a negative age and is never stale.
+      isStale: ageDays > staleAfterDays,
+    }
+  })
+}
+
+/** Only the stale ones, oldest first, then by accountId. */
+export function staleAnchors(
+  accounts: readonly Account[],
+  today: IsoDate,
+  staleAfterDays: number,
+): AnchorAge[] {
+  return anchorAges(accounts, today, staleAfterDays)
+    .filter((entry) => entry.isStale)
+    .sort((a, b) => b.ageDays - a.ageDays || a.accountId.localeCompare(b.accountId))
 }
 
 /** One account whose balance was last read before the others were. */

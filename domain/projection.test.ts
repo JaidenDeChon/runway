@@ -143,6 +143,22 @@ describe('project', () => {
     expect(result.byAccount).toHaveLength(1)
     expect(result.combined[0]?.balance).toBe(toMinorUnits(7))
   })
+
+  it('excludes an archived account even when its id is named in accountIds', () => {
+    // The seam should never hand an archived account over, but the engine
+    // refuses it anyway — naming its id must not resurrect it in a forecast.
+    const result = project(
+      data({
+        accounts: [
+          account({ id: 'a' }),
+          account({ id: 'gone', balance: toMinorUnits(7), archivedOn: SEED_TODAY }),
+        ],
+      }),
+      { start: SEED_TODAY, end: SEED_TODAY, accountIds: ['a', 'gone'] },
+    )
+    expect(result.byAccount.map((series) => series.accountId)).toEqual(['a'])
+    expect(result.combined[0]?.balance).toBe(toMinorUnits(1000))
+  })
 })
 
 describe('transfers are balance-neutral', () => {

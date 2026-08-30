@@ -23,7 +23,7 @@ without infrastructure, and it is enforced rather than promised
 
 | Function | Answers |
 |---|---|
-| `project(data, window)` | the whole picture: per-account and combined series, each with its low point and closing balance, plus the occurrences that moved them |
+| `project(data, window)` | the whole picture: per-account and combined series, each with its low point and closing balance, plus the occurrences that moved them (archived accounts are excluded, even if named in `accountIds`) |
 | `evaluate(summary, cushion)` | covered / tight / short, the margin, and the shortfall |
 | `shortfallThrough(data, question)` | "will I make it to this date?" and, if not, by how much |
 | `occurrencesIn(data, window)` | the individual events in a window, expanded from the rules |
