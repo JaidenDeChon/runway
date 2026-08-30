@@ -102,9 +102,20 @@ const overrides = computed(() =>
  */
 const readings = computed(() => balanceReadings(accounts.value))
 const balancesOpen = ref(false)
+const savingBalances = ref(false)
+const balancesError = ref<string | null>(null)
 
-function recordBalances(readings: BalanceReading[]): void {
-  saveBalances(readings, today.value)
+async function recordBalances(readings: BalanceReading[]): Promise<void> {
+  savingBalances.value = true
+  balancesError.value = null
+  try {
+    await saveBalances(readings, today.value)
+    balancesOpen.value = false
+  } catch {
+    balancesError.value = 'Could not save those balances. Check your connection and try again.'
+  } finally {
+    savingBalances.value = false
+  }
 }
 
 const projection = computed(() =>
@@ -316,6 +327,8 @@ function saveOverride(override: OccurrenceOverride): void {
         :accounts="accounts"
         :today="today"
         :newest-on-file="readings.newest"
+        :saving="savingBalances"
+        :error="balancesError"
         @update:open="(value) => (balancesOpen = value)"
         @save="recordBalances"
       />

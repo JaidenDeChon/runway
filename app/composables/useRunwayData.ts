@@ -1,35 +1,60 @@
 /**
  * The app's single copy of the user's financial data.
  *
- * Dummy data for now: seeded in memory, lost on reload. Everything downstream —
- * every screen, every projection — reads from here, so replacing this with a
- * real store means changing this file and nothing else. The mutation surface
- * below is deliberately the shape a persistence layer would need.
+ * **Accounts and settings are Supabase-backed; recurring items and transfers
+ * are not yet.** Issue #7 moved the accounts screen onto real rows —
+ * `RunwayData.accounts` and the settings that ride along with them
+ * (`safetyCushion`, `monthlyDiscretionarySpend`, `timeZone`,
+ * `staleAfterDays`) come from `public.accounts` and `public.user_settings`
+ * under the signed-in user's own session. Recurring items and transfers stay
+ * session-local `useState` — issues #8 and #9 own moving those — and start
+ * **empty** rather than from `domain/seed.ts`: a seeded recurring item carries
+ * an `accountId` like `'acct-checking'`, which dangles against the account
+ * uuids the database actually holds, and the projection would silently bill
+ * an account that does not exist.
  *
- * The store it is waiting for is **Supabase behind sign-in**, not the browser.
- * Persisting to `localStorage` first was considered and dropped: authentication
- * is the next feature, and a storage layer it would immediately replace is work
- * done twice. Reloading loses your edits until then, deliberately.
- *
- * All mutations delegate their *rules* to `domain/`; this composable only holds
- * state and generates ids.
+ * This file is the seam. Every mutation lives here so a screen never reaches
+ * around it to talk to Supabase directly, and RLS — not this file — is what
+ * actually stops a cross-user read or write; see `docs/auth.md` and
+ * `docs/database/rls.md`.
  */
 
-import type { BalanceReading } from '~~/domain/accounts'
+import { useAuthUser, useSupabaseClient } from '@/composables/useAuth'
+import type { HouseholdSettings } from '@/lib/supabase/accounts'
 import {
-  applyBalanceReadings,
-  deleteAccount as domainDeleteAccount,
-  upsertAccount as domainUpsertAccount,
-} from '~~/domain/accounts'
+  ACCOUNT_COLUMNS,
+  type AccountDraft,
+  toAccount,
+  toAccountColumns,
+  toHouseholdSettings,
+  USER_SETTINGS_COLUMNS,
+} from '@/lib/supabase/accounts'
+import type { BalanceReading } from '~~/domain/accounts'
+import { activeAccounts, archivedAccounts } from '~~/domain/accounts'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
 import { resolveAmount } from '~~/domain/prediction'
-import { createSeedData } from '~~/domain/seed'
 import type { Account, RecurringItem, RunwayData, Transfer } from '~~/domain/types'
+
+export type { AccountDraft }
+
+interface RemoteHousehold {
+  readonly accounts: readonly Account[]
+  readonly settings: HouseholdSettings
+}
+
+/** What an anonymous visitor, or a request with no session, sees. */
+const EMPTY_HOUSEHOLD: RemoteHousehold = { accounts: [], settings: toHouseholdSettings(null) }
+
+interface LocalRecords {
+  readonly recurringItems: readonly RecurringItem[]
+  readonly transfers: readonly Transfer[]
+}
 
 /**
  * Ids are generated here rather than in the domain because they are a storage
- * concern — a real backend would assign them.
+ * concern — a real backend would assign them. Still used for recurring items
+ * and transfers; accounts get their id from `accounts.id`'s database default.
  */
 function createId(prefix: string): string {
   const globalCrypto = globalThis.crypto
@@ -41,62 +66,269 @@ function createId(prefix: string): string {
 }
 
 export function useRunwayData() {
-  // `useState` rather than a module-level ref: it is SSR-safe and gives each
-  // request its own copy, so one visitor's edits cannot leak into another's.
-  const data = useState<RunwayData>('runway-data', () => createSeedData())
+  const client = useSupabaseClient()
+  const authUser = useAuthUser()
 
-  const accounts = computed(() => data.value.accounts)
-  const recurringItems = computed(() => data.value.recurringItems)
-  const transfers = computed(() => data.value.transfers)
-  const safetyCushion = computed(() => data.value.safetyCushion)
+  // `useAsyncData` rather than a plugin-driven `useState`: it dedupes across
+  // the many components that call this composable, it runs on the server
+  // through the request-scoped client (`app/plugins/supabase.server.ts`) and
+  // transfers its payload to the client, and `watch: [authUser]` re-fetches on
+  // sign-in/sign-out. Every call site is at `<script setup>` top level, which
+  // is where `useAsyncData` must be called.
+  const {
+    data: remote,
+    pending,
+    error,
+    refresh,
+  } = useAsyncData<RemoteHousehold>(
+    'runway-household',
+    async () => {
+      if (!authUser.value) return EMPTY_HOUSEHOLD
+      const [accountsResult, settingsResult] = await Promise.all([
+        client
+          .from('accounts')
+          .select(ACCOUNT_COLUMNS)
+          // The seeded Checking/Savings rows share a created_at; id breaks the
+          // tie in the order the design draws them.
+          .order('created_at', { ascending: true })
+          .order('id', { ascending: true }),
+        client.from('user_settings').select(USER_SETTINGS_COLUMNS).maybeSingle(),
+      ])
+      // The database's own error message can name columns, constraints and
+      // policies. It goes nowhere near the UI, and nothing but the code is
+      // logged — see CLAUDE.md on what must never reach a log.
+      if (accountsResult.error) {
+        console.error('accounts read failed', { code: accountsResult.error.code })
+        throw new Error('load-failed')
+      }
+      if (settingsResult.error) {
+        console.error('settings read failed', { code: settingsResult.error.code })
+        throw new Error('load-failed')
+      }
+      const settings = toHouseholdSettings(settingsResult.data)
+      return {
+        accounts: (accountsResult.data ?? []).map((row) =>
+          toAccount(row, settings.discretionaryAccountId),
+        ),
+        settings,
+      }
+    },
+    { default: () => EMPTY_HOUSEHOLD, watch: [authUser] },
+  )
+
+  // Recurring items and transfers are still held in memory and lost on
+  // reload — issues #8 and #9 own moving them onto Supabase. See the file
+  // comment for why they start empty rather than from `domain/seed.ts`.
+  const localRecords = useState<LocalRecords>('runway-local-records', () => ({
+    recurringItems: [],
+    transfers: [],
+  }))
+
+  // Settings this screen reads but has no UI to write yet:
+  // `cushion_cents`, `monthly_discretionary_cents` and `time_zone` ride along
+  // on the one `user_settings` query the discretionary designation already
+  // requires — a plain read, always. Their setters below write into this
+  // session-local overlay instead of the database, exactly the stance
+  // `docs/database/schema.md` already records for `time_zone`: the writer
+  // waits for the settings screen. No screen calls these setters today.
+  const settingsOverride = useState<Partial<HouseholdSettings>>(
+    'runway-settings-override',
+    () => ({}),
+  )
+
+  const accountsById = computed(
+    () => new Map(remote.value.accounts.map((account) => [account.id, account])),
+  )
+
+  /** Active accounts, in creation order. */
+  const accounts = computed(() => activeAccounts(remote.value.accounts))
+  /** Archived accounts, most recently archived first. */
+  const archived = computed(() => archivedAccounts(remote.value.accounts))
+
+  const recurringItems = computed(() => localRecords.value.recurringItems)
+  const transfers = computed(() => localRecords.value.transfers)
+
+  const safetyCushion = computed(
+    () => settingsOverride.value.safetyCushion ?? remote.value.settings.safetyCushion,
+  )
+  const monthlyDiscretionarySpend = computed(
+    () =>
+      settingsOverride.value.monthlyDiscretionarySpend ??
+      remote.value.settings.monthlyDiscretionarySpend,
+  )
   /**
    * The user's stored timezone *override*, not their effective zone. `null`
    * means "follow the device", which `useTimeZone` resolves — a device-derived
    * zone is a fact about a device and does not belong in the user's data.
+   *
+   * **Do not call `useToday()` or `useTimeZone()` from this file.**
+   * `useToday` -> `useTimeZone` -> `useRunwayData` already, and closing that
+   * loop is a circular import. Staleness against `today` is computed by the
+   * *page*, which already has `today` and reads `staleAfterDays` from here.
    */
-  const timeZoneOverride = computed(() => data.value.timeZone)
-
-  const accountsById = computed(
-    () => new Map(data.value.accounts.map((account) => [account.id, account])),
+  const timeZoneOverride = computed(() =>
+    'timeZone' in settingsOverride.value
+      ? (settingsOverride.value.timeZone ?? null)
+      : remote.value.settings.timeZone,
   )
+  const staleAfterDays = computed(() => remote.value.settings.staleAfterDays)
+
+  const isLoading = computed(() => pending.value)
+  /** Fixed copy, never a database message — see the read failure above. */
+  const loadError = computed(() => (error.value ? 'Could not load your accounts.' : null))
+
+  const data = computed<RunwayData>(() => ({
+    accounts: accounts.value,
+    recurringItems: recurringItems.value,
+    transfers: transfers.value,
+    monthlyDiscretionarySpend: monthlyDiscretionarySpend.value,
+    safetyCushion: safetyCushion.value,
+    timeZone: timeZoneOverride.value,
+  }))
 
   function accountName(accountId: string): string {
     return accountsById.value.get(accountId)?.name ?? 'Unknown account'
   }
 
-  function saveAccount(account: Omit<Account, 'id'> & { id?: string }): Account {
-    const saved: Account = { ...account, id: account.id ?? createId('acct') }
-    data.value = { ...data.value, accounts: domainUpsertAccount(data.value.accounts, saved) }
+  function requireUserId(): string {
+    const id = authUser.value?.id
+    if (!id) throw new Error('not-authenticated')
+    return id
+  }
+
+  /**
+   * Inserts or updates an account, then re-establishes the one-source
+   * discretionary invariant, then refreshes.
+   *
+   * No optimistic update: two small selects are cheaper than a client-side
+   * guess that can disagree with the database, and every mutation here takes
+   * the same stance.
+   */
+  async function saveAccount(draft: AccountDraft): Promise<Account> {
+    const userId = requireUserId()
+    const columns = toAccountColumns(draft)
+    let id = draft.id
+
+    if (id) {
+      const { error: updateError } = await client
+        .from('accounts')
+        .update(columns)
+        // `.eq('user_id', ...)` is for the planner and the reader — RLS is
+        // what actually scopes this, same as server/api/user-settings.get.ts.
+        .eq('id', id)
+        .eq('user_id', userId)
+      if (updateError) {
+        console.error('account update failed', { code: updateError.code })
+        throw new Error('save-failed')
+      }
+    } else {
+      const { data: inserted, error: insertError } = await client
+        .from('accounts')
+        .insert({ ...columns, user_id: userId })
+        .select('id')
+        .single()
+      if (insertError || !inserted) {
+        console.error('account insert failed', { code: insertError?.code })
+        throw new Error('save-failed')
+      }
+      id = inserted.id
+    }
+
+    // The flag is not reassigned when turned off: leaving the household with
+    // no discretionary source is legal (mirrors domain/accounts.ts
+    // upsertAccount), and silently moving the drain to another account would
+    // be a change the user did not make.
+    if (draft.isDiscretionarySource) {
+      const { error: settingsError } = await client
+        .from('user_settings')
+        .update({ discretionary_account_id: id })
+        .eq('user_id', userId)
+      if (settingsError) {
+        console.error('settings update failed', { code: settingsError.code })
+        throw new Error('save-failed')
+      }
+    } else if (remote.value.settings.discretionaryAccountId === id) {
+      const { error: settingsError } = await client
+        .from('user_settings')
+        .update({ discretionary_account_id: null })
+        .eq('user_id', userId)
+      if (settingsError) {
+        console.error('settings update failed', { code: settingsError.code })
+        throw new Error('save-failed')
+      }
+    }
+
+    await refresh()
+    const saved = remote.value.accounts.find((account) => account.id === id)
+    if (!saved) throw new Error('save-failed')
     return saved
   }
 
   /**
-   * Records observed balances against `asOf`, for every account reported.
+   * Records balances observed on `asOf`, one update per reading, in
+   * `Promise.all`.
    *
-   * The one entry point for "here is what these accounts hold now", whether the
-   * numbers came from the user typing them or, later, from a bank connection.
-   * Both hand the same readings to the same domain function — an automatic
-   * source should be a different caller, not a second code path.
+   * Readings naming an unknown or archived account are dropped, mirroring
+   * `domain/accounts.ts` `applyBalanceReadings`. **Not atomic across
+   * accounts** — a partial failure throws and the subsequent `refresh()`
+   * shows exactly what actually landed. A transaction would need an RPC in
+   * `private`, which is more machinery than a hand-typed balance refresh
+   * justifies.
    */
-  function saveBalances(readings: readonly BalanceReading[], asOf: IsoDate): void {
-    data.value = {
-      ...data.value,
-      accounts: applyBalanceReadings(data.value.accounts, readings, asOf),
-    }
+  async function saveBalances(readings: readonly BalanceReading[], asOf: IsoDate): Promise<void> {
+    const userId = requireUserId()
+    const activeIds = new Set(accounts.value.map((account) => account.id))
+    const applicable = readings.filter((reading) => activeIds.has(reading.accountId))
+
+    await Promise.all(
+      applicable.map(async (reading) => {
+        const { error: updateError } = await client
+          .from('accounts')
+          .update({ balance_cents: reading.balance, balance_as_of: asOf })
+          .eq('id', reading.accountId)
+          .eq('user_id', userId)
+        if (updateError) {
+          console.error('balance update failed', { code: updateError.code })
+          throw new Error('save-failed')
+        }
+      }),
+    )
+    await refresh()
   }
 
   /**
-   * Removes an account together with the recurring items and transfers that
-   * referenced it — see `domain/accounts.ts` for why orphaning is not an option.
+   * Archives an account. The database trigger
+   * (`private.clear_discretionary_source_on_archive`) clears the
+   * discretionary designation if this account held it — the app does not
+   * need to.
    */
-  function removeAccount(accountId: string): void {
-    const result = domainDeleteAccount(
-      data.value.accounts,
-      data.value.recurringItems,
-      data.value.transfers,
-      accountId,
-    )
-    data.value = { ...data.value, ...result }
+  async function archiveAccount(accountId: string, on: IsoDate): Promise<void> {
+    const userId = requireUserId()
+    const { error: archiveError } = await client
+      .from('accounts')
+      .update({ archived_on: on })
+      .eq('id', accountId)
+      .eq('user_id', userId)
+    if (archiveError) {
+      console.error('account archive failed', { code: archiveError.code })
+      throw new Error('save-failed')
+    }
+    await refresh()
+  }
+
+  /** Restores an archived account. It comes back holding no discretionary designation. */
+  async function restoreAccount(accountId: string): Promise<void> {
+    const userId = requireUserId()
+    const { error: restoreError } = await client
+      .from('accounts')
+      .update({ archived_on: null })
+      .eq('id', accountId)
+      .eq('user_id', userId)
+    if (restoreError) {
+      console.error('account restore failed', { code: restoreError.code })
+      throw new Error('save-failed')
+    }
+    await refresh()
   }
 
   function saveRecurringItem(item: Omit<RecurringItem, 'id'> & { id?: string }): RecurringItem {
@@ -104,20 +336,22 @@ export function useRunwayData() {
     // Prediction is resolved at save time, not at render time, so the row and
     // the projection always read one stored figure.
     const saved: RecurringItem = { ...withId, amount: resolveAmount(withId) }
-    const exists = data.value.recurringItems.some((existing) => existing.id === saved.id)
-    data.value = {
-      ...data.value,
+    const exists = localRecords.value.recurringItems.some((existing) => existing.id === saved.id)
+    localRecords.value = {
+      ...localRecords.value,
       recurringItems: exists
-        ? data.value.recurringItems.map((existing) => (existing.id === saved.id ? saved : existing))
-        : [...data.value.recurringItems, saved],
+        ? localRecords.value.recurringItems.map((existing) =>
+            existing.id === saved.id ? saved : existing,
+          )
+        : [...localRecords.value.recurringItems, saved],
     }
     return saved
   }
 
   function removeRecurringItem(itemId: string): void {
-    data.value = {
-      ...data.value,
-      recurringItems: data.value.recurringItems.filter((item) => item.id !== itemId),
+    localRecords.value = {
+      ...localRecords.value,
+      recurringItems: localRecords.value.recurringItems.filter((item) => item.id !== itemId),
     }
   }
 
@@ -126,50 +360,65 @@ export function useRunwayData() {
       ...transfer,
       id: createId('xfer'),
       // Epoch milliseconds, which is what `transfers.created_at` maps to (see
-      // the mapping table in docs/database/schema.md). It was the transfer
-      // count, which is monotonic only within one session: once rows are loaded
-      // from storage rather than built from scratch, a count restarts and two
-      // transfers can claim the same tie-breaker. Reading the clock is fine
-      // here and only here — the domain never does it.
+      // the mapping table in docs/database/schema.md). Reading the clock is
+      // fine here and only here — the domain never does it.
       createdAt: Date.now(),
     }
-    data.value = { ...data.value, transfers: [...data.value.transfers, saved] }
+    localRecords.value = {
+      ...localRecords.value,
+      transfers: [...localRecords.value.transfers, saved],
+    }
     return saved
   }
 
   function setSafetyCushion(cushion: MinorUnits): void {
-    data.value = { ...data.value, safetyCushion: Math.max(0, Math.round(cushion)) }
+    settingsOverride.value = {
+      ...settingsOverride.value,
+      safetyCushion: Math.max(0, Math.round(cushion)),
+    }
   }
 
   /** Pass `null` to go back to following the device. */
   function setTimeZoneOverride(timeZone: string | null): void {
-    data.value = { ...data.value, timeZone: timeZone?.trim() || null }
+    settingsOverride.value = {
+      ...settingsOverride.value,
+      timeZone: timeZone?.trim() || null,
+    }
   }
 
   function setMonthlyDiscretionarySpend(amount: MinorUnits): void {
-    data.value = {
-      ...data.value,
+    settingsOverride.value = {
+      ...settingsOverride.value,
       monthlyDiscretionarySpend: Math.max(0, Math.round(amount)),
     }
   }
 
   /**
-   * Drops every record, leaving the settings alone.
+   * Drops the session-local records, leaving accounts and settings alone.
    *
-   * Onboarding needs a blank slate to build onto: with seeded data present, the
-   * first-run flow would be adding a second account, not a first one.
+   * Onboarding needs a blank slate to build its recurring-item step onto —
+   * with a leftover item present, the first-run flow would be adding a
+   * second one, not a first. **This must never touch database accounts**:
+   * they are the user's real data now, not seeded state to reset.
    */
   function clearRecords(): void {
-    data.value = { ...data.value, accounts: [], recurringItems: [], transfers: [] }
+    localRecords.value = { recurringItems: [], transfers: [] }
   }
 
   /** True when the user has nothing to project from — the "skipped onboarding" case. */
-  const isEmpty = computed(() => data.value.accounts.length === 0)
+  const isEmpty = computed(() => accounts.value.length === 0)
 
   return {
     data,
     accounts,
+    archived,
     accountsById,
+    staleAfterDays,
+    isLoading,
+    loadError,
+    refresh: async () => {
+      await refresh()
+    },
     recurringItems,
     transfers,
     safetyCushion,
@@ -178,7 +427,8 @@ export function useRunwayData() {
     accountName,
     saveAccount,
     saveBalances,
-    removeAccount,
+    archiveAccount,
+    restoreAccount,
     saveRecurringItem,
     removeRecurringItem,
     addTransfer,

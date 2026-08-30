@@ -32,6 +32,10 @@ const props = defineProps<{
   today: IsoDate
   /** The most recent reading on file, for the "already up to date" hint. */
   newestOnFile: IsoDate | null
+  /** True while the page's save handler is awaiting the write. */
+  saving?: boolean
+  /** Set by the page on a failed save; rendered inline rather than closing the editor. */
+  error?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -75,11 +79,12 @@ watch(
 const todayLabel = computed(() => formatDateLong(props.today))
 
 function save(): void {
+  // The page closes the editor on success and re-shows this on failure — a
+  // failed write must not silently discard what the user typed.
   emit(
     'save',
     draft.value.map((row) => ({ accountId: row.accountId, balance: row.balance })),
   )
-  emit('update:open', false)
 }
 </script>
 
@@ -112,9 +117,13 @@ function save(): void {
         that is what makes the forecast agree with itself.
       </p>
 
+      <p v-if="props.error" role="alert" class="text-sm text-destructive">{{ props.error }}</p>
+
       <div class="flex justify-end gap-2">
-        <Button type="button" variant="ghost" @click="emit('update:open', false)">Cancel</Button>
-        <Button type="submit">Save balances</Button>
+        <Button type="button" variant="ghost" :disabled="props.saving" @click="emit('update:open', false)">
+          Cancel
+        </Button>
+        <Button type="submit" :disabled="props.saving">Save balances</Button>
       </div>
     </form>
   </ResponsiveEditor>
