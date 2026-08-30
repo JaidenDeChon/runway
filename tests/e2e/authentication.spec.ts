@@ -204,7 +204,10 @@ test.describe('the full lifecycle', () => {
 
     // Back to where they were headed, because sign-in remembered.
     await expect(page).toHaveURL(/\/accounts/)
-    await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible()
+    // Exact, because this signup is genuinely new — issue #7 means the page
+    // now reads a real, empty household, and its own "No accounts yet" `<h2>`
+    // also matches a non-exact search for "Accounts".
+    await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible()
   })
 
   test('keeps the session across a full page reload', async ({ authenticatedPage }) => {
