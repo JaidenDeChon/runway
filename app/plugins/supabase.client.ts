@@ -20,10 +20,26 @@
  * `getUser()` runs once at start-up rather than trusting the server-rendered
  * payload forever: the page may have been restored from bfcache, or sat open
  * long enough for the session to die while nothing was navigating.
+ *
+ * ## Why every assignment to `user.value` is guarded
+ *
+ * `toAuthUser` returns a fresh object literal on every call, so without a
+ * guard `user.value` gets a new reference on *every* hydration even when the
+ * signed-in user has not changed — `onAuthStateChange` fires `INITIAL_SESSION`
+ * on mount, and the un-awaited `getUser()` below resolves shortly after. A new
+ * reference is a change as far as `useRunwayData`'s `watch: [authUser]` is
+ * concerned, so each of those two events re-issued the accounts+settings
+ * fetch through a freshly constructed client — and if the cookie that client
+ * read at construction carried a token already past `exp`, PostgREST rejected
+ * it outright with `PGRST303` (no grace period, unlike `getUser()` itself,
+ * which tolerates and refreshes). The next auto-refresh recovered on its own,
+ * which is what made this look self-healing rather than a bug. `authUsersEqual`
+ * closes it: `user.value` is only reassigned when the resolved identity
+ * actually differs, so an unchanged user never refires anything watching it.
  */
 
 import { requiresSession, SIGN_IN_PATH } from '#shared/auth/routes'
-import { toAuthUser } from '#shared/auth/session'
+import { authUsersEqual, toAuthUser } from '#shared/auth/session'
 import { requireSupabaseConfig } from '#shared/supabase/config'
 import { createRunwayBrowserClient } from '@/lib/supabase/client'
 
@@ -39,7 +55,7 @@ export default defineNuxtPlugin({
 
     client.auth.onAuthStateChange((eventName, session) => {
       const next = toAuthUser(session?.user)
-      user.value = next
+      if (!authUsersEqual(user.value, next)) user.value = next
       ready.value = true
 
       // A session that ends while the visitor is standing on a protected page
@@ -62,10 +78,11 @@ export default defineNuxtPlugin({
     client.auth
       .getUser()
       .then(({ data, error }) => {
-        user.value = error ? null : toAuthUser(data.user)
+        const next = error ? null : toAuthUser(data.user)
+        if (!authUsersEqual(user.value, next)) user.value = next
       })
       .catch(() => {
-        user.value = null
+        if (!authUsersEqual(user.value, null)) user.value = null
       })
       .finally(() => {
         ready.value = true

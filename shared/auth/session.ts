@@ -83,6 +83,29 @@ export function toAuthUser(user: SupabaseUserLike | null | undefined): AuthUser 
 }
 
 /**
+ * Whether two `AuthUser`s (or the absence of one) describe the same signed-in
+ * identity.
+ *
+ * `toAuthUser` returns a fresh object literal on every call, even when the
+ * underlying user has not changed — so `===` on its result is never true for
+ * two calls that mean the same thing, and a caller that assigns unconditionally
+ * on every call re-triggers whatever is watching the reference. Compares the
+ * fields `toAuthUser` actually carries; `displayName` and `initials` are
+ * derived from `id`/`email` (plus metadata `toAuthUser` already folded in), so
+ * comparing all four is exact without needing to see the metadata again.
+ */
+export function authUsersEqual(a: AuthUser | null, b: AuthUser | null): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  return (
+    a.id === b.id &&
+    a.email === b.email &&
+    a.displayName === b.displayName &&
+    a.initials === b.initials
+  )
+}
+
+/**
  * Whether a session whose access token expires at `expiresAt` should be treated
  * as expired at `nowMs`.
  *

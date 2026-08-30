@@ -10,6 +10,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  authUsersEqual,
   displayNameFor,
   EXPIRY_SKEW_SECONDS,
   initialsFor,
@@ -95,6 +96,44 @@ describe('toAuthUser', () => {
       user_metadata: { access_token: 'not-a-real-token', full_name: 'Jordan Rivers' },
     })
     expect(Object.keys(user ?? {}).sort()).toEqual(['displayName', 'email', 'id', 'initials'])
+  })
+})
+
+describe('authUsersEqual', () => {
+  // Regression test for a real defect: `toAuthUser` returns a fresh object
+  // literal on every call, so the plugin that assigns `useAuthUser()` from it
+  // needs a value comparison rather than `===` — otherwise a caller watching
+  // the ref refires on every hydration for a user who has not changed. This
+  // is the guard predicate `app/plugins/supabase.client.ts` uses at both of
+  // its `user.value` assignment sites.
+  it('treats two separately-built objects describing the same user as equal', () => {
+    const a = toAuthUser({ id: 'abc', email: 'jordan@example.com' })
+    const b = toAuthUser({ id: 'abc', email: 'jordan@example.com' })
+    expect(a).not.toBe(b) // different references, same identity
+    expect(authUsersEqual(a, b)).toBe(true)
+  })
+
+  it('is true for the same null, and false for null against a real user', () => {
+    expect(authUsersEqual(null, null)).toBe(true)
+    const user = toAuthUser({ id: 'abc' })
+    expect(authUsersEqual(user, null)).toBe(false)
+    expect(authUsersEqual(null, user)).toBe(false)
+  })
+
+  it('is false when any of id, email, displayName or initials differs', () => {
+    const base = toAuthUser({ id: 'abc', email: 'jordan@example.com' })
+    expect(authUsersEqual(base, toAuthUser({ id: 'xyz', email: 'jordan@example.com' }))).toBe(false)
+    expect(authUsersEqual(base, toAuthUser({ id: 'abc', email: 'other@example.com' }))).toBe(false)
+    expect(
+      authUsersEqual(
+        base,
+        toAuthUser({
+          id: 'abc',
+          email: 'jordan@example.com',
+          user_metadata: { full_name: 'A Different Name' },
+        }),
+      ),
+    ).toBe(false)
   })
 })
 
