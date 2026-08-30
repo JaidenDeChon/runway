@@ -116,6 +116,7 @@ export async function seedHousehold(
         color: account.color,
         balance_cents: account.balance,
         balance_as_of: account.balanceAsOf,
+        archived_on: account.archivedOn ?? null,
       })),
     ),
     'accounts',
