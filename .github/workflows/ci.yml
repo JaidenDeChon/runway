@@ -228,7 +228,7 @@ jobs:
       # uploaded as a restricted build artifact and never echoed into the log.
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: |
