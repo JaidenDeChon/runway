@@ -61,7 +61,6 @@ If a design artifact appears to use a value that doesn't exist in the token set,
 | Occurrence editor | `occurrence-editor` | Occurrence editor, What-if mode | ☐ |
 | Accounts | `accounts` | Accounts management | ☑ |
 | Recurring items | `recurring-items` | Recurring items, Income prediction | ☑ |
-| Transfers | `transfers` | Transfers | ☑ |
 | First run | `first-run` | First-run experience | ☑ |
 | Sign in / sign up / password reset | `auth` | Authentication | ☐ |
 

@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Calculator, House, Landmark, Repeat } from '@lucide/vue'
+import { Calculator, House, Landmark, Repeat } from '@lucide/vue'
 import type { Component } from 'vue'
 
 /**
@@ -41,7 +41,6 @@ export const navGroups: readonly NavGroup[] = [
       { id: 'home', title: 'Home', path: '/', icon: House },
       { id: 'will-i-make-it', title: 'Will I Make It?', path: '/will-i-make-it', icon: Calculator },
       { id: 'recurring-items', title: 'Recurring Items', path: '/recurring-items', icon: Repeat },
-      { id: 'transfers', title: 'Transfers', path: '/transfers', icon: ArrowLeftRight },
     ],
   },
   {

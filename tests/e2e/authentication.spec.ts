@@ -102,14 +102,7 @@ test.describe('the sign-in door', () => {
   })
 
   // Every route in the app, not just the one somebody remembered to test.
-  for (const path of [
-    '/',
-    '/accounts',
-    '/recurring-items',
-    '/transfers',
-    '/will-i-make-it',
-    '/first-run',
-  ]) {
+  for (const path of ['/', '/accounts', '/recurring-items', '/will-i-make-it', '/first-run']) {
     test(`refuses ${path} without a session`, async ({ page }) => {
       await gotoHydrated(page, path)
       await expect(page).toHaveURL(/\/sign-in/)
