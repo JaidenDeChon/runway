@@ -158,23 +158,26 @@ Traces, screenshots and video are kept **on failure only** and uploaded as CI
 artifacts. They contain rendered page content, which for this app means
 balances, so they are never echoed into the log and never committed.
 
-### The authenticated-session fixture, and what it does not yet do
+### The authenticated-session fixture, and the empty household beside it
 
 The fixture signs in against the local GoTrue as a seed user and installs the
-resulting session in `localStorage` under the key `@supabase/supabase-js` picks
-for this project — obtained by handing a real client a recording storage adapter
-and asking it, never hardcoded. It then proves the token works by reading that
-user's rows through PostgREST before any test uses it.
+resulting session as cookies, under the names `@supabase/ssr` chose — obtained
+by handing a real server client a recording cookie adapter and asking it, never
+guessed. It then proves the token works by reading that user's rows through
+PostgREST before any test uses it.
 
-**The application does not read it yet.** `app/composables/useRunwayData.ts`
-holds the household in memory from `domain/seed.ts`, and authentication is
-issue #6. So:
+**The application reads the database now.** `app/composables/useRunwayData.ts`
+reads `accounts` and `user_settings` from Supabase behind the seam (issue #7);
+`tests/e2e/authenticated-session.spec.ts`'s once-`test.fixme` is a real test
+that inserts a row through PostgREST under a session and then asserts the UI
+shows it, which is the assertion "the fixture works" always meant to make.
 
-- the flows that can be driven end to end today are, for real;
-- the fixture is real and verified on every run;
-- the one assertion that genuinely cannot be made — "the UI renders rows that
-  came from the database" — is committed as a `test.fixme` naming issue #6,
-  rather than omitted and forgotten.
+That test, and every other E2E spec that writes an account, run as **user
+D** — `tests/e2e/fixtures.ts`'s `emptyHouseholdSession` /
+`emptyHouseholdPage` — rather than the seeded user A. D's household is empty
+by design and reset before and after each use, precisely so a write-heavy
+spec cannot accumulate rows against a user `tests/rls/seed-fidelity.test.ts`
+holds to an exact fixture.
 
 ### Expected failures are annotated, not deleted
 
