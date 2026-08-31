@@ -86,7 +86,7 @@ const answer = computed(() =>
          `screens/empty.png` for this state, so this is a deviation raised in
          the PR rather than resolved silently, per CLAUDE.md. -->
     <Card v-if="isEmpty" class="gap-2">
-      <div class="px-4 py-6 lg:px-6">
+      <div class="px-4 lg:px-6">
         <h2 class="text-base font-medium">Nothing to check yet</h2>
         <p class="mt-1 text-sm text-muted-foreground">
           Add the account you spend from so there's a balance to project forward.
