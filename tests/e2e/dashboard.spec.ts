@@ -22,8 +22,10 @@
  * composable's comment says it writes presentation numbers only. That is
  * checked here, against the real key, rather than trusted.
  *
- * The household on screen is `domain/seed.ts` for now, same as the accounts
- * spec — a fresh `page.goto` is enough to have a chart to adjust.
+ * The household on screen is user A's seeded Supabase rows, same as the
+ * accounts spec's read path — a fresh `page.goto` is enough to have a chart
+ * to adjust, and nothing here writes, so `authenticatedPage` is the right
+ * fixture rather than the empty household.
  */
 
 import { assertBaseUrlIsLocal, clickUntil, expect, gotoHydrated, test } from './fixtures'

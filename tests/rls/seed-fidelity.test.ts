@@ -247,6 +247,24 @@ describe.skipIf(LOCAL_STACK === null)('the seed and the domain fixture agree', (
       expect(strangers).toEqual([])
     })
 
+    it('carries no archived accounts', async () => {
+      // An archived seed row would silently shrink the household every
+      // screenshot and every spec figure was computed from — `activeAccounts`
+      // filters it out of the projection but `mirrors the fixture's accounts`
+      // above counts every row, archived or not, so a stray `archived_on`
+      // here would fail there for a confusing reason rather than this one.
+      const sql = adminSql()
+      try {
+        const [row] = await sql<{ count: string }[]>`
+          select count(*)::text as count from public.accounts
+          where user_id = ${household.userId} and archived_on is not null
+        `
+        expect(row?.count).toBe('0')
+      } finally {
+        await sql.end()
+      }
+    })
+
     it('stores the same settings the fixture holds', async () => {
       // The engine consumes the monthly discretionary figure directly and
       // divides it by the length of each month, so this is an equality and not

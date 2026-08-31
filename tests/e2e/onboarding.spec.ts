@@ -7,10 +7,12 @@
  * by navigating into the dashboard. If routing, forms, validation, client-side
  * state or navigation break, this fails.
  *
- * It needs no database, which is deliberate and worth stating: the app does not
- * read one yet (see tests/e2e/fixtures.ts). Keeping the flow tests independent
- * of the stack means the harness has something real to prove on every machine,
- * rather than skipping everywhere and being mistaken for coverage.
+ * It needs the database now, which is worth stating because it did not
+ * always: `/first-run` writes a real account row (issue #7), so this runs on
+ * `emptyHouseholdPage` — user D's empty household — rather than
+ * `authenticatedPage`. Running it as user A would add an account to A's
+ * household on every pass, which `tests/rls/seed-fidelity.test.ts`'s
+ * exact-list assertion would then fail on. See tests/e2e/fixtures.ts.
  */
 
 import type { Locator, Page } from '@playwright/test'
@@ -41,7 +43,7 @@ test.beforeEach(({ baseURL }) => {
 })
 
 test.describe('first-run onboarding', () => {
-  test('takes a new user from nothing to a projection', async ({ authenticatedPage: page }) => {
+  test('takes a new user from nothing to a projection', async ({ emptyHouseholdPage: page }) => {
     await gotoHydrated(page, '/first-run')
 
     await expect(page.getByRole('heading', { name: 'See how far your money goes.' })).toBeVisible()
@@ -95,7 +97,7 @@ test.describe('first-run onboarding', () => {
     await expect(page).toHaveTitle(/Home/)
   })
 
-  test('keeps step-one values when the user goes back', async ({ authenticatedPage: page }) => {
+  test('keeps step-one values when the user goes back', async ({ emptyHouseholdPage: page }) => {
     await gotoHydrated(page, '/first-run')
 
     const continueButton = page.getByRole('button', { name: 'Continue' })
@@ -150,7 +152,7 @@ test.describe('first-run onboarding', () => {
    * distinguishes "the fix is in place" from "some other change happened to
    * make Continue clickable".
    */
-  test('accepts an opening balance that has cents in it', async ({ authenticatedPage: page }) => {
+  test('accepts an opening balance that has cents in it', async ({ emptyHouseholdPage: page }) => {
     await gotoHydrated(page, '/first-run')
 
     const continueButton = page.getByRole('button', { name: 'Continue' })
@@ -181,7 +183,7 @@ test.describe('first-run onboarding', () => {
     await expect(page.locator('#onboarding-account-balance')).toHaveValue('812.34')
   })
 
-  test('offers income as well as bills', async ({ authenticatedPage: page }) => {
+  test('offers income as well as bills', async ({ emptyHouseholdPage: page }) => {
     await gotoHydrated(page, '/first-run')
 
     const continueButton = page.getByRole('button', { name: 'Continue' })

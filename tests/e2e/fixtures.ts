@@ -36,7 +36,7 @@
 
 import { test as base, expect } from '@playwright/test'
 import { createServerClient } from '@supabase/ssr'
-import { LOCAL_STACK, type SeedUser, USER_A } from '../support/database'
+import { adminSql, LOCAL_STACK, type SeedUser, USER_A, USER_D } from '../support/database'
 import { assertLocalOnly, hostOf, isLoopbackHost } from '../support/stack'
 
 export { expect }
@@ -141,6 +141,37 @@ export async function assertSessionAuthenticates(session: BrowserSession): Promi
 }
 
 /**
+ * Wipes user D's household back to empty, over the admin connection.
+ *
+ * User D (issue #7) is the E2E suite's write target for account creation:
+ * every route now writes real rows, and running those specs as user A would
+ * accumulate accounts that break `tests/rls/seed-fidelity.test.ts`'s
+ * exact-list assertion. The admin connection is the correct choice for the
+ * same reason `tests/support/fixtures.ts`'s `removeFixtures` gives — teardown
+ * must succeed even when the write path under test is broken, so it cannot be
+ * blockable by that same mechanism.
+ *
+ * Deleting `accounts` cascades to `recurring_rules`, `occurrences` and
+ * `transfers` (`docs/database/schema.md`), so the account delete alone is
+ * enough to clear everything the E2E suite could have written for D.
+ * `user_settings` is reset alongside it in case a test ever sets the
+ * discretionary designation or the staleness threshold.
+ */
+export async function resetEmptyHousehold(): Promise<void> {
+  const sql = adminSql()
+  try {
+    await sql`delete from public.accounts where user_id = ${USER_D.id}`
+    await sql`
+      update public.user_settings
+      set discretionary_account_id = null, balance_stale_after_days = 14
+      where user_id = ${USER_D.id}
+    `
+  } finally {
+    await sql.end()
+  }
+}
+
+/**
  * Skip locally when there is no stack; refuse to skip where skipping would lie.
  *
  * Without the second half, a CI run in which `supabase start` came up broken
@@ -165,6 +196,17 @@ interface RunwayFixtures {
   /** A page that already holds a verified session for the seeded user A. */
   authenticatedPage: import('@playwright/test').Page
   session: BrowserSession
+  /**
+   * A verified session for user D, the empty household — every write-flow
+   * spec's target. Wipes D's household before *and* after the test runs, so a
+   * crashed run leaves debris the next one sweeps rather than debris that
+   * accumulates. Safe only because `playwright.config.ts` pins `workers: 1`:
+   * a second worker resetting the same shared household mid-test would race
+   * this one.
+   */
+  emptyHouseholdSession: BrowserSession
+  /** A page that already holds a verified session for user D. */
+  emptyHouseholdPage: import('@playwright/test').Page
 }
 
 export const test = base.extend<RunwayFixtures>({
@@ -183,6 +225,31 @@ export const test = base.extend<RunwayFixtures>({
     // before settling.
     await context.addCookies(
       session.cookies.map((cookie) => ({
+        name: cookie.name,
+        value: cookie.value,
+        url: baseURL ?? 'http://127.0.0.1:3000',
+      })),
+    )
+    await use(page)
+  },
+
+  // biome-ignore lint/correctness/noEmptyPattern: Playwright's fixture signature requires the destructured first argument even when nothing is taken from it.
+  emptyHouseholdSession: async ({}, use) => {
+    requireStackOrSkip()
+    await resetEmptyHousehold()
+    const session = await mintBrowserSession(USER_D)
+    // Not asserted `> 0`: D's whole point is having nothing. This still
+    // proves the token authenticates and RLS scopes it, exactly as it does
+    // for user A — `assertSessionAuthenticates` already returns the count
+    // rather than asserting on it, for this reason.
+    await assertSessionAuthenticates(session)
+    await use(session)
+    await resetEmptyHousehold()
+  },
+
+  emptyHouseholdPage: async ({ page, context, baseURL, emptyHouseholdSession }, use) => {
+    await context.addCookies(
+      emptyHouseholdSession.cookies.map((cookie) => ({
         name: cookie.name,
         value: cookie.value,
         url: baseURL ?? 'http://127.0.0.1:3000',

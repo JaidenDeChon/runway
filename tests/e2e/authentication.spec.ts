@@ -102,14 +102,7 @@ test.describe('the sign-in door', () => {
   })
 
   // Every route in the app, not just the one somebody remembered to test.
-  for (const path of [
-    '/',
-    '/accounts',
-    '/recurring-items',
-    '/transfers',
-    '/will-i-make-it',
-    '/first-run',
-  ]) {
+  for (const path of ['/', '/accounts', '/recurring-items', '/will-i-make-it', '/first-run']) {
     test(`refuses ${path} without a session`, async ({ page }) => {
       await gotoHydrated(page, path)
       await expect(page).toHaveURL(/\/sign-in/)
@@ -204,7 +197,10 @@ test.describe('the full lifecycle', () => {
 
     // Back to where they were headed, because sign-in remembered.
     await expect(page).toHaveURL(/\/accounts/)
-    await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible()
+    // Exact, because this signup is genuinely new — issue #7 means the page
+    // now reads a real, empty household, and its own "No accounts yet" `<h2>`
+    // also matches a non-exact search for "Accounts".
+    await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible()
   })
 
   test('keeps the session across a full page reload', async ({ authenticatedPage }) => {

@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import {
+  accountsUsingColor,
+  activeAccounts,
+  anchorAges,
   applyBalanceReadings,
+  archiveAccount,
+  archivedAccounts,
   balanceReadings,
   countDependents,
+  DEFAULT_STALE_AFTER_DAYS,
   deleteAccount,
+  isArchived,
   nextAccountColor,
+  restoreAccount,
   setDiscretionarySource,
+  staleAnchors,
   upsertAccount,
 } from './accounts'
 import { toMinorUnits } from './money'
@@ -86,6 +95,127 @@ describe('deleteAccount', () => {
       items: 2,
       transfers: 2,
     })
+  })
+})
+
+describe('isArchived / activeAccounts / archivedAccounts', () => {
+  it('treats a missing archivedOn as active', () => {
+    expect(isArchived(account())).toBe(false)
+    expect(isArchived(account({ archivedOn: '2026-08-01' }))).toBe(true)
+  })
+
+  it('splits accounts into active and archived', () => {
+    const accounts = [
+      account({ id: 'a' }),
+      account({ id: 'b', archivedOn: '2026-08-01' }),
+      account({ id: 'c' }),
+    ]
+    expect(activeAccounts(accounts).map((entry) => entry.id)).toEqual(['a', 'c'])
+    expect(archivedAccounts(accounts).map((entry) => entry.id)).toEqual(['b'])
+  })
+
+  it('orders archived accounts most recently archived first, then by id', () => {
+    const accounts = [
+      account({ id: 'older', archivedOn: '2026-07-01' }),
+      account({ id: 'b-newer', archivedOn: '2026-08-01' }),
+      account({ id: 'a-newer', archivedOn: '2026-08-01' }),
+    ]
+    expect(archivedAccounts(accounts).map((entry) => entry.id)).toEqual([
+      'a-newer',
+      'b-newer',
+      'older',
+    ])
+  })
+})
+
+describe('archiveAccount / restoreAccount', () => {
+  it('sets archivedOn and clears the discretionary flag', () => {
+    const result = archiveAccount(
+      [account({ id: 'a', isDiscretionarySource: true })],
+      'a',
+      '2026-08-20',
+    )
+    expect(result[0]).toMatchObject({ archivedOn: '2026-08-20', isDiscretionarySource: false })
+  })
+
+  it('is a no-op for an unknown id', () => {
+    const accounts = [account({ id: 'a' })]
+    expect(archiveAccount(accounts, 'missing', '2026-08-20')).toEqual(accounts)
+  })
+
+  it('restores an archived account without reinstating the discretionary flag', () => {
+    const archived = account({ id: 'a', archivedOn: '2026-08-20', isDiscretionarySource: false })
+    const [restored] = restoreAccount([archived], 'a')
+    expect(restored?.archivedOn).toBeUndefined()
+    expect(restored?.isDiscretionarySource).toBe(false)
+    expect(Object.hasOwn(restored as object, 'archivedOn')).toBe(false)
+  })
+})
+
+describe('accountsUsingColor', () => {
+  it('finds active accounts already drawn in the given colour', () => {
+    const accounts = [
+      account({ id: 'a', color: 'chart-2' }),
+      account({ id: 'b', color: 'chart-3' }),
+      account({ id: 'c', color: 'chart-2' }),
+    ]
+    expect(accountsUsingColor(accounts, 'chart-2').map((entry) => entry.id)).toEqual(['a', 'c'])
+  })
+
+  it('excludes the account passed as exceptId', () => {
+    const accounts = [
+      account({ id: 'a', color: 'chart-2' }),
+      account({ id: 'b', color: 'chart-2' }),
+    ]
+    expect(accountsUsingColor(accounts, 'chart-2', 'a').map((entry) => entry.id)).toEqual(['b'])
+  })
+
+  it('ignores archived accounts', () => {
+    const accounts = [
+      account({ id: 'a', color: 'chart-2', archivedOn: '2026-08-01' }),
+      account({ id: 'b', color: 'chart-3' }),
+    ]
+    expect(accountsUsingColor(accounts, 'chart-2')).toEqual([])
+  })
+})
+
+describe('anchorAges / staleAnchors', () => {
+  it('computes ageDays as daysBetween(balanceAsOf, today)', () => {
+    const ages = anchorAges([account({ id: 'a', balanceAsOf: '2026-08-01' })], '2026-08-15', 14)
+    expect(ages).toEqual([{ accountId: 'a', asOf: '2026-08-01', ageDays: 14, isStale: false }])
+  })
+
+  it('is stale strictly past the threshold — flags on day 15, not day 14', () => {
+    const at14 = anchorAges([account({ balanceAsOf: '2026-08-01' })], '2026-08-15', 14)
+    expect(at14[0]?.isStale).toBe(false)
+    const at15 = anchorAges([account({ balanceAsOf: '2026-07-31' })], '2026-08-15', 14)
+    expect(at15[0]?.isStale).toBe(true)
+  })
+
+  it('gives a future-dated reading a negative age and never flags it stale', () => {
+    const ages = anchorAges([account({ balanceAsOf: '2026-08-20' })], '2026-08-15', 14)
+    expect(ages[0]?.ageDays).toBe(-5)
+    expect(ages[0]?.isStale).toBe(false)
+  })
+
+  it('excludes archived accounts entirely', () => {
+    const ages = anchorAges(
+      [account({ id: 'a', balanceAsOf: '2020-01-01', archivedOn: '2026-08-01' })],
+      '2026-08-15',
+      14,
+    )
+    expect(ages).toEqual([])
+  })
+
+  it('returns only the stale ones, oldest first then by accountId', () => {
+    const accounts = [
+      account({ id: 'fresh', balanceAsOf: '2026-08-14' }),
+      account({ id: 'z-stale', balanceAsOf: '2026-07-01' }),
+      account({ id: 'a-stale', balanceAsOf: '2026-07-01' }),
+      account({ id: 'week-stale', balanceAsOf: '2026-07-25' }),
+    ]
+    const stale = staleAnchors(accounts, '2026-08-15', DEFAULT_STALE_AFTER_DAYS)
+    expect(stale.map((entry) => entry.accountId)).toEqual(['a-stale', 'z-stale', 'week-stale'])
   })
 })
 

@@ -5,14 +5,16 @@
 -- Everything here is synthetic. No real balances, no real people, no real
 -- institution data — ever. See docs/database/local-development.md.
 --
--- Three users exist. Two of them are there because the RLS suite must prove
+-- Four users exist. Two of them are there because the RLS suite must prove
 -- that user A cannot read user B's rows; the third is a scenario the app needs
--- and neither of the others provides. Their ids are pinned constants so tests
--- and future seed data can reference them directly:
+-- and neither of the others provides; the fourth (issue #7) is the empty
+-- household the accounts screen and its E2E suite write into. Their ids are
+-- pinned constants so tests and future seed data can reference them directly:
 --
 --   user A  00000000-0000-4000-8000-00000000000a  user-a@runway.test / runway-local-a
 --   user B  00000000-0000-4000-8000-00000000000b  user-b@runway.test / runway-local-b
 --   user C  00000000-0000-4000-8000-00000000000c  user-c@runway.test / runway-local-c
+--   user D  00000000-0000-4000-8000-00000000000d  user-d@runway.test / runway-local-d
 --
 -- These passwords are local-only fixtures with no value outside this machine.
 --
@@ -24,7 +26,11 @@
 -- non-empty scenario in every table, so the RLS suite has real cross-user rows
 -- to probe. User C is the **short household** — the one that runs out of money
 -- — mirroring domain/seed.ts's `createShortSeedData()` the way A mirrors
--- `createSeedData()`. See docs/database/schema.md for the full shape.
+-- `createSeedData()`. User D (issue #7) is the **empty household**: a
+-- defaults-only user_settings row and no accounts, no rules, no transfers —
+-- the E2E suite's write target for account creation, so those tests never
+-- accumulate rows against A, B or C. See docs/database/schema.md for the full
+-- shape.
 
 -- Idempotent: makes the file safe to replay by hand. On a fresh reset this is a
 -- no-op. The FK cascade clears dependent rows.
@@ -32,7 +38,8 @@ delete from auth.users
 where id in (
   '00000000-0000-4000-8000-00000000000a',
   '00000000-0000-4000-8000-00000000000b',
-  '00000000-0000-4000-8000-00000000000c'
+  '00000000-0000-4000-8000-00000000000c',
+  '00000000-0000-4000-8000-00000000000d'
 );
 
 -- The empty-string token columns are not decoration: gotrue scans them into Go
@@ -73,6 +80,15 @@ values
    now(), now(), now(),
    '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb,
    '', '', '', '', '', '',
+   false, false, false),
+  ('00000000-0000-0000-0000-000000000000',
+   '00000000-0000-4000-8000-00000000000d',
+   'authenticated', 'authenticated',
+   'user-d@runway.test',
+   extensions.crypt('runway-local-d', extensions.gen_salt('bf')),
+   now(), now(), now(),
+   '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb,
+   '', '', '', '', '', '',
    false, false, false);
 
 -- Without a matching identity row, password sign-in fails.
@@ -95,7 +111,8 @@ from auth.users u
 where u.id in (
   '00000000-0000-4000-8000-00000000000a',
   '00000000-0000-4000-8000-00000000000b',
-  '00000000-0000-4000-8000-00000000000c'
+  '00000000-0000-4000-8000-00000000000c',
+  '00000000-0000-4000-8000-00000000000d'
 );
 
 -- Fixture rows for the RLS suite: two owned by A, one by B. The suite asserts
@@ -121,6 +138,15 @@ insert into public.accounts (id, user_id, name, color, balance_cents, balance_as
    'B Checking', 'chart-2', 90000, '2026-08-15'),
   ('10000000-0000-4000-8001-00000000000b', '00000000-0000-4000-8000-00000000000b',
    'B Savings', 'chart-4', 150000, '2026-08-15'),
+  -- Archived (issue #7): exercises accounts.archived_on through the seed.
+  -- Archived below, after the user_settings insert, so the archive trigger
+  -- (private.clear_discretionary_source_on_archive) has a settings row to act
+  -- on rather than the column being set as a bare literal. Sits on user B
+  -- precisely because it mirrors nothing — tests/rls/seed-fidelity.test.ts
+  -- holds A and C to domain/seed.ts exactly, and a new `it` there asserts they
+  -- carry no archived accounts.
+  ('10000000-0000-4000-8002-00000000000b', '00000000-0000-4000-8000-00000000000b',
+   'B Old Savings', 'chart-2', 0, '2026-06-30'),
   -- User C: the short household. Mirrors domain/seed.ts `shortSeedAccounts`,
   -- balance for balance — the reading is taken *on* payday with that deposit
   -- already inside it, which is why the same-day paycheck occurrence must not
@@ -134,34 +160,54 @@ insert into public.accounts (id, user_id, name, color, balance_cents, balance_as
 -- time_zone is null for user A because domain/seed.ts holds null, and A must
 -- mirror the fixture row for row. User B carries a real zone so the column is
 -- exercised by something rather than only ever being null in every test.
+-- balance_stale_after_days (issue #7) is 14 — the column default — for A, C
+-- and D, because A and C must not drift from domain/seed.ts and D is meant to
+-- read as untouched defaults. B carries 30, exercising the column with
+-- something other than its default, same reasoning as B's time_zone.
 insert into public.user_settings (
   user_id, cushion_cents, monthly_discretionary_cents, discretionary_account_id,
-  default_horizon_days, time_zone
+  default_horizon_days, time_zone, balance_stale_after_days
 ) values
   -- 103400 is $1,034.00/month, exactly what domain/seed.ts holds: the engine
   -- divides the monthly figure by the length of the month it falls in, so the
   -- figure crosses the boundary unconverted and this is a plain equality rather
   -- than a round trip that has to be checked for lost cents.
   ('00000000-0000-4000-8000-00000000000a', 60000, 103400,
-   '10000000-0000-4000-8000-00000000000a', 30, null),
+   '10000000-0000-4000-8000-00000000000a', 30, null, 14),
   ('00000000-0000-4000-8000-00000000000b', 30000, 50000,
-   '10000000-0000-4000-8000-00000000000b', 60, 'America/Chicago'),
+   '10000000-0000-4000-8000-00000000000b', 60, 'America/Chicago', 30),
   -- User C mirrors createShortSeedData(): a $250 cushion and $620/month of
   -- discretionary spending against $2,124 of income. time_zone is null for the
   -- same reason A's is — the fixture follows the device.
   ('00000000-0000-4000-8000-00000000000c', 25000, 62000,
-   '10000000-0000-4000-8000-00000000000c', 30, null)
+   '10000000-0000-4000-8000-00000000000c', 30, null, 14),
+  -- User D (issue #7): the empty household. Every column is its own default —
+  -- no discretionary source, because there are no accounts to name one.
+  ('00000000-0000-4000-8000-00000000000d', 60000, 0,
+   null, 30, null, 14)
 -- The trigger added by 20260827160000_user_settings_on_signup.sql already
 -- created a defaults-only row for each of these users the moment the auth.users
 -- insert above landed. A plain insert would now fail on the primary key, so the
--- seed states what it means: these three rows are the authority on what A, B
--- and C hold, and they supersede the defaults rather than racing them.
+-- seed states what it means: these four rows are the authority on what A, B, C
+-- and D hold, and they supersede the defaults rather than racing them.
 on conflict (user_id) do update set
   cushion_cents = excluded.cushion_cents,
   monthly_discretionary_cents = excluded.monthly_discretionary_cents,
   discretionary_account_id = excluded.discretionary_account_id,
   default_horizon_days = excluded.default_horizon_days,
-  time_zone = excluded.time_zone;
+  time_zone = excluded.time_zone,
+  balance_stale_after_days = excluded.balance_stale_after_days;
+
+-- Archiving B's old savings account, now that its user_settings row exists —
+-- if this ran before the insert above, the archive trigger
+-- (private.clear_discretionary_source_on_archive) would have nothing to
+-- update. B's discretionary source is Checking, not this account, so the
+-- trigger firing here is a no-op on discretionary_account_id and exercises
+-- the column through the same path the app uses rather than as a bare
+-- literal on the accounts insert.
+update public.accounts
+set archived_on = '2026-07-01'
+where id = '10000000-0000-4000-8002-00000000000b';
 
 -- recurring_rules.
 --

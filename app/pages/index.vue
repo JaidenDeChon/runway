@@ -30,6 +30,7 @@ import { useIsDesktop } from '@/composables/useIsDesktop'
 import { useRunwayData } from '@/composables/useRunwayData'
 import { useToday } from '@/composables/useToday'
 import { accountColorVar } from '@/lib/account-colors'
+import { ARROW_LINK } from '@/lib/arrow-link'
 import type { ChartSeries, LegendEntry } from '@/lib/burndown'
 import type { BalanceReading } from '~~/domain/accounts'
 import { balanceReadings } from '~~/domain/accounts'
@@ -102,9 +103,20 @@ const overrides = computed(() =>
  */
 const readings = computed(() => balanceReadings(accounts.value))
 const balancesOpen = ref(false)
+const savingBalances = ref(false)
+const balancesError = ref<string | null>(null)
 
-function recordBalances(readings: BalanceReading[]): void {
-  saveBalances(readings, today.value)
+async function recordBalances(readings: BalanceReading[]): Promise<void> {
+  savingBalances.value = true
+  balancesError.value = null
+  try {
+    await saveBalances(readings, today.value)
+    balancesOpen.value = false
+  } catch {
+    balancesError.value = 'Could not save those balances. Check your connection and try again.'
+  } finally {
+    savingBalances.value = false
+  }
 }
 
 const projection = computed(() =>
@@ -264,7 +276,7 @@ function saveOverride(override: OccurrenceOverride): void {
         </p>
         <NuxtLink
           to="/accounts"
-          class="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-primary hover:underline"
+          :class="[ARROW_LINK, 'mt-3']"
         >
           Add an account<span aria-hidden="true"> →</span>
         </NuxtLink>
@@ -316,6 +328,8 @@ function saveOverride(override: OccurrenceOverride): void {
         :accounts="accounts"
         :today="today"
         :newest-on-file="readings.newest"
+        :saving="savingBalances"
+        :error="balancesError"
         @update:open="(value) => (balancesOpen = value)"
         @save="recordBalances"
       />

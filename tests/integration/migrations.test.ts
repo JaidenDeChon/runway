@@ -179,6 +179,7 @@ describe.skipIf(LOCAL_STACK === null)('the running database', () => {
         'user-a@runway.test',
         'user-b@runway.test',
         'user-c@runway.test',
+        'user-d@runway.test',
       ])
     } finally {
       await sql.end()

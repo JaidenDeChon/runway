@@ -14,7 +14,7 @@
  * is the one that says so.
  */
 
-import { USER_A } from '../support/database'
+import { signedInClient, USER_A, USER_D } from '../support/database'
 import {
   assertBaseUrlIsLocal,
   assertSessionAuthenticates,
@@ -83,28 +83,35 @@ test.describe('the authenticated-session fixture', () => {
   })
 
   /**
-   * The acceptance criterion this harness still cannot satisfy, written down
-   * rather than omitted — and re-pointed at the issue that actually owns it.
+   * The acceptance criterion the earlier `fixme` here named: "the UI renders
+   * rows that came from the database," proven now that issue #7 moved
+   * `app/composables/useRunwayData.ts` onto Supabase.
    *
-   * "At least one E2E test completing a real user flow against a seeded
-   * database" needs the *application* to read the database. Issue #6 gave it a
-   * session and a server that validates one; it deliberately did not move
-   * `app/composables/useRunwayData.ts` off `domain/seed.ts`, because reading
-   * accounts from Supabase is issue #7's scope, not authentication's.
-   *
-   * **Do not simply delete the `fixme` when #7 lands.** The in-memory seed also
-   * contains "Checking" and "Savings", so this test would pass without the
-   * database being touched at all — it would be green for the wrong reason.
-   * Whoever un-fixmes it must first make the assertion distinguish the two
-   * sources: sign in as user **C**, whose seeded household differs from the
-   * in-memory one, or assert on a row written through PostgREST during the
-   * test.
+   * Deliberately not "sign in as user C and look for Checking/Savings": C's
+   * accounts carry those same names (only the balances differ), so that
+   * version would pass whether or not the database was ever read — and a
+   * balance must never reach an assertion, which ruling out C's approach by
+   * name would have required anyway. Instead this inserts a row through
+   * PostgREST under **user D's own session** — exercising the INSERT policy,
+   * not the admin connection — with a name built at runtime and present
+   * nowhere in the source, so the only way it can appear on screen is a
+   * genuine read of what was just written.
    */
-  test.fixme('shows the signed-in user their own seeded household [blocked on #7: accounts management]', async ({
-    authenticatedPage,
+  test('shows the signed-in user rows that came from the database', async ({
+    emptyHouseholdPage,
   }) => {
-    await gotoHydrated(authenticatedPage, '/accounts')
-    await expect(authenticatedPage.getByText('Checking', { exact: true })).toBeVisible()
-    await expect(authenticatedPage.getByText('Savings', { exact: true })).toBeVisible()
+    const rowName = `e2e-db-read-${crypto.randomUUID().slice(0, 8)}`
+    const client = await signedInClient(USER_D)
+    const { error } = await client.from('accounts').insert({
+      user_id: USER_D.id,
+      name: rowName,
+      color: 'chart-2',
+      balance_cents: 100,
+      balance_as_of: '2026-08-01',
+    })
+    expect(error).toBeNull()
+
+    await gotoHydrated(emptyHouseholdPage, '/accounts')
+    await expect(emptyHouseholdPage.getByText(rowName, { exact: true })).toBeVisible()
   })
 })

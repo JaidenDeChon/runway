@@ -10,12 +10,18 @@ Runway answers one question: *given what is coming, when does my balance dip
 lowest, and does it clear my cushion?* Every screen is a view onto `domain/`'s
 projection of that.
 
-**Sign-in has landed; the store has not.** Every route is behind a Supabase
-session (`docs/auth.md`), the server validates that session rather than trusting
-the client, and `user_id` is derived from it and never from a request. But the
-household on screen is still `domain/seed.ts`, held in memory and lost on
-reload: issue #6 delivered authentication, and moving `useRunwayData` onto
-Supabase belongs to the feature issues that own each screen, starting with #7.
+**Sign-in has landed, and accounts are the first screen to follow it onto
+Supabase.** Every route is behind a Supabase session (`docs/auth.md`), the
+server validates that session rather than trusting the client, `user_id` is
+derived from it and never from a request, and issue #7 moved `/accounts` and
+`/first-run`'s account step onto real `public.accounts` and
+`public.user_settings` rows behind the `useRunwayData` seam. Recurring items
+and transfers are still `useState`, held in memory and lost on reload, and
+start **empty** rather than from `domain/seed.ts` — a seeded item's
+`accountId` would dangle against account ids the database never held. Moving
+those onto Supabase belongs to the issues that own each screen: #8 and #9.
+`domain/seed.ts` is now a fixture the tests and the local database's seed
+build from, not something the running app ever reads.
 
 That remains explicitly *not* a call for browser-local persistence. Anything
 reaching for `localStorage` to hold user data should be a Supabase call — and

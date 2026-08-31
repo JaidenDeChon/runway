@@ -34,7 +34,10 @@ useHead({ title: 'Welcome - Runway' })
 const { accounts, saveAccount, saveRecurringItem, clearRecords } = useRunwayData()
 const today = useToday()
 
-// Onboarding is always a blank slate — see `useRunwayData.clearRecords`.
+// Onboarding's recurring-item step is always a blank slate — see
+// `useRunwayData.clearRecords`. It only ever clears the session-local
+// records; it must never delete a database account, so a returning user with
+// accounts already on file simply adds another one here.
 clearRecords()
 
 type Step = 'account' | 'item' | 'done'
@@ -42,6 +45,8 @@ const step = ref<Step>('account')
 
 const accountId = ref<string | null>(null)
 const itemId = ref<string | null>(null)
+const savingAccount = ref(false)
+const accountError = ref<string | null>(null)
 
 const accountForm = reactive({
   name: '',
@@ -58,21 +63,29 @@ const itemForm = reactive({
   nextOccurrence: today.value,
 })
 
-function handleAccountContinue(): void {
+async function handleAccountContinue(): Promise<void> {
   const trimmed = accountForm.name.trim()
   if (!trimmed) return // the disabled button already guards this; belt and suspenders
-  const saved = saveAccount({
-    id: accountId.value ?? undefined,
-    name: trimmed,
-    balance: accountForm.balance,
-    balanceAsOf: accountForm.balanceAsOf,
-    color: accountForm.color,
-    // The only account onboarding ever creates, so it has to be the one
-    // discretionary spend drains from — see AccountEditor's identical rule.
-    isDiscretionarySource: true,
-  })
-  accountId.value = saved.id
-  step.value = 'item'
+  savingAccount.value = true
+  accountError.value = null
+  try {
+    const saved = await saveAccount({
+      id: accountId.value ?? undefined,
+      name: trimmed,
+      balance: accountForm.balance,
+      balanceAsOf: accountForm.balanceAsOf,
+      color: accountForm.color,
+      // The only account onboarding ever creates, so it has to be the one
+      // discretionary spend drains from — see AccountEditor's identical rule.
+      isDiscretionarySource: true,
+    })
+    accountId.value = saved.id
+    step.value = 'item'
+  } catch {
+    accountError.value = 'Could not save your account. Check your connection and try again.'
+  } finally {
+    savingAccount.value = false
+  }
 }
 
 function handleBack(): void {
@@ -143,6 +156,8 @@ watch(step, async () => {
           v-model:balance="accountForm.balance"
           v-model:balance-as-of="accountForm.balanceAsOf"
           v-model:color="accountForm.color"
+          :saving="savingAccount"
+          :error="accountError"
           @continue="handleAccountContinue"
         />
         <RecurringItemStepCard

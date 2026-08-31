@@ -24,6 +24,10 @@ const props = defineProps<{
   balance: MinorUnits
   balanceAsOf: IsoDate
   color: AccountColor
+  /** True while the parent's save handler is awaiting the write. */
+  saving?: boolean
+  /** Set by the parent on a failed save; rendered inline. */
+  error?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -35,10 +39,11 @@ const emit = defineEmits<{
 }>()
 
 const isValid = computed(() => props.name.trim().length > 0)
+const canContinue = computed(() => isValid.value && !props.saving)
 
 function onContinue(): void {
   // The gate exists in two places: disabling Continue, and here.
-  if (!isValid.value) return
+  if (!canContinue.value) return
   emit('continue')
 }
 </script>
@@ -94,7 +99,9 @@ function onContinue(): void {
         </div>
       </div>
 
-      <Button type="submit" class="w-full" :disabled="!isValid" :aria-describedby="isValid ? undefined : 'onboarding-account-continue-help'">
+      <p v-if="props.error" role="alert" class="text-sm text-destructive">{{ props.error }}</p>
+
+      <Button type="submit" class="w-full" :disabled="!canContinue" :aria-describedby="isValid ? undefined : 'onboarding-account-continue-help'">
         Continue
       </Button>
       <p v-if="!isValid" id="onboarding-account-continue-help" class="-mt-2 text-xs text-muted-foreground">

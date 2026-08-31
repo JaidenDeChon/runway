@@ -7,6 +7,7 @@
  * single floating-point monetary value in this module.
  */
 
+import { isArchived } from './accounts'
 import { occurrenceDates } from './cadence'
 import type { IsoDate } from './dates'
 import { addDays, compareDates, daysBetween, eachDay, maxDate, minDate } from './dates'
@@ -126,9 +127,13 @@ export function signedAmount(item: RecurringItem): MinorUnits {
 }
 
 function accountsFor(data: RunwayData, accountIds: readonly string[] | undefined): Account[] {
-  if (!accountIds) return [...data.accounts]
+  // Archived accounts are filtered here as well as at the seam. The seam should
+  // never hand one over; making the engine refuse it anyway means no screen can
+  // put an archived balance back into a forecast by naming its id.
+  const live = data.accounts.filter((account) => !isArchived(account))
+  if (!accountIds) return live
   const wanted = new Set(accountIds)
-  return data.accounts.filter((account) => wanted.has(account.id))
+  return live.filter((account) => wanted.has(account.id))
 }
 
 /**

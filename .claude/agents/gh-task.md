@@ -275,6 +275,12 @@ Then record the PR's number and URL in the checkpoint file's Status block, and
 mark every phase done. That file is what a resumer reads first, and a checkpoint
 that doesn't know the PR exists will send them to redo finished work.
 
+**Do not wait for CI.** Open the PR, record it, and move to §7. Never `sleep`,
+never `gh pr checks --watch` or `gh run watch`, never poll in a loop — tokens are
+this project's binding constraint, and a turn spent watching checks spends the
+budget the next task needs. If you need a check's result, ask for it once. Whoever
+invoked you reads the rest on their next invocation.
+
 Opening the PR is **not conditional on the user asking**. It is the deliverable.
 The only thing that stops it is the user explicitly saying not to — in which
 case stop after §5, leave the tree alone, and say the checkpoint and branch are

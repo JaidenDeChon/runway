@@ -184,6 +184,36 @@ If `gh-task` reports it could not finish, do not retry it blindly. Record the
 blocker, set the issue back to `Todo`, put it in `blocked`, and move on. A task
 that failed twice for the same reason is a question for the user, not a third attempt.
 
+## 4a. A task is not done until its PR exists
+
+**Every task you take ends in an open PR. This is unconditional and automatic** —
+the same standing rule `gh-task` runs under (its §6: "Opening the PR is not
+conditional on the user asking. It is the deliverable"). Do not wait to be asked,
+do not treat it as a separate step the user opts into, and do not finish a run
+with work on a branch and no PR pointing at it.
+
+Committed-and-pushed is **not** the finish line. A branch with no PR is invisible
+on the board, invisible in the user's review queue, and indistinguishable from
+abandoned work — which is exactly what it becomes when the next context is lost.
+
+So:
+
+- **If `gh-task` opened the PR** — normal path, nothing to do here.
+- **If `gh-task` died before opening it** (rate limit, crash, returned early),
+  **you open it yourself.** Do not re-plan, do not re-implement, and do not wait
+  for a resume that may never come. `git log --oneline origin/main..<branch>` plus
+  `tasks/<n>/plan.md` and `notes.md` is enough to write an honest PR body.
+- **If the work is incomplete**, open it anyway as a **draft**
+  (`gh pr create --draft`), with the body stating plainly which phases landed,
+  which did not, and what the next session must do. A draft PR that says "phases
+  1–3 of 6, tests green, E2E not yet written" is worth far more than an unpushed
+  branch and a promise.
+- The PR body carries what §5 needs to make a disposition call: verification you
+  actually observed, deviations, and what still needs a human.
+
+Record the PR number in the checkpoint the moment it exists. A checkpoint that
+does not know the PR exists sends the next session to redo finished work.
+
 ## 5. Disposition: merge, or hold for the user
 
 This is the judgment the user delegated to you, and it has an asymmetry baked in:
@@ -247,6 +277,14 @@ your judgment is calibrated, so make it specific enough to disagree with.
   produce nothing.
 - **The user says stop** → stop, checkpoint, and report where things stand.
 
+**Never stop with pushed commits and no PR.** Whatever the stop reason — queue
+empty, environment broken, user said stop — open the PR (draft if unfinished)
+before you report. See §4a. This is the last thing a dying run can still do
+cheaply, and it is what makes the work findable afterward.
+- **The only thing left is CI you have not seen finish** → stop. Do not wait for
+  it. Checkpoint the PR, say which checks were still running, and let the next
+  invocation read the result in one call. See §7a.
+
 Never stop silently, and never stop with `current` still set — clear it or mark
 it resumable first.
 
@@ -268,8 +306,64 @@ against your own state file: if you were killed right now, could a cold agent
 read `.claude/runway-runner/` and continue without re-deciding or re-planning
 anything? If not, your checkpoint is incomplete — fix it before continuing.
 
-The user restarts you by invoking you again, or on a schedule via `/loop`. Both
-land in §1, which is why §1 is unconditional.
+The user restarts you by invoking you again. That lands in §1, which is why §1
+is unconditional.
+
+## 7a. Token discipline — never poll, never schedule
+
+**Tokens are the binding constraint on this project, not time.** A timed check
+that finds nothing new has spent the user's budget to learn nothing, and the
+budget it spent is the reason the next real task cannot run. This is a standing
+instruction from the user, not a tunable default.
+
+Never do any of the following:
+
+- **`ScheduleWakeup`, `CronCreate`, or `/loop` with an interval.** Do not set one
+  up, do not ask for one, and do not suggest one in your report. If you were
+  invoked from a timed loop, do the work and report — do not extend or re-arm it.
+- **Sleep-and-check loops** — `sleep`, `until`/`while` polling in Bash, or any
+  "wait a bit and look again" pattern.
+- **Blocking CI watchers** — `gh pr checks --watch`, `gh run watch`, or the same
+  thing hand-rolled. Call `gh pr checks <n>` **once**, read what it says, and act
+  on that.
+- **Re-reading the board "to see if anything changed."** Read it when you arrive
+  and when you finish a task. Not between.
+
+Wake on events, not on clocks. The things that legitimately resume you are:
+
+- the user invoking you again;
+- a subagent you spawned completing (the harness notifies you — you do not poll
+  for it, and you must not spawn a second copy while one is live);
+- a GitHub-side event the user routes to you (a PR review, a merged PR, a CI
+  failure delivered as a webhook or a notification).
+
+**When CI has not finished yet, that is a stopping point, not a waiting point.**
+Checkpoint the PR as `awaiting_ci` in `awaiting_review`, say so in your report,
+and stop. A later invocation reads the result in one call. Sitting on the turn
+until the checks go green costs orders of magnitude more than being invoked
+again, and the user is not watching the terminal either way.
+
+The same rule governs your own retries: a task that failed goes in `blocked` with
+what you saw. It does not get a second attempt on a timer.
+
+**This rule never authorizes killing verification.** Not polling means *you* stop
+waiting — it does not mean a running test suite is fair game. Specifically, never:
+
+- kill a test run because it is "taking too long". A Playwright suite legitimately
+  runs for minutes; slow is not hung. Absent evidence of an actual hang — a dead
+  process, an exhausted timeout, an error in the log — it is working.
+- accept a **broken** run as a baseline or as a result. A log showing a missing
+  binary, a failed build, or a non-zero exit from the harness itself measured the
+  environment, not the code. Treating it as the reference point silently reclassifies
+  a healthy suite as pre-existing breakage — the exact inversion this repo's
+  "a skipped suite is not a passing one" rule exists to prevent.
+- discard a run in progress in favour of an older one you happen to have.
+
+If verification is genuinely blocking you, **stop and report it**, the same as CI.
+Stopping is cheap. A wrong green is not: this is a financial application, and a
+verdict about somebody's money that rests on a suite nobody actually ran is the
+worst artifact this project can produce. When the two rules appear to conflict,
+this one wins.
 
 ## 8. Checkpoint format
 

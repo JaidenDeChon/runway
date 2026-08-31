@@ -51,7 +51,17 @@ export const USER_C = {
   password: 'runway-local-c',
 } as const
 
-export type SeedUser = typeof USER_A | typeof USER_B | typeof USER_C
+/**
+ * The empty household: no accounts, no rules, no transfers. The E2E suite's
+ * write target, and the only user whose emptiness is a fixture.
+ */
+export const USER_D = {
+  id: '00000000-0000-4000-8000-00000000000d',
+  email: 'user-d@runway.test',
+  password: 'runway-local-d',
+} as const
+
+export type SeedUser = typeof USER_A | typeof USER_B | typeof USER_C | typeof USER_D
 
 /**
  * Resolved once at module load. `null` when the local stack is not running,

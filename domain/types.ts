@@ -37,6 +37,19 @@ export interface Account {
    * `setDiscretionarySource`, not by whichever screen happens to write it.
    */
   readonly isDiscretionarySource: boolean
+  /**
+   * The calendar day this account was archived, or absent while it is active.
+   *
+   * Archiving rather than deleting is the point: a deleted account takes its
+   * recurring items, occurrences and transfers with it (see the cascade in
+   * docs/database/schema.md) and corrupts every past projection that referenced
+   * it. An archived account keeps all of that and simply stops being projected.
+   *
+   * Optional rather than `IsoDate | null`, matching `startsOn` / `daysOfMonth`:
+   * `exactOptionalPropertyTypes` distinguishes "absent" from "present and
+   * undefined", and absent is what active means.
+   */
+  readonly archivedOn?: IsoDate
 }
 
 export type Cadence = 'weekly' | 'biweekly' | 'monthly' | 'annual'
@@ -153,6 +166,7 @@ export interface Transfer {
  * every figure they show from it.
  */
 export interface RunwayData {
+  /** Active accounts only. An archived account is not part of the forecast; `project` filters them defensively as well. */
   readonly accounts: readonly Account[]
   readonly recurringItems: readonly RecurringItem[]
   readonly transfers: readonly Transfer[]

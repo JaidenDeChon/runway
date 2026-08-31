@@ -68,7 +68,7 @@ describe('sanitizeRedirect', () => {
 
 describe('resolvePostSignInPath', () => {
   it('honours a safe destination', () => {
-    expect(resolvePostSignInPath('/transfers')).toBe('/transfers')
+    expect(resolvePostSignInPath('/accounts')).toBe('/accounts')
   })
 
   it('falls back to the dashboard when there is nothing to honour', () => {

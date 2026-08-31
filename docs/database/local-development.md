@@ -116,15 +116,17 @@ excluded from Biome for that reason.
 **never** sent by `supabase db push` and must never be run against the hosted
 project.
 
-It creates three synthetic users. Two of them are there because proving user A
+It creates four synthetic users. Two of them are there because proving user A
 cannot read user B's rows takes two users; the third is the short household,
-which the app needs and neither of the others is:
+which the app needs and neither of the others is; the fourth (issue #7) is the
+empty household the accounts screen's write flows and its E2E suite use:
 
 | | id | credentials | scenario |
 | --- | --- | --- | --- |
 | User A | `00000000-0000-4000-8000-00000000000a` | `user-a@runway.test` / `runway-local-a` | mirrors `createSeedData()` — comfortably covered |
 | User B | `00000000-0000-4000-8000-00000000000b` | `user-b@runway.test` / `runway-local-b` | mirrors nothing; cross-user rows for the RLS probes |
 | User C | `00000000-0000-4000-8000-00000000000c` | `user-c@runway.test` / `runway-local-c` | mirrors `createShortSeedData()` — the short household |
+| User D | `00000000-0000-4000-8000-00000000000d` | `user-d@runway.test` / `runway-local-d` | the empty household — no accounts, no rules, no transfers |
 
 Ids are pinned constants so tests and future seed data can reference them
 directly. `tests/support/database.ts` mirrors them — change one, change both.
