@@ -26,11 +26,17 @@
  * and its step validation rejects `"812.34"` as a step mismatch unless
  * `step="0.01"` is set. `inputmode="decimal"` keeps the numeric keypad on
  * mobile, which is the only thing `type="number"` was buying here.
+ *
+ * The box around all that comes from `@/lib/field`, not from here. It used to
+ * be hand-rolled, and it drifted from `Input` on radius, fill and height at
+ * once — three fields in one row of the account editor, one of them visibly a
+ * different control. Nothing below may re-specify a shell property.
  */
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useTemplateRef, watch } from 'vue'
 import { Input } from '@/components/ui/input'
+import { FIELD_FOCUS_WITHIN, FIELD_SHELL, FIELD_UNSTYLED } from '@/lib/field'
 import { MINUS } from '@/lib/format'
-import { draftFor, draftValue, isNegative, sanitize, withSign } from '@/lib/money-input'
+import { applyTyped, draftFor, draftValue, isNegative, withSign } from '@/lib/money-input'
 import { cn } from '@/lib/utils'
 import type { MinorUnits } from '~~/domain/money'
 
@@ -75,11 +81,52 @@ function set(next: string): void {
 }
 
 function onInput(value: string | number): void {
-  set(sanitize(value, props.allowNegative))
+  // `applyTyped`, not `sanitize`: the field shows no sign, so its value comes
+  // back unsigned and the current one has to be carried across. See that
+  // function for the balance this silently corrupted.
+  set(applyTyped(draft.value, value, props.allowNegative))
+}
+
+const field = useTemplateRef<{ $el?: unknown } | HTMLInputElement>('field')
+
+/** The real `<input>`, whether the ref resolved to the element or the component. */
+function inputElement(): HTMLInputElement | null {
+  const value: unknown = field.value
+  if (value instanceof HTMLInputElement) return value
+  const el = (value as { $el?: unknown } | null)?.$el
+  return el instanceof HTMLInputElement ? el : null
+}
+
+/**
+ * Whether the caret was in the field when the toggle was pressed.
+ *
+ * Read on `mousedown`, which fires before any focus moves — by `click` the
+ * answer has already changed.
+ */
+let hadFocus = false
+
+/**
+ * Keeps the keyboard up.
+ *
+ * Pressing the toggle would otherwise move focus to the button, and on a phone
+ * that dismisses the keyboard mid-amount — which is the only time anyone
+ * touches this control. Preventing the default on `mousedown` stops the focus
+ * shift before it happens, and the explicit refocus in `toggleSign` covers any
+ * engine that shifts it anyway.
+ *
+ * Deliberately not unconditional: a keyboard user who tabs to the button and
+ * presses Space generates no `mousedown`, so `hadFocus` stays false and focus
+ * stays where they put it rather than being yanked into the text field.
+ */
+function keepFocus(event: MouseEvent): void {
+  hadFocus = document.activeElement === inputElement()
+  event.preventDefault()
 }
 
 function toggleSign(): void {
   set(withSign(draft.value, !negative.value))
+  if (hadFocus) inputElement()?.focus()
+  hadFocus = false
 }
 
 const describedLabel = computed(() =>
@@ -91,19 +138,28 @@ const describedLabel = computed(() =>
   <div
     :class="
       cn(
-        'flex items-center gap-1.5 rounded-md border border-input bg-background pr-3',
-        // The toggle brings its own generous hit area, so it sits nearer the
-        // edge than the bare `$` prefix does.
-        props.allowNegative ? 'pl-1' : 'pl-3',
-        'focus-within:ring-[3px] focus-within:ring-ring/50',
-        props.disabled && 'opacity-50',
+        FIELD_SHELL,
+        FIELD_FOCUS_WITHIN,
+        'flex items-center gap-1.5',
+        // The wrapper is not a focusable element, so `disabled:` variants never
+        // match it — the dimming has to be applied directly.
+        props.disabled && 'pointer-events-none cursor-not-allowed opacity-50',
       )
     "
   >
     <!--
-      A real toggle button, not a glyph: `aria-pressed` is what tells a screen
-      reader the field is currently negative, since the minus in the value is
-      rendered here rather than inside the text input.
+      The sign and the `$` are one control, not two things side by side.
+
+      Three problems solve together that way. The prefix starts at the shell's
+      own 12px inset, so `− $ 2,140` lines up with the text in every other
+      field instead of sitting 30px in behind a toggle. There is no fill to
+      expose a gap — the glyph flipping between `+` and `−` says more than a
+      tinted rectangle did, and it is what the field reads out as. And the hit
+      area covers both glyphs rather than a single 16px character.
+
+      `aria-pressed` is what tells a screen reader the field is negative, since
+      the minus lives here rather than inside the text input. Both glyphs are
+      `aria-hidden`; the button's own label carries the meaning.
     -->
     <button
       v-if="props.allowNegative"
@@ -113,18 +169,23 @@ const describedLabel = computed(() =>
       :aria-pressed="negative"
       :class="
         cn(
-          'flex h-11 w-9 shrink-0 items-center justify-center rounded-md font-mono text-sm lg:h-9',
+          // Pulled back by its own padding so the glyphs, not the hit area,
+          // align with the shell's inset.
+          '-ml-2 flex h-11 shrink-0 items-center gap-1 rounded-full px-2 font-mono text-sm lg:h-9',
           'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-          negative ? 'bg-destructive/10 text-destructive' : 'text-muted-foreground',
+          negative ? 'text-destructive' : 'text-muted-foreground',
         )
       "
+      @mousedown="keepFocus"
       @click="toggleSign"
     >
       <span aria-hidden="true">{{ negative ? MINUS : '+' }}</span>
+      <span aria-hidden="true" class="text-muted-foreground">$</span>
     </button>
-    <span aria-hidden="true" class="font-mono text-sm text-muted-foreground">$</span>
+    <span v-else aria-hidden="true" class="font-mono text-sm text-muted-foreground">$</span>
     <Input
       :id="props.id"
+      ref="field"
       :model-value="shown"
       type="text"
       inputmode="decimal"
@@ -132,7 +193,7 @@ const describedLabel = computed(() =>
       :placeholder="props.placeholder"
       :disabled="props.disabled"
       :aria-label="describedLabel"
-      class="h-11 border-0 bg-transparent px-0 font-mono tabular-nums shadow-none focus-visible:ring-0 lg:h-9"
+      :class="cn(FIELD_UNSTYLED, 'font-mono tabular-nums')"
       @update:model-value="onInput"
     />
   </div>

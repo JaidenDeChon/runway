@@ -74,6 +74,43 @@ test.describe('entering an overdrawn balance', () => {
     await expect(dialog.locator('#account-balance')).toHaveValue('1234')
   })
 
+  test('does not dismiss the keyboard mid-amount', async ({ emptyHouseholdPage: page }) => {
+    // The toggle is pressed *while typing an amount* — that is the only time
+    // anyone touches it. A button taking focus would close the iOS keyboard
+    // right then, which is the worst possible moment for it.
+    await gotoHydrated(page, '/accounts')
+    const dialog = page.getByRole('dialog')
+    await clickUntil(page.getByRole('button', { name: 'Add account' }), dialog)
+
+    const balance = dialog.locator('#account-balance')
+    // Part-way through an amount, which is the state this is about — a new
+    // account's balance starts at 0, so type over it first.
+    await balance.fill('75')
+    await balance.click()
+    await expect(balance).toBeFocused()
+
+    await dialog.getByRole('button', { name: 'Negative amount' }).click()
+
+    await expect(dialog.getByRole('button', { name: 'Negative amount' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    // The sign flipped, the caret never left the field, and the digits already
+    // typed are untouched.
+    await expect(balance).toBeFocused()
+    await expect(balance).toHaveValue('75')
+
+    // …and the next keystroke lands in the same field rather than nowhere.
+    await page.keyboard.press('End')
+    await page.keyboard.type('0')
+    await expect(balance).toHaveValue('750')
+
+    await dialog.locator('#account-name').fill('E2E Focus')
+    const row = page.getByRole('button', { name: 'Edit E2E Focus' })
+    await clickUntil(dialog.getByRole('button', { name: 'Add account' }), row)
+    await expect(row).toContainText(`${MINUS}$750`)
+  })
+
   test('a typed minus works too, and lands on the same toggle', async ({
     emptyHouseholdPage: page,
   }) => {

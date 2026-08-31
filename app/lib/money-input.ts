@@ -79,6 +79,32 @@ export function sanitize(typed: string | number, allowNegative: boolean): string
 }
 
 /**
+ * The draft after the field reports a new value.
+ *
+ * **The sign is sticky, and it has to be.** The text input renders the
+ * magnitude only — the sign is drawn by the toggle beside it — so the value
+ * coming back from a keystroke never carries a minus even when the amount is
+ * negative. Taking that at face value meant typing one more digit after
+ * pressing the toggle silently flipped the amount positive: `−$75`, type a
+ * zero, saved as `$750`. A wrong balance, from a keystroke, with nothing on
+ * screen to say it happened.
+ *
+ * So an incoming value can only ever turn the sign *on* (someone typed or
+ * pasted a minus, which the keypad-less path cannot do but a keyboard can);
+ * turning it off is the toggle's job, and the toggle is the only thing that
+ * renders the sign in the first place.
+ */
+export function applyTyped(
+  current: string,
+  typed: string | number,
+  allowNegative: boolean,
+): string {
+  const next = sanitize(typed, allowNegative)
+  if (!allowNegative || isNegative(next)) return next
+  return withSign(next, isNegative(current))
+}
+
+/**
  * The same draft, forced to a sign. This is the sign toggle's whole
  * implementation.
  *

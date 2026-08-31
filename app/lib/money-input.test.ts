@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { MINUS } from './format'
-import { draftFor, draftValue, isNegative, sanitize, withSign } from './money-input'
+import { applyTyped, draftFor, draftValue, isNegative, sanitize, withSign } from './money-input'
 
 describe('draftFor', () => {
   it('round-trips a stored amount through the draft and back', () => {
@@ -84,6 +84,41 @@ describe('sanitize', () => {
   it('leaves a lone minus alone so the digits can follow it', () => {
     expect(sanitize('-', true)).toBe('-')
     expect(sanitize('-', false)).toBe('')
+  })
+})
+
+describe('applyTyped', () => {
+  it('keeps a negative amount negative when the next keystroke arrives', () => {
+    // The regression this function exists for. The field renders the magnitude
+    // only, so a keystroke reports "750" whether the amount is 750 or -750;
+    // reading that literally turned −$75 into $750 on the way to the database.
+    expect(applyTyped('-75', '750', true)).toBe('-750')
+    expect(draftValue(applyTyped('-75', '750', true))).toBe(-75_000)
+  })
+
+  it('lets a typed minus turn the sign on', () => {
+    expect(applyTyped('42', '-42', true)).toBe('-42')
+  })
+
+  it('leaves a positive amount positive', () => {
+    expect(applyTyped('75', '750', true)).toBe('750')
+  })
+
+  it('survives clearing the field and starting again, still negative', () => {
+    // Select-all-delete then retype. The sign is a separate control and the
+    // user did not touch it, so it stands.
+    expect(applyTyped('-75', '', true)).toBe('-')
+    expect(applyTyped('-', '9', true)).toBe('-9')
+  })
+
+  it('carries no sign at all where the field cannot hold one', () => {
+    expect(applyTyped('300', '-300', false)).toBe('300')
+    expect(applyTyped('-300', '300', false)).toBe('300')
+  })
+
+  it('still normalizes a pasted currency string', () => {
+    expect(applyTyped('0', '-$1,234.56', true)).toBe('-1234.56')
+    expect(applyTyped('-0', '$1,234.56', true)).toBe('-1234.56')
   })
 })
 

@@ -184,7 +184,7 @@ function onDelete(): void {
       </div>
 
       <div class="grid grid-cols-2 gap-3">
-        <div class="flex flex-col gap-2">
+        <div class="flex min-w-0 flex-col gap-2">
           <Label for="recurring-cadence">Cadence</Label>
           <Select
             :model-value="form.cadence"
@@ -200,7 +200,7 @@ function onDelete(): void {
             </SelectContent>
           </Select>
         </div>
-        <div class="flex flex-col gap-2">
+        <div class="flex min-w-0 flex-col gap-2">
           <Label for="recurring-account">Account</Label>
           <Select
             :model-value="form.accountId"
@@ -256,11 +256,11 @@ function onDelete(): void {
       />
 
       <div v-else class="grid grid-cols-2 gap-3">
-        <div class="flex flex-col gap-2">
+        <div class="flex min-w-0 flex-col gap-2">
           <Label for="recurring-amount">Amount</Label>
           <MoneyInput id="recurring-amount" v-model="form.amount" aria-label="Amount" />
         </div>
-        <div class="flex flex-col gap-2">
+        <div class="flex min-w-0 flex-col gap-2">
           <Label for="recurring-next-occurrence">Next occurrence</Label>
           <Input id="recurring-next-occurrence" v-model="form.nextOccurrence" type="date" class="font-mono" />
         </div>

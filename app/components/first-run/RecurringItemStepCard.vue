@@ -103,7 +103,7 @@ function onBuild(): void {
       </div>
 
       <div class="grid grid-cols-2 gap-3">
-        <div class="flex flex-col gap-2">
+        <div class="flex min-w-0 flex-col gap-2">
           <Label for="onboarding-item-amount">Amount</Label>
           <MoneyInput
             id="onboarding-item-amount"
@@ -112,7 +112,7 @@ function onBuild(): void {
             @update:model-value="(value) => emit('update:amount', value)"
           />
         </div>
-        <div class="flex flex-col gap-2">
+        <div class="flex min-w-0 flex-col gap-2">
           <Label for="onboarding-item-cadence">Cadence</Label>
           <Select :model-value="props.cadence" @update:model-value="(value) => emit('update:cadence', value as Cadence)">
             <SelectTrigger id="onboarding-item-cadence" class="w-full">
