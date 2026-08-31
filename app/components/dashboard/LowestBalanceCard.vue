@@ -14,6 +14,7 @@ import MoneyText from '@/components/MoneyText.vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
+import { ARROW_LINK } from '@/lib/arrow-link'
 import { formatDateShort, formatDaysAway, formatMoney } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { IsoDate } from '~~/domain/dates'
@@ -78,7 +79,7 @@ const meta = computed(() => {
     <div class="px-4 lg:px-6">
       <NuxtLink
         to="/will-i-make-it"
-        class="inline-flex min-h-11 items-center text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        :class="ARROW_LINK"
       >
         Will I make it?<span aria-hidden="true"> →</span>
       </NuxtLink>

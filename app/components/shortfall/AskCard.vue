@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label'
 import { RadioGroup } from '@/components/ui/radio-group'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ARROW_LINK } from '@/lib/arrow-link'
 import { SEGMENTED_SEGMENT, SEGMENTED_TRACK } from '@/lib/segmented-control'
 import { cn } from '@/lib/utils'
 import type { IsoDate } from '~~/domain/dates'
@@ -125,7 +126,7 @@ function onDateInput(value: string | number): void {
         <p class="text-xs text-muted-foreground">No upcoming bills to compare against yet.</p>
         <NuxtLink
           to="/recurring-items"
-          class="inline-flex min-h-11 items-center text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          :class="ARROW_LINK"
         >
           Add a recurring item<span aria-hidden="true"> →</span>
         </NuxtLink>

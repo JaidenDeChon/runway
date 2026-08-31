@@ -30,6 +30,7 @@ import { useIsDesktop } from '@/composables/useIsDesktop'
 import { useRunwayData } from '@/composables/useRunwayData'
 import { useToday } from '@/composables/useToday'
 import { accountColorVar } from '@/lib/account-colors'
+import { ARROW_LINK } from '@/lib/arrow-link'
 import type { ChartSeries, LegendEntry } from '@/lib/burndown'
 import type { BalanceReading } from '~~/domain/accounts'
 import { balanceReadings } from '~~/domain/accounts'
@@ -275,7 +276,7 @@ function saveOverride(override: OccurrenceOverride): void {
         </p>
         <NuxtLink
           to="/accounts"
-          class="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-primary hover:underline"
+          :class="[ARROW_LINK, 'mt-3']"
         >
           Add an account<span aria-hidden="true"> →</span>
         </NuxtLink>

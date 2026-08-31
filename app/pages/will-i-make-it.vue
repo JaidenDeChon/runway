@@ -15,6 +15,7 @@ import VerdictCard from '@/components/shortfall/VerdictCard.vue'
 import { Card } from '@/components/ui/card'
 import { useRunwayData } from '@/composables/useRunwayData'
 import { useToday } from '@/composables/useToday'
+import { ARROW_LINK } from '@/lib/arrow-link'
 import type { IsoDate } from '~~/domain/dates'
 import { addDays } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
@@ -93,7 +94,7 @@ const answer = computed(() =>
         </p>
         <NuxtLink
           to="/accounts"
-          class="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          :class="[ARROW_LINK, 'mt-3']"
         >
           Add an account<span aria-hidden="true"> →</span>
         </NuxtLink>
