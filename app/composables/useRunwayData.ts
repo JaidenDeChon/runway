@@ -47,6 +47,8 @@ interface RemoteHousehold {
 const EMPTY_HOUSEHOLD: RemoteHousehold = { accounts: [], settings: toHouseholdSettings(null) }
 
 interface LocalRecords {
+  /** Whose session these records belong to, so a user switch can be detected. */
+  readonly ownerId: string | null
   readonly recurringItems: readonly RecurringItem[]
   readonly transfers: readonly Transfer[]
 }
@@ -120,9 +122,33 @@ export function useRunwayData() {
   // reload — issues #8 and #9 own moving them onto Supabase. See the file
   // comment for why they start empty rather than from `domain/seed.ts`.
   const localRecords = useState<LocalRecords>('runway-local-records', () => ({
+    ownerId: authUser.value?.id ?? null,
     recurringItems: [],
     transfers: [],
   }))
+
+  // Session-local records belong to whoever was signed in when they were
+  // created. Sign-out and sign-in are both client-side navigations — no full
+  // page reload — so unlike the household `useAsyncData` above (which
+  // re-fetches on `watch: [authUser]`), nothing was re-deriving these from
+  // the new session: as user A, add a recurring item; sign out; sign in as a
+  // different user D; A's item was still on screen.
+  //
+  // Keyed on the user's *id* changing, not on reference equality to
+  // `authUser` itself: `authUsersEqual()` (app/plugins/supabase.client.ts)
+  // already keeps `authUser`'s reference stable across an unchanged user, so
+  // watching the id here means signing out and back in as the SAME user does
+  // not needlessly discard their in-progress, unsaved records — only an
+  // actual change of person clears them. Both `recurringItems` and
+  // `transfers` are cleared together: they share this one state object, and
+  // the leak reasoning is identical for each.
+  watch(
+    () => authUser.value?.id ?? null,
+    (nextOwnerId) => {
+      if (localRecords.value.ownerId === nextOwnerId) return
+      localRecords.value = { ownerId: nextOwnerId, recurringItems: [], transfers: [] }
+    },
+  )
 
   // Settings this screen reads but has no UI to write yet:
   // `cushion_cents`, `monthly_discretionary_cents` and `time_zone` ride along
@@ -379,7 +405,7 @@ export function useRunwayData() {
    * they are the user's real data now, not seeded state to reset.
    */
   function clearRecords(): void {
-    localRecords.value = { recurringItems: [], transfers: [] }
+    localRecords.value = { ownerId: localRecords.value.ownerId, recurringItems: [], transfers: [] }
   }
 
   /** True when the user has nothing to project from — the "skipped onboarding" case. */
