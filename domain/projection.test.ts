@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { addDays, daysBetween } from './dates'
 import { toMinorUnits } from './money'
 import {
+  canAnswerShortfall,
   classifyMargin,
   evaluate,
   occurrencesIn,
@@ -459,6 +460,93 @@ describe('upcomingBills', () => {
   it('is sorted by date ascending', () => {
     const dates = upcomingBills(seeded, SEED_TODAY).map((bill) => bill.date)
     expect([...dates].sort()).toEqual(dates)
+  })
+})
+
+describe('canAnswerShortfall', () => {
+  it('refuses the household that made this rule necessary: an account, $0, nothing scheduled', () => {
+    const household = data({ accounts: [account({ balance: 0 })] })
+    expect(canAnswerShortfall(household)).toBe(false)
+
+    // …and this is precisely what it is refusing to let the screen show. The
+    // engine is not wrong; it is being asked a question with no content.
+    const answer = shortfallThrough(household, {
+      today: SEED_TODAY,
+      through: addDays(SEED_TODAY, 30),
+      cushion: 0,
+    })
+    expect(answer.isCovered).toBe(true)
+  })
+
+  it('refuses a household with no account at all', () => {
+    expect(canAnswerShortfall(data({ accounts: [] }))).toBe(false)
+    expect(canAnswerShortfall(data({ accounts: [], recurringItems: [item()] }))).toBe(false)
+  })
+
+  it('refuses a household whose only accounts are archived', () => {
+    expect(
+      canAnswerShortfall(
+        data({
+          accounts: [account({ archivedOn: SEED_TODAY })],
+          recurringItems: [item()],
+        }),
+      ),
+    ).toBe(false)
+  })
+
+  it('answers once there is a bill to be short against', () => {
+    expect(canAnswerShortfall(data({ recurringItems: [item({ kind: 'bill' })] }))).toBe(true)
+  })
+
+  it('does not count income alone — a forecast that only goes up is not the question', () => {
+    expect(canAnswerShortfall(data({ recurringItems: [item({ kind: 'income' })] }))).toBe(false)
+  })
+
+  it('counts a bill beyond the 120-day bill picker, which is a different question', () => {
+    const faraway = addDays(SEED_TODAY, 200)
+    const household = data({
+      recurringItems: [item({ nextOccurrence: faraway, cadence: 'annual' })],
+    })
+    expect(upcomingBills(household, SEED_TODAY)).toHaveLength(0)
+    expect(canAnswerShortfall(household)).toBe(true)
+  })
+
+  it('counts a discretionary drain, but only one that has an account to drain', () => {
+    // Mirrors `project`'s own condition: a monthly figure with no source
+    // account spends nothing, so it is not information either.
+    const withSource = data({
+      accounts: [account({ isDiscretionarySource: true })],
+      monthlyDiscretionarySpend: toMinorUnits(600),
+    })
+    expect(canAnswerShortfall(withSource)).toBe(true)
+
+    const noSource = data({
+      accounts: [account({ isDiscretionarySource: false })],
+      monthlyDiscretionarySpend: toMinorUnits(600),
+    })
+    expect(canAnswerShortfall(noSource)).toBe(false)
+
+    const noSpend = data({
+      accounts: [account({ isDiscretionarySource: true })],
+      monthlyDiscretionarySpend: 0,
+    })
+    expect(canAnswerShortfall(noSpend)).toBe(false)
+  })
+
+  it('is unmoved by transfers, which are balance-neutral by construction', () => {
+    const transfer: Transfer = {
+      id: 't',
+      fromAccountId: 'a',
+      toAccountId: 'b',
+      amount: toMinorUnits(100),
+      date: SEED_TODAY,
+      createdAt: 0,
+    }
+    expect(
+      canAnswerShortfall(
+        data({ accounts: [account({ id: 'a' }), account({ id: 'b' })], transfers: [transfer] }),
+      ),
+    ).toBe(false)
   })
 })
 

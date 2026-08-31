@@ -83,6 +83,7 @@ function onContinue(): void {
           <MoneyInput
             id="onboarding-account-balance"
             :model-value="props.balance"
+            allow-negative
             aria-label="Balance"
             @update:model-value="(value) => emit('update:balance', value)"
           />

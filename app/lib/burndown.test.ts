@@ -3,6 +3,7 @@ import { toMinorUnits } from '~~/domain/money'
 import type { DayPoint } from '~~/domain/projection'
 import type { ChartLayout } from './burndown'
 import {
+  containsZero,
   DEFAULT_DENSITY,
   DENSITY_BOUNDS,
   dashArrayFor,
@@ -28,6 +29,30 @@ const points = (...balances: number[]): DayPoint[] =>
     date: `2026-08-${String(index + 1).padStart(2, '0')}`,
     balance: toMinorUnits(balance),
   }))
+
+describe('containsZero', () => {
+  it('is true only when the forecast actually crosses from having money to owing it', () => {
+    expect(containsZero({ min: toMinorUnits(-500), max: toMinorUnits(200) })).toBe(true)
+    expect(containsZero({ min: toMinorUnits(100), max: toMinorUnits(900) })).toBe(false)
+    expect(containsZero({ min: toMinorUnits(-900), max: toMinorUnits(-100) })).toBe(false)
+  })
+
+  it('does not treat a range that merely touches zero as a crossing', () => {
+    // A forecast that bottoms out at exactly $0 is not overdrawn, and a
+    // reference line drawn on top of the series would say it was.
+    expect(containsZero({ min: 0, max: toMinorUnits(900) })).toBe(false)
+    expect(containsZero({ min: toMinorUnits(-900), max: 0 })).toBe(false)
+  })
+
+  it('is satisfied by a wholly-negative series once a non-negative cushion widens the range', () => {
+    // The cushion is always inside the range (see `valueRange`), and the
+    // cushion is never negative, so an overdrawn forecast always has a zero
+    // to draw against — this is what the chart relies on.
+    const range = valueRange([points(-500, -200)], toMinorUnits(300))
+    expect(range.max).toBeGreaterThan(0)
+    expect(containsZero(range)).toBe(true)
+  })
+})
 
 describe('valueRange', () => {
   it('always covers the cushion, even when no series comes near it', () => {

@@ -19,7 +19,7 @@ import { ARROW_LINK } from '@/lib/arrow-link'
 import type { IsoDate } from '~~/domain/dates'
 import { addDays } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
-import { shortfallThrough, upcomingBills } from '~~/domain/projection'
+import { canAnswerShortfall, shortfallThrough, upcomingBills } from '~~/domain/projection'
 
 useHead({ title: 'Will I Make It? - Runway' })
 
@@ -27,6 +27,41 @@ const { data, isEmpty } = useRunwayData()
 const today = useToday()
 
 const bills = computed(() => upcomingBills(data.value, today.value))
+
+/**
+ * What is missing before this screen can answer at all, or `null` once it can.
+ *
+ * Two gaps, one shape. Both render the dashboard's empty-state card rather
+ * than a verdict, because a verdict is exactly what neither state has: with no
+ * account there is no balance to project, and with a balance but nothing
+ * spending it the engine returns a truthful **Covered** that means nothing —
+ * see `canAnswerShortfall`, which owns that rule because it is a product
+ * decision about honesty, not a rendering one.
+ *
+ * Deviation raised per CLAUDE.md rather than resolved silently: `spec.md`'s
+ * Open Question 7 covers only the no-bills case and only as far as the *tab*
+ * ("hide or disable"), and there is no `screens/empty.png` for either state,
+ * so the copy here is invented.
+ */
+const gap = computed(() => {
+  if (isEmpty.value) {
+    return {
+      heading: 'Nothing to check yet',
+      body: "Add the account you spend from so there's a balance to project forward.",
+      cta: 'Add an account',
+      to: '/accounts',
+    }
+  }
+  if (!canAnswerShortfall(data.value)) {
+    return {
+      heading: 'Not enough to go on yet',
+      body: "A balance on its own can't say whether you'll make it. Add the bills that come out of it and we'll project against them.",
+      cta: 'Add a recurring item',
+      to: '/recurring-items',
+    }
+  }
+  return null
+})
 
 // Bill mode has nothing to point at with no upcoming bills — spec.md's Open
 // Question 7 leaves this state undecided ("no copy exists for it") and names
@@ -81,22 +116,15 @@ const answer = computed(() =>
     subtitle="Pick a bill or a date. We'll tell you if your cushion holds until then."
     center-title
   >
-    <!-- No account means no starting balance, so neither mode has an honest
-         answer — the verdict card is suppressed rather than showing a $0
-         "Covered" computed from nothing. Not in the design spec: there is no
-         `screens/empty.png` for this state, so this is a deviation raised in
-         the PR rather than resolved silently, per CLAUDE.md. -->
-    <Card v-if="isEmpty" class="gap-2">
+    <!-- The ask and verdict cards are absent from the DOM in this state, not
+         merely hidden: VerdictCard carries an aria-live region, and a
+         suppressed-but-mounted one would announce a stale answer. -->
+    <Card v-if="gap" class="gap-2">
       <div class="px-4 lg:px-6">
-        <h2 class="text-base font-medium">Nothing to check yet</h2>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Add the account you spend from so there's a balance to project forward.
-        </p>
-        <NuxtLink
-          to="/accounts"
-          :class="[ARROW_LINK, 'mt-3']"
-        >
-          Add an account<span aria-hidden="true"> →</span>
+        <h2 class="text-base font-medium">{{ gap.heading }}</h2>
+        <p class="mt-1 text-sm text-muted-foreground">{{ gap.body }}</p>
+        <NuxtLink :to="gap.to" :class="[ARROW_LINK, 'mt-3']">
+          {{ gap.cta }}<span aria-hidden="true"> →</span>
         </NuxtLink>
       </div>
     </Card>

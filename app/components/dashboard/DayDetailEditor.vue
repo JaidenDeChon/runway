@@ -51,9 +51,6 @@ const emit = defineEmits<{
   save: [override: OccurrenceOverride]
 }>()
 
-/** Bills are negative deltas, so the amount field has to accept them. */
-const MIN_AMOUNT: MinorUnits = -99_999_999
-
 const editing = ref<Occurrence | null>(null)
 
 const form = reactive({
@@ -175,7 +172,7 @@ const subtitle = computed(() => (props.date ? formatDateLong(props.date) : ''))
             <MoneyInput
               id="occurrence-amount"
               v-model="form.amount"
-              :min="MIN_AMOUNT"
+              allow-negative
               aria-label="Amount"
             />
           </div>

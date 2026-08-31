@@ -107,7 +107,7 @@ function save(): void {
         <MoneyInput
           :id="`balance-${row.accountId}`"
           v-model="row.balance"
-          :min="Number.NEGATIVE_INFINITY"
+          allow-negative
           :aria-label="`${row.name} balance in dollars`"
         />
       </div>

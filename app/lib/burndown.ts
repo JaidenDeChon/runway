@@ -176,6 +176,25 @@ export function valueRange(
   return { min: min - padding, max: max + padding }
 }
 
+/**
+ * Whether zero falls inside the drawn range — i.e. the forecast crosses from
+ * having money to owing it.
+ *
+ * `docs/design/dashboard/spec.md` Open Question 7 asks whether crossing zero
+ * should read differently from crossing the cushion. It should: the cushion is
+ * a number the user chose and can move, and zero is not. Without a reference
+ * for it, an overdrawn stretch is just "further into the same red band", and
+ * the chart never says the one thing a reader most needs to see.
+ *
+ * The answer stops at a line, though — a second *band* below zero would put
+ * two overlapping fills in the same region and make the cushion, the thing the
+ * verdict is actually measured against, harder to find. One banded region, two
+ * reference lines.
+ */
+export function containsZero(range: ValueRange): boolean {
+  return range.min < 0 && range.max > 0
+}
+
 /** The x coordinate of day `index` of `count`. A single day sits at the left edge. */
 export function scaleX(index: number, count: number, layout: ChartLayout): number {
   if (count <= 1) return layout.left
