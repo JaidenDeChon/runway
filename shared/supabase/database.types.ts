@@ -288,7 +288,57 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      save_account: {
+        Args: {
+          p_balance_as_of: string
+          p_balance_cents: number
+          p_color: string
+          p_id: string
+          p_is_discretionary_source: boolean
+          p_name: string
+        }
+        Returns: {
+          archived_on: string | null
+          balance_as_of: string
+          balance_cents: number
+          color: string
+          created_at: string
+          id: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "accounts"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      save_account_balances: {
+        Args: {
+          p_account_ids: string[]
+          p_as_of: string
+          p_balance_cents: number[]
+        }
+        Returns: {
+          archived_on: string | null
+          balance_as_of: string
+          balance_cents: number
+          color: string
+          created_at: string
+          id: string
+          name: string
+          updated_at: string
+          user_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "accounts"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
     }
     Enums: {
       occurrence_status: "projected" | "confirmed" | "skipped"

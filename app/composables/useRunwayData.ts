@@ -197,102 +197,79 @@ export function useRunwayData() {
   }
 
   /**
-   * Inserts or updates an account, then re-establishes the one-source
-   * discretionary invariant, then refreshes.
+   * Inserts or updates an account and re-establishes the one-source
+   * discretionary invariant through `save_account`
+   * (`supabase/migrations/20260831011511_accounts_atomic_writes.sql`), a
+   * single RPC rather than two separate requests.
    *
-   * No optimistic update: two small selects are cheaper than a client-side
-   * guess that can disagree with the database, and every mutation here takes
-   * the same stance.
+   * That migration exists because two requests could partially fail: the
+   * account insert committed while the follow-up `user_settings` update
+   * threw, so the local `id` was lost, `props.account` in `AccountEditor`
+   * stayed `null`, and pressing the button again inserted a *second* row. The
+   * function body is one transaction, so both writes land or neither does.
+   *
+   * No optimistic update: a refresh is cheaper than a client-side guess that
+   * can disagree with the database, and every mutation here takes the same
+   * stance.
    */
   async function saveAccount(draft: AccountDraft): Promise<Account> {
-    const userId = requireUserId()
+    requireUserId()
     const columns = toAccountColumns(draft)
-    let id = draft.id
 
-    if (id) {
-      const { error: updateError } = await client
-        .from('accounts')
-        .update(columns)
-        // `.eq('user_id', ...)` is for the planner and the reader — RLS is
-        // what actually scopes this, same as server/api/user-settings.get.ts.
-        .eq('id', id)
-        .eq('user_id', userId)
-      if (updateError) {
-        console.error('account update failed', { code: updateError.code })
-        throw new Error('save-failed')
-      }
-    } else {
-      const { data: inserted, error: insertError } = await client
-        .from('accounts')
-        .insert({ ...columns, user_id: userId })
-        .select('id')
-        .single()
-      if (insertError || !inserted) {
-        console.error('account insert failed', { code: insertError?.code })
-        throw new Error('save-failed')
-      }
-      id = inserted.id
-    }
-
-    // The flag is not reassigned when turned off: leaving the household with
-    // no discretionary source is legal (mirrors domain/accounts.ts
-    // upsertAccount), and silently moving the drain to another account would
-    // be a change the user did not make.
-    if (draft.isDiscretionarySource) {
-      const { error: settingsError } = await client
-        .from('user_settings')
-        .update({ discretionary_account_id: id })
-        .eq('user_id', userId)
-      if (settingsError) {
-        console.error('settings update failed', { code: settingsError.code })
-        throw new Error('save-failed')
-      }
-    } else if (remote.value.settings.discretionaryAccountId === id) {
-      const { error: settingsError } = await client
-        .from('user_settings')
-        .update({ discretionary_account_id: null })
-        .eq('user_id', userId)
-      if (settingsError) {
-        console.error('settings update failed', { code: settingsError.code })
-        throw new Error('save-failed')
-      }
+    const { data: saved, error: saveError } = await client.rpc('save_account', {
+      // The generated Args type marks every parameter non-null, because the
+      // type generator has no way to see that `p_id uuid` (unlike the other
+      // params) accepts SQL NULL — which is exactly what the function's
+      // insert branch expects for a brand-new account.
+      p_id: (draft.id ?? null) as unknown as string,
+      p_name: columns.name,
+      p_color: columns.color,
+      p_balance_cents: columns.balance_cents,
+      p_balance_as_of: columns.balance_as_of,
+      p_is_discretionary_source: draft.isDiscretionarySource,
+    })
+    if (saveError || !saved) {
+      console.error('account save failed', { code: saveError?.code })
+      throw new Error('save-failed')
     }
 
     await refresh()
-    const saved = remote.value.accounts.find((account) => account.id === id)
-    if (!saved) throw new Error('save-failed')
-    return saved
+    const result = remote.value.accounts.find((account) => account.id === saved.id)
+    if (!result) throw new Error('save-failed')
+    return result
   }
 
   /**
-   * Records balances observed on `asOf`, one update per reading, in
+   * Records balances observed on `asOf` for every reading, through
+   * `save_account_balances`
+   * (`supabase/migrations/20260831011511_accounts_atomic_writes.sql`) — one
+   * RPC, one transaction, rather than one request per account in
    * `Promise.all`.
    *
-   * Readings naming an unknown or archived account are dropped, mirroring
-   * `domain/accounts.ts` `applyBalanceReadings`. **Not atomic across
-   * accounts** — a partial failure throws and the subsequent `refresh()`
-   * shows exactly what actually landed. A transaction would need an RPC in
-   * `private`, which is more machinery than a hand-typed balance refresh
-   * justifies.
+   * That migration exists because the old per-account requests were not
+   * atomic across accounts: a failure partway through left some accounts
+   * updated and others not, and the dashboard went on projecting from
+   * balances the database no longer agreed with — worse than `saveAccount`'s
+   * bug, because nothing here was retryable without re-typing the accounts
+   * that *did* save.
+   *
+   * Readings naming an unknown or archived account are dropped before the
+   * call, mirroring `domain/accounts.ts` `applyBalanceReadings`.
    */
   async function saveBalances(readings: readonly BalanceReading[], asOf: IsoDate): Promise<void> {
-    const userId = requireUserId()
+    requireUserId()
     const activeIds = new Set(accounts.value.map((account) => account.id))
     const applicable = readings.filter((reading) => activeIds.has(reading.accountId))
 
-    await Promise.all(
-      applicable.map(async (reading) => {
-        const { error: updateError } = await client
-          .from('accounts')
-          .update({ balance_cents: reading.balance, balance_as_of: asOf })
-          .eq('id', reading.accountId)
-          .eq('user_id', userId)
-        if (updateError) {
-          console.error('balance update failed', { code: updateError.code })
-          throw new Error('save-failed')
-        }
-      }),
-    )
+    const { error: saveError } = await client.rpc('save_account_balances', {
+      p_account_ids: applicable.map((reading) => reading.accountId),
+      p_balance_cents: applicable.map((reading) => reading.balance),
+      p_as_of: asOf,
+    })
+    if (saveError) {
+      console.error('balance update failed', { code: saveError.code })
+      throw new Error('save-failed')
+    }
     await refresh()
   }
 
