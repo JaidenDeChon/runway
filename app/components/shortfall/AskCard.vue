@@ -71,6 +71,8 @@ function onDateInput(value: string | number): void {
         <TabsList :class="cn(SEGMENTED_TRACK, 'w-full lg:w-fit')">
           <TabsTrigger
             value="bill"
+            :disabled="props.bills.length === 0"
+            :title="props.bills.length === 0 ? 'No upcoming bills to compare against yet' : undefined"
             :class="cn(SEGMENTED_SEGMENT, 'flex-1 lg:flex-none')"
           >
             Upcoming bill
@@ -97,9 +99,6 @@ function onDateInput(value: string | number): void {
               :selected="bill.itemId === props.selectedBillId"
             />
           </RadioGroup>
-          <p v-if="props.bills.length === 0" class="px-1 py-2 text-sm text-muted-foreground">
-            No upcoming bills in the next few months — try picking a date instead.
-          </p>
         </TabsContent>
 
         <TabsContent value="date">
@@ -117,6 +116,20 @@ function onDateInput(value: string | number): void {
           </div>
         </TabsContent>
       </Tabs>
+
+      <!-- Spec Open Question 7's own likely resolution, applied: the tab
+           above is disabled rather than left pointing at an empty
+           RadioGroup, and this replaces its dead-end content with a way
+           out — a recurring bill is what the tab needs to become usable. -->
+      <div v-if="props.bills.length === 0" class="flex flex-col gap-1 px-1">
+        <p class="text-xs text-muted-foreground">No upcoming bills to compare against yet.</p>
+        <NuxtLink
+          to="/recurring-items"
+          class="inline-flex min-h-11 items-center text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          Add a recurring item<span aria-hidden="true"> →</span>
+        </NuxtLink>
+      </div>
 
       <Separator />
 

@@ -12,6 +12,7 @@ import { computed, ref, watch } from 'vue'
 import AppPage from '@/components/AppPage.vue'
 import AskCard from '@/components/shortfall/AskCard.vue'
 import VerdictCard from '@/components/shortfall/VerdictCard.vue'
+import { Card } from '@/components/ui/card'
 import { useRunwayData } from '@/composables/useRunwayData'
 import { useToday } from '@/composables/useToday'
 import type { IsoDate } from '~~/domain/dates'
@@ -21,11 +22,18 @@ import { shortfallThrough, upcomingBills } from '~~/domain/projection'
 
 useHead({ title: 'Will I Make It? - Runway' })
 
-const { data } = useRunwayData()
+const { data, isEmpty } = useRunwayData()
 const today = useToday()
 
-const mode = ref<'bill' | 'date'>('bill')
 const bills = computed(() => upcomingBills(data.value, today.value))
+
+// Bill mode has nothing to point at with no upcoming bills — spec.md's Open
+// Question 7 leaves this state undecided ("no copy exists for it") and names
+// this as the likely resolution. Set once, from whatever `bills` resolves to
+// at mount: nothing on this page changes the recurring-item list out from
+// under itself while it stays mounted, so there is no live household event to
+// react to afterward.
+const mode = ref<'bill' | 'date'>(bills.value.length > 0 ? 'bill' : 'date')
 
 const selectedBillId = ref<string | null>(null)
 // Preselects the first bill once the (today-dependent) list resolves, and
@@ -72,24 +80,46 @@ const answer = computed(() =>
     subtitle="Pick a bill or a date. We'll tell you if your cushion holds until then."
     center-title
   >
-    <AskCard
-      :mode="mode"
-      :selected-bill-id="selectedBillId"
-      :selected-date="selectedDate"
-      :cushion="cushion"
-      :bills="bills"
-      :today="today"
-      @update:mode="mode = $event"
-      @update:selected-bill-id="selectedBillId = $event"
-      @update:selected-date="selectedDate = $event"
-      @update:cushion="cushion = $event"
-    />
-    <VerdictCard
-      :verdict="answer"
-      :today-balance="answer.startingBalance"
-      :target-date="answer.through"
-      :cushion="cushion"
-      :today="today"
-    />
+    <!-- No account means no starting balance, so neither mode has an honest
+         answer — the verdict card is suppressed rather than showing a $0
+         "Covered" computed from nothing. Not in the design spec: there is no
+         `screens/empty.png` for this state, so this is a deviation raised in
+         the PR rather than resolved silently, per CLAUDE.md. -->
+    <Card v-if="isEmpty" class="gap-2">
+      <div class="px-4 py-6 lg:px-6">
+        <h2 class="text-base font-medium">Nothing to check yet</h2>
+        <p class="mt-1 text-sm text-muted-foreground">
+          Add the account you spend from so there's a balance to project forward.
+        </p>
+        <NuxtLink
+          to="/accounts"
+          class="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          Add an account<span aria-hidden="true"> →</span>
+        </NuxtLink>
+      </div>
+    </Card>
+
+    <template v-else>
+      <AskCard
+        :mode="mode"
+        :selected-bill-id="selectedBillId"
+        :selected-date="selectedDate"
+        :cushion="cushion"
+        :bills="bills"
+        :today="today"
+        @update:mode="mode = $event"
+        @update:selected-bill-id="selectedBillId = $event"
+        @update:selected-date="selectedDate = $event"
+        @update:cushion="cushion = $event"
+      />
+      <VerdictCard
+        :verdict="answer"
+        :today-balance="answer.startingBalance"
+        :target-date="answer.through"
+        :cushion="cushion"
+        :today="today"
+      />
+    </template>
   </AppPage>
 </template>
