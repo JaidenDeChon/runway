@@ -346,6 +346,25 @@ again, and the user is not watching the terminal either way.
 The same rule governs your own retries: a task that failed goes in `blocked` with
 what you saw. It does not get a second attempt on a timer.
 
+**This rule never authorizes killing verification.** Not polling means *you* stop
+waiting — it does not mean a running test suite is fair game. Specifically, never:
+
+- kill a test run because it is "taking too long". A Playwright suite legitimately
+  runs for minutes; slow is not hung. Absent evidence of an actual hang — a dead
+  process, an exhausted timeout, an error in the log — it is working.
+- accept a **broken** run as a baseline or as a result. A log showing a missing
+  binary, a failed build, or a non-zero exit from the harness itself measured the
+  environment, not the code. Treating it as the reference point silently reclassifies
+  a healthy suite as pre-existing breakage — the exact inversion this repo's
+  "a skipped suite is not a passing one" rule exists to prevent.
+- discard a run in progress in favour of an older one you happen to have.
+
+If verification is genuinely blocking you, **stop and report it**, the same as CI.
+Stopping is cheap. A wrong green is not: this is a financial application, and a
+verdict about somebody's money that rests on a suite nobody actually ran is the
+worst artifact this project can produce. When the two rules appear to conflict,
+this one wins.
+
 ## 8. Checkpoint format
 
 ```
