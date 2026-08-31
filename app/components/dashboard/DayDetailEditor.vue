@@ -51,9 +51,6 @@ const emit = defineEmits<{
   save: [override: OccurrenceOverride]
 }>()
 
-/** Bills are negative deltas, so the amount field has to accept them. */
-const MIN_AMOUNT: MinorUnits = -99_999_999
-
 const editing = ref<Occurrence | null>(null)
 
 const form = reactive({
@@ -167,7 +164,7 @@ const subtitle = computed(() => (props.date ? formatDateLong(props.date) : ''))
         <p class="text-sm font-medium">{{ editing?.label }}</p>
 
         <div class="grid grid-cols-2 gap-3">
-          <div class="flex flex-col gap-2">
+          <div class="flex min-w-0 flex-col gap-2">
             <Label for="occurrence-amount">Amount</Label>
             <!-- Signed: a bill is stored as a negative delta, and hiding that
                  behind a magnitude field would make "is this in or out?"
@@ -175,11 +172,11 @@ const subtitle = computed(() => (props.date ? formatDateLong(props.date) : ''))
             <MoneyInput
               id="occurrence-amount"
               v-model="form.amount"
-              :min="MIN_AMOUNT"
+              allow-negative
               aria-label="Amount"
             />
           </div>
-          <div class="flex flex-col gap-2">
+          <div class="flex min-w-0 flex-col gap-2">
             <Label for="occurrence-date">Date</Label>
             <Input
               id="occurrence-date"

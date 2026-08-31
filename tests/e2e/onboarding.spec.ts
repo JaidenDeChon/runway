@@ -146,11 +146,20 @@ test.describe('first-run onboarding', () => {
    *     2500   -> { step: null, stepMismatch: false, formValid: true  }
    *     812.34 -> { step: null, stepMismatch: true,  formValid: false }
    *
-   * Fixed by `step="0.01"` on the input inside `app/components/MoneyInput.vue`.
-   * The assertions below are deliberately at both levels — the form advances,
-   * *and* the browser reports the field valid — because only the second one
-   * distinguishes "the fix is in place" from "some other change happened to
-   * make Continue clickable".
+   * Fixed at the time by `step="0.01"`. The fix is now structural instead:
+   * `MoneyInput` renders `type="text"` with `inputmode="decimal"`, which keeps
+   * the numeric keypad on mobile and takes the whole step-validation mechanism
+   * off the table — a text input has no `step` to mismatch, so this defect
+   * cannot come back by way of somebody dropping an attribute. (The field moved
+   * to `text` so that a lone `"-"` can be typed and then completed, which
+   * `type="number"` blanks; see the component's own comment for the rest.)
+   *
+   * The assertions below stayed at both levels through that change — the form
+   * advances, *and* the browser reports the field valid — because only the
+   * second one distinguishes "the field is enterable" from "some other change
+   * happened to make Continue clickable". What they say about the *mechanism*
+   * moved with it: asserting `step="0.01"` on a field that no longer has a step
+   * would be asserting a fix that is no longer how this works.
    */
   test('accepts an opening balance that has cents in it', async ({ emptyHouseholdPage: page }) => {
     await gotoHydrated(page, '/first-run')
@@ -166,12 +175,20 @@ test.describe('first-run onboarding', () => {
     const validity = await balance.evaluate((element) => {
       const input = element as HTMLInputElement
       return {
-        step: input.getAttribute('step'),
+        type: input.type,
+        inputMode: input.inputMode,
         stepMismatch: input.validity.stepMismatch,
         formValid: input.form?.checkValidity() ?? null,
       }
     })
-    expect(validity).toEqual({ step: '0.01', stepMismatch: false, formValid: true })
+    expect(validity).toEqual({
+      type: 'text',
+      // Still a numeric keypad on a phone. That is the half of `type="number"`
+      // worth keeping here, and the only half.
+      inputMode: 'decimal',
+      stepMismatch: false,
+      formValid: true,
+    })
 
     await clickUntil(continueButton, cardTitle(page, 'Add a bill or paycheck'))
 

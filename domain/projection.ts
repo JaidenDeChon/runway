@@ -7,7 +7,7 @@
  * single floating-point monetary value in this module.
  */
 
-import { isArchived } from './accounts'
+import { activeAccounts, isArchived } from './accounts'
 import { occurrenceDates } from './cadence'
 import type { IsoDate } from './dates'
 import { addDays, compareDates, daysBetween, eachDay, maxDate, minDate } from './dates'
@@ -379,6 +379,41 @@ export function evaluate(summary: SeriesSummary, cushion: MinorUnits): Verdict {
     isCovered: margin >= 0,
     shortfall: margin < 0 ? -margin : 0,
   }
+}
+
+/**
+ * Whether a household holds enough for a shortfall verdict to mean anything.
+ *
+ * `shortfallThrough` will answer whatever it is asked. Given one account at $0
+ * and nothing scheduled, it projects a flat line, finds a low point of $0,
+ * compares it to a $0 cushion and reports **Covered** — arithmetically correct
+ * and the most misleading thing this app could say. "Covered" has to mean "we
+ * looked at what is coming and it holds", and with nothing coming there was
+ * nothing to look at.
+ *
+ * Two things are needed, and they are the two the projection actually moves on:
+ *
+ * - **An active account**, or there is no balance to start from.
+ * - **Something that spends it** — a recurring bill, or a discretionary drain
+ *   with an account flagged to take it. Income alone does not qualify: a
+ *   forecast that only ever goes up is not a question about making it.
+ *
+ * The second clause deliberately mirrors the drain condition in `project`
+ * above, so this cannot claim a household is answerable in a way the engine
+ * then declines to project.
+ *
+ * Not the same question as "are there bills to *pick* from": `upcomingBills`
+ * only looks 120 days ahead, and a bill further out than that is still a bill
+ * this household has. That window chooses targets; this chooses whether to
+ * answer at all.
+ */
+export function canAnswerShortfall(data: RunwayData): boolean {
+  const accounts = activeAccounts(data.accounts)
+  if (accounts.length === 0) return false
+  if (data.recurringItems.some((item) => item.kind === 'bill')) return true
+  return (
+    data.monthlyDiscretionarySpend > 0 && accounts.some((account) => account.isDiscretionarySource)
+  )
 }
 
 export interface ShortfallQuestion {

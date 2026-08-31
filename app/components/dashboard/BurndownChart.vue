@@ -25,6 +25,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Separator } from '@/components/ui/separator'
 import type { ChartDensity, ChartSeries } from '@/lib/burndown'
 import {
+  containsZero,
   DESKTOP_LAYOUT,
   dashArrayFor,
   dayBand,
@@ -76,6 +77,15 @@ const range = computed(() =>
 )
 
 const cushionY = computed(() => scaleY(props.cushion, range.value, layout.value))
+const zeroY = computed(() => scaleY(0, range.value, layout.value))
+
+/**
+ * The zero reference, drawn only when the forecast actually crosses it — and
+ * never when the cushion is itself zero, where the cushion line already marks
+ * the spot and a second line on the same pixels would just look like a
+ * rendering bug. See `containsZero` for why zero earns a line of its own.
+ */
+const showZeroLine = computed(() => containsZero(range.value) && props.cushion !== 0)
 const plotBottom = computed(() => layout.value.height - layout.value.bottom)
 const todayX = computed(() => scaleX(props.todayIndex, count.value, layout.value))
 
@@ -232,10 +242,14 @@ const summary = computed(() => {
   const span = first && last ? `${formatDateShort(first)} to ${formatDateShort(last)}` : ''
   if (!props.lowest) return `Balance forecast, ${span}.`
   const side = props.status === 'short' ? 'below' : 'above'
+  // The zero line is the only thing on screen saying the balance goes
+  // negative, and a line is not readable. Said in words for the same reason
+  // the low point is.
+  const overdrawn = props.lowest.balance < 0 ? ' The balance goes negative in this window.' : ''
   return (
     `Balance forecast, ${span}. Lowest projected balance ` +
     `${formatMoney(props.lowest.balance)} on ${formatDateShort(props.lowest.date)}, ` +
-    `${side} your ${formatMoney(props.cushion)} safety cushion.`
+    `${side} your ${formatMoney(props.cushion)} safety cushion.${overdrawn}`
   )
 })
 
@@ -307,6 +321,18 @@ function onFocus(): void {
         :y2="y"
         class="stroke-border"
         stroke-width="1"
+      />
+
+      <!-- Zero, solid where the cushion is dashed: the cushion is a number the
+           user picked and can move, and this one is not. -->
+      <line
+        v-if="showZeroLine"
+        :x1="layout.left"
+        :x2="layout.width - layout.right"
+        :y1="zeroY"
+        :y2="zeroY"
+        class="stroke-foreground/45"
+        stroke-width="1.5"
       />
 
       <line
@@ -406,6 +432,18 @@ function onFocus(): void {
           top: `${percentOf(layout.top, layout.height)}%`,
         }"
         >Today</span
+      >
+
+      <!-- Right-aligned, because the cushion's own label is pinned to the left
+           edge at a y that can be within a few pixels of this one. -->
+      <span
+        v-if="showZeroLine"
+        class="absolute -translate-x-full -translate-y-1/2 pr-1 text-[11px] text-muted-foreground"
+        :style="{
+          left: `${percentOf(layout.width - layout.right, layout.width)}%`,
+          top: `${percentOf(zeroY, layout.height)}%`,
+        }"
+        >$0</span
       >
 
       <span

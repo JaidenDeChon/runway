@@ -169,11 +169,11 @@ async function onRestore(): Promise<void> {
         </div>
 
         <div class="grid grid-cols-2 gap-3">
-          <div class="flex flex-col gap-2">
+          <div class="flex min-w-0 flex-col gap-2">
             <Label for="account-balance">Balance</Label>
-            <MoneyInput id="account-balance" v-model="form.balance" aria-label="Balance" />
+            <MoneyInput id="account-balance" v-model="form.balance" allow-negative aria-label="Balance" />
           </div>
-          <div class="flex flex-col gap-2">
+          <div class="flex min-w-0 flex-col gap-2">
             <Label for="account-as-of">As of</Label>
             <Input id="account-as-of" v-model="form.balanceAsOf" type="date" class="font-mono" />
           </div>

@@ -78,16 +78,17 @@ function onContinue(): void {
       </div>
 
       <div class="grid grid-cols-2 gap-3">
-        <div class="flex flex-col gap-2">
+        <div class="flex min-w-0 flex-col gap-2">
           <Label for="onboarding-account-balance">Balance</Label>
           <MoneyInput
             id="onboarding-account-balance"
             :model-value="props.balance"
+            allow-negative
             aria-label="Balance"
             @update:model-value="(value) => emit('update:balance', value)"
           />
         </div>
-        <div class="flex flex-col gap-2">
+        <div class="flex min-w-0 flex-col gap-2">
           <Label for="onboarding-account-as-of">As of</Label>
           <Input
             id="onboarding-account-as-of"
