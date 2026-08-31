@@ -187,9 +187,11 @@ keeping it separate is what keeps the projection balance-neutral by
 construction rather than by a filter somebody has to remember to apply.
 
 `domain/types.ts`'s `Transfer` made the same call, for the same reason — "the
-pair can never drift apart" — and `docs/design/transfers/spec.md` draws it that
-way: one list row per transfer, one `TransferLegs` from-swatch → arrow →
-to-swatch, one "Transfer" badge.
+pair can never drift apart." The transfers screen agreed, before it was
+removed (`8ae4b88`, UI-only — this table, its RLS and `domain/transfers.ts`
+were untouched): one list row per transfer, one from-swatch → arrow →
+to-swatch, one "Transfer" badge — the design followed the one-row shape
+because the shape is real, not the other way around.
 
 If a leg ever needs independent state (one side cleared, the other still
 pending), that is reconciliation — and it arrives with imported bank
@@ -342,7 +344,20 @@ create trigger accounts_clear_discretionary_source_on_archive
 The flag is cleared, never reassigned — leaving a household with no
 discretionary source is legal, and silently moving the drain to another
 account would be a change the user did not make. The application clears it
-too (belt and suspenders); the trigger is what makes forgetting impossible.
+too (belt and suspenders); the trigger is what makes forgetting to clear it
+*on that transition* impossible.
+
+**What this does and does not guarantee.** The trigger's `when` clause fires
+only on the `archived_on` `null -> not null` transition — the moment an active
+account *becomes* archived. It says nothing about `discretionary_account_id`
+being written to point at an account that is *already* archived: nothing in
+the schema stops that `update user_settings set discretionary_account_id = …`
+from naming an archived id, because no trigger or constraint watches writes to
+that column, only writes to `accounts.archived_on`. That gap is not reachable
+from the app today — `useRunwayData`'s `saveAccount` only ever offers an
+active account as the discretionary source — but it is not prevented at the
+data layer either, and would need a check constraint or a trigger on
+`user_settings` (not on `accounts`) if it ever became reachable.
 
 The projection engine enforces the same fact independently: `domain/accounts.ts`
 `activeAccounts` filters archived rows out of `RunwayData.accounts` at the
