@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { resolveStack } from './tests/support/stack'
 
 /**
  * The E2E harness.
@@ -33,6 +34,23 @@ import { defineConfig, devices } from '@playwright/test'
  * instead, so a build failure is reported as a build failure rather than as a
  * server that never came up.
  *
+ * ## Where the *app* points, which is not the same question
+ *
+ * `baseURL` being loopback says the browser is talking to a local server. It
+ * says nothing about where that server sends its writes. Nuxt reads `.env`
+ * inside the server process, so a developer whose `.env` names their hosted
+ * project got an E2E run driving real writes into production with every guard
+ * in this repo green — the harness was airtight about its own connection and
+ * had no opinion at all about the app's.
+ *
+ * `webServer.env` below closes the default path by handing the server the local
+ * stack explicitly. Nuxt's dotenv loading does not overwrite variables that are
+ * already set, so this wins over `.env` rather than racing it.
+ *
+ * It is not sufficient on its own, which is why `assertAppTargetsLocalStack`
+ * exists in `tests/e2e/fixtures.ts`: `reuseExistingServer` is on outside CI, and
+ * injection does nothing to a server this config did not start.
+ *
  * ## Two viewports
  *
  * `CLAUDE.md` says mobile-first, built at 375px and adapted upward. A harness
@@ -50,6 +68,25 @@ const BASE_URL = process.env.RUNWAY_E2E_BASE_URL ?? 'http://127.0.0.1:3000'
  * per run.
  */
 const SERVER_COMMAND = process.env.RUNWAY_E2E_SERVER_COMMAND ?? 'bun run build && bun run preview'
+
+/**
+ * The local stack, for handing to the server under test.
+ *
+ * Resolved at config load and tolerated as absent: with the stack down the
+ * whole suite skips itself through `requireStackOrSkip`, and a config that
+ * threw would turn that skip into a crash. `resolveStack` still *throws* rather
+ * than returning `null` for a stack that resolves to somewhere it must never
+ * be, so the tolerated case here is genuinely "not running" and not "running
+ * somewhere alarming".
+ */
+const LOCAL_STACK_FOR_SERVER = resolveStack()
+
+const SERVER_ENV: Record<string, string> = LOCAL_STACK_FOR_SERVER
+  ? {
+      NUXT_PUBLIC_SUPABASE_URL: LOCAL_STACK_FOR_SERVER.apiUrl,
+      NUXT_PUBLIC_SUPABASE_ANON_KEY: LOCAL_STACK_FOR_SERVER.anonKey,
+    }
+  : {}
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -130,5 +167,8 @@ export default defineConfig({
     timeout: 300_000,
     stdout: 'ignore',
     stderr: 'pipe',
+    // Merged over the inherited environment, and ahead of `.env`: see the note
+    // on where the app points, at the top of this file.
+    env: SERVER_ENV,
   },
 })

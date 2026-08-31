@@ -84,6 +84,45 @@ export class NonLocalStackError extends Error {
 }
 
 /**
+ * Throws unless one endpoint is on this machine.
+ *
+ * `field` names the endpoint and `label` names where the value came from, so
+ * the message points at the thing to change — an environment variable, a stack
+ * that is genuinely remote, or the server under test.
+ *
+ * This is the whole rule, in one place. `assertLocalOnly` below is a loop over
+ * it, and the E2E harness applies the same function to the *app* it is driving
+ * (`tests/e2e/fixtures.ts`). There is deliberately no second copy: a guard
+ * whose two implementations can drift is a guard that will eventually disagree
+ * with itself about what "local" means.
+ */
+export function assertLocalUrl(url: string, field: string, label: string): void {
+  const host = hostOf(url)
+
+  if (!host) {
+    throw new NonLocalStackError(
+      `Refusing to run: ${label} supplied a ${field} that is not a parseable URL. ` +
+        'The test suites only ever run against a local Supabase stack.',
+    )
+  }
+
+  if (isHostedSupabaseHost(host)) {
+    throw new NonLocalStackError(
+      `Refusing to run: ${label} points ${field} at the hosted Supabase host "${host}". ` +
+        'These suites create, mutate and delete rows, and one of them deliberately ' +
+        'widens an RLS policy. They run against a local stack only.',
+    )
+  }
+
+  if (!isLoopbackHost(host)) {
+    throw new NonLocalStackError(
+      `Refusing to run: ${label} points ${field} at "${host}", which is not this machine. ` +
+        `Allowed hosts: ${[...LOOPBACK_HOSTS].join(', ')}.`,
+    )
+  }
+}
+
+/**
  * Throws unless every endpoint named is on this machine.
  *
  * `label` names where the values came from, so the message points at the thing
@@ -93,34 +132,8 @@ export function assertLocalOnly(
   candidate: { readonly apiUrl: string; readonly dbUrl: string },
   label: string,
 ): void {
-  for (const [field, url] of [
-    ['apiUrl', candidate.apiUrl],
-    ['dbUrl', candidate.dbUrl],
-  ] as const) {
-    const host = hostOf(url)
-
-    if (!host) {
-      throw new NonLocalStackError(
-        `Refusing to run: ${label} supplied a ${field} that is not a parseable URL. ` +
-          'The test suites only ever run against a local Supabase stack.',
-      )
-    }
-
-    if (isHostedSupabaseHost(host)) {
-      throw new NonLocalStackError(
-        `Refusing to run: ${label} points ${field} at the hosted Supabase host "${host}". ` +
-          'These suites create, mutate and delete rows, and one of them deliberately ' +
-          'widens an RLS policy. They run against a local stack only.',
-      )
-    }
-
-    if (!isLoopbackHost(host)) {
-      throw new NonLocalStackError(
-        `Refusing to run: ${label} points ${field} at "${host}", which is not this machine. ` +
-          `Allowed hosts: ${[...LOOPBACK_HOSTS].join(', ')}.`,
-      )
-    }
-  }
+  assertLocalUrl(candidate.apiUrl, 'apiUrl', label)
+  assertLocalUrl(candidate.dbUrl, 'dbUrl', label)
 }
 
 let cached: LocalStack | null | undefined

@@ -37,7 +37,7 @@
 import { test as base, expect } from '@playwright/test'
 import { createServerClient } from '@supabase/ssr'
 import { adminSql, LOCAL_STACK, type SeedUser, USER_A, USER_D } from '../support/database'
-import { assertLocalOnly, hostOf, isLoopbackHost } from '../support/stack'
+import { assertLocalOnly, assertLocalUrl, hostOf, isLoopbackHost } from '../support/stack'
 
 export { expect }
 
@@ -260,6 +260,79 @@ export const test = base.extend<RunwayFixtures>({
 })
 
 /**
+ * Pages already checked, so the guard costs one `evaluate` per test rather
+ * than one per navigation. Keyed on the `Page` object, so it cannot leak
+ * between tests.
+ */
+const targetChecked = new WeakSet<import('@playwright/test').Page>()
+
+/**
+ * The Supabase project the **running app** is configured against.
+ *
+ * Read from the app's own runtime config rather than from this process's
+ * environment, because those are not the same thing and the difference is the
+ * entire point — see `assertAppTargetsLocalStack`.
+ *
+ * Throws when it cannot read the value. That is not defensiveness for its own
+ * sake: a guard that silently passes when its probe stops working is worse
+ * than no guard, because it is *believed*. `tests/e2e/local-only.spec.ts`
+ * asserts the probe returns the real value, so this failing closed is a
+ * backstop and not the only defence.
+ */
+export async function readAppSupabaseTarget(
+  page: import('@playwright/test').Page,
+): Promise<string> {
+  const url = await page.evaluate(() => {
+    const nuxt = (globalThis as { useNuxtApp?: () => { $config?: unknown } }).useNuxtApp
+    if (typeof nuxt !== 'function') return null
+    const config = nuxt().$config as { public?: { supabase?: { url?: unknown } } } | undefined
+    const value = config?.public?.supabase?.url
+    return typeof value === 'string' ? value : null
+  })
+
+  if (!url) {
+    throw new Error(
+      "Refusing to run: could not read the running app's Supabase URL from its runtime " +
+        'config, so there is no way to prove it is not pointed at the hosted project. ' +
+        'See readAppSupabaseTarget in tests/e2e/fixtures.ts.',
+    )
+  }
+  return url
+}
+
+/**
+ * The other half of `assertBaseUrlIsLocal` — and the half that was missing.
+ *
+ * `assertBaseUrlIsLocal` proves the *browser* is talking to a local server, and
+ * `tests/support/stack.ts` proves this *process* resolved a local stack. Neither
+ * says anything about where the server under test sends its own writes. Nuxt
+ * reads `.env` inside that process, so a developer whose `.env` names their
+ * hosted project had an E2E run driving a real browser through real writes
+ * straight into production, with every guard in the repo green.
+ *
+ * `playwright.config.ts` now injects the local stack into the server it starts,
+ * which closes the default path. This closes the rest of it: `reuseExistingServer`
+ * is on outside CI, so Playwright will happily attach to a preview server
+ * somebody else started with whatever environment they had, and injection does
+ * nothing at all in that case. This runs against the server that actually
+ * answered.
+ *
+ * The rule itself is `assertLocalUrl`, unchanged and shared — not a second
+ * opinion about what counts as local.
+ */
+export async function assertAppTargetsLocalStack(
+  page: import('@playwright/test').Page,
+): Promise<void> {
+  if (targetChecked.has(page)) return
+  assertLocalUrl(
+    await readAppSupabaseTarget(page),
+    'its Supabase URL',
+    'the app under test (from NUXT_PUBLIC_SUPABASE_URL, or a .env the server picked up)',
+  )
+  targetChecked.add(page)
+}
+
+/**
  * Navigate, and do not return until the page is actually interactive.
  *
  * This exists because of a bug it caused in this very suite, which is worth
@@ -297,6 +370,9 @@ export async function gotoHydrated(page: import('@playwright/test').Page, path: 
     return !!root?.__vue_app__
   })
   await page.waitForLoadState('networkidle')
+  // After hydration, because the runtime config is read through the Nuxt app
+  // instance and there is no app instance before it mounts.
+  await assertAppTargetsLocalStack(page)
   return response
 }
 

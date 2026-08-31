@@ -15,6 +15,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   assertLocalOnly,
+  assertLocalUrl,
   hostOf,
   isHostedSupabaseHost,
   isLoopbackHost,
@@ -49,6 +50,87 @@ function restoreEnv(snapshot: Record<string, string | undefined>): void {
   }
   resetStackCache()
 }
+
+/**
+ * The app under test is a second thing that can be pointed at production, and
+ * for a long time nothing checked it.
+ *
+ * `assertLocalOnly` covers the connection *this process* opens. It says nothing
+ * about the Nuxt server the browser is driving, which reads its own `.env` and
+ * opens its own connection — so a developer whose `.env` named their hosted
+ * project got an E2E run writing real rows into production with every guard in
+ * the repo green. `tests/e2e/fixtures.ts` now applies the same rule to the
+ * running app; these are the tests of the rule it applies.
+ *
+ * Tested here rather than in the E2E suite on purpose, and for this file's own
+ * stated reason: the guard has to hold especially on a machine where the local
+ * stack is down, which is exactly the machine where nothing E2E can run.
+ */
+describe('the guard applied to the app under test', () => {
+  const LABEL = 'the app under test'
+
+  it('passes an app pointed at the local stack', () => {
+    expect(() => assertLocalUrl(LOCAL.apiUrl, 'its Supabase URL', LABEL)).not.toThrow()
+    expect(() => assertLocalUrl('http://localhost:54321', 'its Supabase URL', LABEL)).not.toThrow()
+  })
+
+  it('refuses an app pointed at a hosted project — the case that prompted this', () => {
+    expect(() =>
+      assertLocalUrl('https://ceepsoecqhjekiqawjgr.supabase.co', 'its Supabase URL', LABEL),
+    ).toThrow(NonLocalStackError)
+  })
+
+  it('names the app, so the message points at the .env and not at the harness', () => {
+    // The failure this replaces was every spec redirecting to /sign-in, because
+    // the app looked for a cookie named after a different project. Nothing in
+    // that said "your .env is wrong".
+    try {
+      assertLocalUrl('https://ceepsoecqhjekiqawjgr.supabase.co', 'its Supabase URL', LABEL)
+      expect.unreachable('expected a NonLocalStackError')
+    } catch (error) {
+      const message = (error as Error).message
+      expect(message).toContain(LABEL)
+      expect(message).toContain('its Supabase URL')
+    }
+  })
+
+  it('refuses any other remote host, not only the hosted platform', () => {
+    expect(() => assertLocalUrl('https://supabase.example.com', 'its Supabase URL', LABEL)).toThrow(
+      NonLocalStackError,
+    )
+  })
+
+  it('refuses an unreadable value rather than letting it through', () => {
+    // What an app with the variable unset or blank would report.
+    for (const value of ['', 'undefined', 'not-a-url']) {
+      expect(() => assertLocalUrl(value, 'its Supabase URL', LABEL)).toThrow(NonLocalStackError)
+    }
+  })
+
+  it('is the same function assertLocalOnly uses, not a second opinion', () => {
+    // Both must reject the identical host for the identical reason; two
+    // implementations of "local" would eventually disagree.
+    const hosted = 'https://ceepsoecqhjekiqawjgr.supabase.co'
+    const fromPair = (() => {
+      try {
+        assertLocalOnly({ apiUrl: hosted, dbUrl: LOCAL.dbUrl }, LABEL)
+      } catch (error) {
+        return (error as Error).message
+      }
+      return null
+    })()
+    const fromSingle = (() => {
+      try {
+        assertLocalUrl(hosted, 'apiUrl', LABEL)
+      } catch (error) {
+        return (error as Error).message
+      }
+      return null
+    })()
+    expect(fromSingle).not.toBeNull()
+    expect(fromPair).toBe(fromSingle)
+  })
+})
 
 describe('the local-only guard', () => {
   it('accepts every loopback spelling', () => {
