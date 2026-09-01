@@ -119,7 +119,12 @@ watch(
   { immediate: true },
 )
 
-const isValid = computed(() => form.name.trim().length > 0)
+// A blank name or a zero amount both fail to save: recurring_rules has
+// `amount_cents > 0`, so a $0 item cannot reach the database, and Save
+// being disabled until it's real is this app's existing answer to that
+// (spec.md open question 8) — the same stance the blank-name guard already
+// took, just extended to the other field the constraint actually depends on.
+const isValid = computed(() => form.name.trim().length > 0 && form.amount > 0)
 const namePlaceholder = computed(() =>
   form.type === 'bill' ? 'e.g. Electric & water' : 'e.g. Paycheck',
 )

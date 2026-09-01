@@ -96,7 +96,11 @@ function handleBack(): void {
 
 async function handleBuildRunway(): Promise<void> {
   const trimmed = itemForm.name.trim()
-  if (!trimmed || !accountId.value) return
+  // The disabled button already guards this (RecurringItemStepCard's own
+  // isValid), including the amount: recurring_rules.amount_cents > 0 rejects
+  // the step's $0 default, so belt and suspenders here matches the account
+  // step's own guard above.
+  if (!trimmed || !accountId.value || itemForm.amount <= 0) return
   savingItem.value = true
   itemError.value = null
   try {

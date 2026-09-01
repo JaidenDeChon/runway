@@ -67,9 +67,13 @@ test.describe('first-run onboarding', () => {
     const buildButton = page.getByRole('button', { name: 'Build my runway' })
     await expect(buildButton).toBeDisabled()
 
+    // Name alone is not enough now: recurring_rules.amount_cents > 0 rejects
+    // the step's $0 default, so the button stays disabled until an amount is
+    // typed too — see RecurringItemStepCard.vue's isValid.
     await page.locator('#onboarding-item-name').fill('Rent')
-    await expect(buildButton).toBeEnabled()
+    await expect(buildButton).toBeDisabled()
     await page.locator('#onboarding-item-amount').fill('1200')
+    await expect(buildButton).toBeEnabled()
     await clickUntil(buildButton, cardTitle(page, "You're set."))
 
     // --- Done ---------------------------------------------------------------
@@ -213,8 +217,9 @@ test.describe('first-run onboarding', () => {
     await segment(page, 'Income').click()
     const buildButton = page.getByRole('button', { name: 'Build my runway' })
     await page.locator('#onboarding-item-name').fill('Paycheck')
-    await expect(buildButton).toBeEnabled()
+    await expect(buildButton).toBeDisabled()
     await page.locator('#onboarding-item-amount').fill('2000')
+    await expect(buildButton).toBeEnabled()
     await clickUntil(buildButton, cardTitle(page, "You're set."))
 
     const summary = page.getByText(/We'll track Checking against Paycheck/)

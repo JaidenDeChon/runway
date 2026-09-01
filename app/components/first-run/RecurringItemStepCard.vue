@@ -54,8 +54,18 @@ const emit = defineEmits<{
   build: []
 }>()
 
-const isValid = computed(() => props.name.trim().length > 0)
+// A blank name or a zero amount both fail to save: recurring_rules has
+// `amount_cents > 0`, and this step's default amount is $0, so the button
+// has to stay disabled until a real amount is typed — the same guard
+// AccountStepCard's name check already establishes, extended to the field
+// the constraint actually depends on.
+const isValid = computed(() => props.name.trim().length > 0 && props.amount > 0)
 const canBuild = computed(() => isValid.value && !props.saving)
+const validationHint = computed(() => {
+  if (props.name.trim().length === 0) return 'Name your bill or paycheck to continue.'
+  if (props.amount <= 0) return 'Enter an amount to continue.'
+  return null
+})
 
 const namePlaceholder = computed(() => (props.kind === 'income' ? 'e.g. Paycheck' : 'e.g. Rent'))
 
@@ -159,8 +169,8 @@ function onBuild(): void {
           Build my runway
         </Button>
       </div>
-      <p v-if="!isValid" id="onboarding-item-build-help" class="text-xs text-muted-foreground">
-        Name your bill or paycheck to continue.
+      <p v-if="validationHint" id="onboarding-item-build-help" class="text-xs text-muted-foreground">
+        {{ validationHint }}
       </p>
     </CardContent>
   </form>
