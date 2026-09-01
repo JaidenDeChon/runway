@@ -4,33 +4,54 @@ import { computed, ref } from 'vue'
 import AppPage from '@/components/AppPage.vue'
 import RecurringItemEditor from '@/components/recurring-items/RecurringItemEditor.vue'
 import RecurringItemRow from '@/components/recurring-items/RecurringItemRow.vue'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useRunwayData } from '@/composables/useRunwayData'
+import { useToday } from '@/composables/useToday'
 import { SEGMENTED_SEGMENT, SEGMENTED_TRACK } from '@/lib/segmented-control'
 import { cn } from '@/lib/utils'
+import { nextOccurrenceOnOrAfter } from '~~/domain/cadence'
 import { compareDates } from '~~/domain/dates'
 import type { RecurringItem, RecurringKind } from '~~/domain/types'
 
 useHead({ title: 'Recurring Items - Runway' })
 
-const { recurringItems, accountsById } = useRunwayData()
+const { recurringItems, accountsById, isLoading, loadError, refresh } = useRunwayData()
+const today = useToday()
 
 type Filter = 'all' | RecurringKind
 
 const filter = ref<Filter>('all')
 
 // Filter is view-local and never touches the store; sort order is recomputed
-// from `nextOccurrence` on every change so it stays correct after an edit.
+// on every change so it stays correct after an edit. Sorted on the true next
+// occurrence — `nextOccurrenceOnOrAfter`, not the stored anchor
+// (`item.nextOccurrence` maps to `anchor_date`, the cadence's phase, which is
+// not a future date once it has passed) — with ended rules (`null`) sorted
+// last rather than dropped: AC5 requires ending to stay visible and
+// non-destructive.
 const rows = computed(() =>
   [...recurringItems.value]
     .filter((item) => filter.value === 'all' || item.kind === filter.value)
-    .sort(
-      (a, b) => compareDates(a.nextOccurrence, b.nextOccurrence) || a.name.localeCompare(b.name),
-    )
-    .map((item) => ({ item, account: accountsById.value.get(item.accountId) })),
+    .map((item) => ({
+      item,
+      account: accountsById.value.get(item.accountId),
+      nextDate: nextOccurrenceOnOrAfter(item, today.value),
+    }))
+    .sort((a, b) => {
+      if (a.nextDate === null || b.nextDate === null) {
+        if (a.nextDate === b.nextDate) return a.item.name.localeCompare(b.item.name)
+        return a.nextDate === null ? 1 : -1
+      }
+      return compareDates(a.nextDate, b.nextDate) || a.item.name.localeCompare(b.item.name)
+    }),
 )
+
+// Nothing loaded yet, and no cached copy to show while it does.
+const showSkeleton = computed(() => isLoading.value && recurringItems.value.length === 0)
 
 const editorOpen = ref(false)
 const editing = ref<RecurringItem | null>(null)
@@ -85,7 +106,20 @@ function openAdd(): void {
     </ToggleGroup>
 
     <Card class="gap-0 overflow-hidden py-0">
-      <p v-if="recurringItems.length === 0" class="px-4 py-6 text-sm text-muted-foreground">
+      <div v-if="showSkeleton" class="flex flex-col gap-3.5 p-4">
+        <Skeleton v-for="n in 4" :key="n" class="h-14 w-full" />
+      </div>
+
+      <Alert v-else-if="loadError" variant="destructive" class="m-4 w-auto">
+        <AlertTitle>{{ loadError }}</AlertTitle>
+        <AlertDescription>
+          <Button type="button" variant="outline" size="sm" class="mt-2" @click="refresh">
+            Try again
+          </Button>
+        </AlertDescription>
+      </Alert>
+
+      <p v-else-if="recurringItems.length === 0" class="px-4 py-6 text-sm text-muted-foreground">
         No recurring bills or income yet. Add your first one below.
       </p>
       <p v-else-if="rows.length === 0" class="px-4 py-6 text-sm text-muted-foreground">
@@ -94,7 +128,12 @@ function openAdd(): void {
 
       <template v-else>
         <div v-for="(row, index) in rows" :key="row.item.id" :class="index > 0 ? 'border-t' : ''">
-          <RecurringItemRow :item="row.item" :account="row.account" @select="openEdit(row.item)" />
+          <RecurringItemRow
+            :item="row.item"
+            :account="row.account"
+            :next-date="row.nextDate"
+            @select="openEdit(row.item)"
+          />
         </div>
       </template>
 
