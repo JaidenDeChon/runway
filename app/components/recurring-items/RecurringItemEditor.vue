@@ -78,6 +78,16 @@ const form = reactive({
   // Always holds a real date, even unticked, so ticking the checkbox has a
   // sane value to show immediately rather than an empty date input.
   endsOn: today.value as IsoDate,
+  // No control on this screen writes these three — `daysOfMonth`/`daysOfWeek`
+  // arrive from a screen that doesn't exist yet, and `startsOn` is only ever
+  // set by the apply-to-future split described in `domain/types.ts`. They are
+  // carried here anyway, `undefined` unless an edited item already had one, so
+  // saving an *unrelated* field change round-trips them unchanged instead of
+  // nulling them — the same failure shape `endsOn`'s idiom already guards
+  // against, extended to fields the form cannot show or edit.
+  daysOfMonth: undefined as readonly number[] | undefined,
+  daysOfWeek: undefined as readonly number[] | undefined,
+  startsOn: undefined as IsoDate | undefined,
 })
 
 watch(
@@ -99,6 +109,9 @@ watch(
         isVariable: item.isVariable,
         hasEndsOn: item.endsOn !== undefined,
         endsOn: item.endsOn ?? today.value,
+        daysOfMonth: item.daysOfMonth,
+        daysOfWeek: item.daysOfWeek,
+        startsOn: item.startsOn,
       })
       return
     }
@@ -114,6 +127,9 @@ watch(
       isVariable: false,
       hasEndsOn: false,
       endsOn: today.value,
+      daysOfMonth: undefined,
+      daysOfWeek: undefined,
+      startsOn: undefined,
     })
   },
   { immediate: true },
@@ -177,6 +193,13 @@ async function onSave(): Promise<void> {
       // distinguishes the two, and the DB enforces `ends_on >= starts_on`
       // for whatever comes through here regardless.
       ...(form.hasEndsOn ? { endsOn: form.endsOn } : {}),
+      // Round-tripped, not editable here — see the form field's own comment.
+      // Omitting these when the item never had one keeps a brand-new item's
+      // payload exactly as before; carrying them when it did is what stops an
+      // unrelated field edit from silently nulling them out.
+      ...(form.daysOfMonth ? { daysOfMonth: form.daysOfMonth } : {}),
+      ...(form.daysOfWeek ? { daysOfWeek: form.daysOfWeek } : {}),
+      ...(form.startsOn ? { startsOn: form.startsOn } : {}),
     })
     emit('update:open', false)
   } catch {

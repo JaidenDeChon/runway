@@ -145,3 +145,52 @@ describe('toRecurringRuleColumns', () => {
     expect(toRecurringRuleColumns(draft({ isVariable: true })).is_variable).toBe(true)
   })
 })
+
+describe('editing a rule the form has no control for a field of', () => {
+  // Regression test for a real bug: RecurringItemEditor.vue's onSave payload
+  // omitted daysOfMonth/daysOfWeek/startsOn entirely, so toRecurringRuleColumns
+  // mapped their absence to `null` and saveRecurringItem's UPDATE sent that
+  // null on every save — silently clearing a field the editor has no UI for,
+  // even when nothing about that field was touched. `B Paycheck`
+  // (days_of_month {1,15}) went from semi-monthly to monthly-on-the-15th,
+  // halving projected income, on one unrelated save.
+  //
+  // This pins the round-trip contract an editor MUST honour: read a row,
+  // change one unrelated field, and the fields the form cannot show must
+  // still reach the saved columns unchanged. Going row -> toRecurringItem ->
+  // (the shape an edit-and-resave produces) -> toRecurringRuleColumns
+  // exercises both mapping directions the same way a real edit does.
+  it('a draft built from a semi-monthly rule, with only the name changed, still carries daysOfMonth and startsOn', () => {
+    const original = toRecurringItem(
+      row({
+        name: 'B Paycheck',
+        kind: 'income',
+        amount_cents: 120_000,
+        days_of_month: [1, 15],
+        starts_on: '2026-01-01',
+      }),
+    )
+    expect(original.daysOfMonth).toEqual([1, 15])
+    expect(original.startsOn).toBe('2026-01-01')
+
+    // Exactly the shape a correct editor builds on save: every field carried
+    // through from the loaded item, with only `name` overridden.
+    const resaved: RecurringItemDraft = {
+      ...original,
+      name: 'B Paycheck (renamed)',
+    }
+
+    const columns = toRecurringRuleColumns(resaved)
+    expect(columns.days_of_month).toEqual([1, 15])
+    expect(columns.starts_on).toBe('2026-01-01')
+  })
+
+  it('a draft built from a rule with daysOfWeek, with only the amount changed, still carries daysOfWeek', () => {
+    const original = toRecurringItem(row({ cadence: 'weekly', days_of_week: [1, 4] }))
+    expect(original.daysOfWeek).toEqual([1, 4])
+
+    const resaved: RecurringItemDraft = { ...original, amount: 5_000 }
+
+    expect(toRecurringRuleColumns(resaved).days_of_week).toEqual([1, 4])
+  })
+})
