@@ -47,6 +47,8 @@ const accountId = ref<string | null>(null)
 const itemId = ref<string | null>(null)
 const savingAccount = ref(false)
 const accountError = ref<string | null>(null)
+const savingItem = ref(false)
+const itemError = ref<string | null>(null)
 
 const accountForm = reactive({
   name: '',
@@ -92,23 +94,31 @@ function handleBack(): void {
   step.value = 'account'
 }
 
-function handleBuildRunway(): void {
+async function handleBuildRunway(): Promise<void> {
   const trimmed = itemForm.name.trim()
   if (!trimmed || !accountId.value) return
-  const saved = saveRecurringItem({
-    id: itemId.value ?? undefined,
-    name: trimmed,
-    kind: itemForm.kind,
-    amount: itemForm.amount,
-    cadence: itemForm.cadence,
-    accountId: accountId.value,
-    nextOccurrence: itemForm.nextOccurrence,
-    amountSource: 'fixed',
-    depositHistory: [],
-    isVariable: false,
-  })
-  itemId.value = saved.id
-  step.value = 'done'
+  savingItem.value = true
+  itemError.value = null
+  try {
+    const saved = await saveRecurringItem({
+      ...(itemId.value ? { id: itemId.value } : {}),
+      name: trimmed,
+      kind: itemForm.kind,
+      amount: itemForm.amount,
+      cadence: itemForm.cadence,
+      accountId: accountId.value,
+      nextOccurrence: itemForm.nextOccurrence,
+      amountSource: 'fixed',
+      depositHistory: [],
+      isVariable: false,
+    })
+    itemId.value = saved.id
+    step.value = 'done'
+  } catch {
+    itemError.value = 'Could not save this item. Check your connection and try again.'
+  } finally {
+    savingItem.value = false
+  }
 }
 
 const doneSummary = computed(() => {
@@ -167,6 +177,8 @@ watch(step, async () => {
           v-model:amount="itemForm.amount"
           v-model:cadence="itemForm.cadence"
           v-model:next-occurrence="itemForm.nextOccurrence"
+          :saving="savingItem"
+          :error="itemError"
           @back="handleBack"
           @build="handleBuildRunway"
         />

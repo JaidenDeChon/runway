@@ -38,6 +38,10 @@ const props = defineProps<{
   amount: MinorUnits
   cadence: Cadence
   nextOccurrence: IsoDate
+  /** True while the parent's save handler is awaiting the write. */
+  saving?: boolean
+  /** Set by the parent on a failed save; rendered inline. */
+  error?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -51,6 +55,7 @@ const emit = defineEmits<{
 }>()
 
 const isValid = computed(() => props.name.trim().length > 0)
+const canBuild = computed(() => isValid.value && !props.saving)
 
 const namePlaceholder = computed(() => (props.kind === 'income' ? 'e.g. Paycheck' : 'e.g. Rent'))
 
@@ -62,7 +67,8 @@ function onKindChange(value: unknown): void {
 }
 
 function onBuild(): void {
-  if (!isValid.value) return
+  // The gate exists in two places: disabling Continue, and here.
+  if (!canBuild.value) return
   emit('build')
 }
 </script>
@@ -138,12 +144,16 @@ function onBuild(): void {
         />
       </div>
 
+      <p v-if="props.error" role="alert" class="text-sm text-destructive">{{ props.error }}</p>
+
       <div class="flex gap-2 pt-1">
-        <Button type="button" variant="outline" @click="emit('back')">Back</Button>
+        <Button type="button" variant="outline" :disabled="props.saving" @click="emit('back')">
+          Back
+        </Button>
         <Button
           type="submit"
           class="flex-1"
-          :disabled="!isValid"
+          :disabled="!canBuild"
           :aria-describedby="isValid ? undefined : 'onboarding-item-build-help'"
         >
           Build my runway

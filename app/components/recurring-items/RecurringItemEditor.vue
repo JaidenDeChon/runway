@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * The recurring-item form — one body, mounted into a Sheet or a Dialog by
- * `ResponsiveEditor`. Mirrors `AccountEditor`'s shape and its two deliberate
+ * `ResponsiveEditor`. Mirrors `AccountEditor`'s shape and its deliberate
  * deviations from the export:
  *
  * - **Save is disabled while the name is blank**, rather than the export's
@@ -10,11 +10,19 @@
  *   confirmation and no undo" vs. a confirm step); `AccountEditor` already
  *   answered it for this app, so the same inline confirm is used here rather
  *   than inventing a second answer to the same question.
+ * - **An ends-on control**, which the design never drew (spec.md open
+ *   question 11: "Cadence has no end date, no skip, and no 'last
+ *   occurrence'") but issue #8 requires as a first-class verb — ending a rule
+ *   stops future occurrences without erasing past ones.
  *
  * Predicted income is resolved by `useRunwayData().saveRecurringItem` at save
  * time — this form only *previews* the predicted figure, via the same
  * `resolveAmount` the store calls, so the preview and the saved value can
  * never disagree.
+ *
+ * Every write is async and can fail — a dropped connection, an expired
+ * session — so `saving`/`deleting` disable the buttons and a failure renders
+ * inline rather than closing the editor out from under whatever the user typed.
  */
 import { computed, reactive, ref, watch } from 'vue'
 import MoneyInput from '@/components/MoneyInput.vue'
@@ -52,6 +60,9 @@ const today = useToday()
 
 const isEditing = computed(() => props.item !== null)
 const confirmingDelete = ref(false)
+const saving = ref(false)
+const deleting = ref(false)
+const errorMessage = ref<string | null>(null)
 
 const form = reactive({
   type: 'bill' as RecurringKind,
@@ -63,6 +74,10 @@ const form = reactive({
   amountSource: 'fixed' as AmountSource,
   depositHistory: [] as readonly MinorUnits[],
   isVariable: false,
+  hasEndsOn: false,
+  // Always holds a real date, even unticked, so ticking the checkbox has a
+  // sane value to show immediately rather than an empty date input.
+  endsOn: today.value as IsoDate,
 })
 
 watch(
@@ -70,6 +85,7 @@ watch(
   ([open, item]) => {
     if (!open) return
     confirmingDelete.value = false
+    errorMessage.value = null
     if (item) {
       Object.assign(form, {
         type: item.kind,
@@ -81,6 +97,8 @@ watch(
         amountSource: item.amountSource,
         depositHistory: item.depositHistory,
         isVariable: item.isVariable,
+        hasEndsOn: item.endsOn !== undefined,
+        endsOn: item.endsOn ?? today.value,
       })
       return
     }
@@ -94,6 +112,8 @@ watch(
       amountSource: 'fixed',
       depositHistory: [],
       isVariable: false,
+      hasEndsOn: false,
+      endsOn: today.value,
     })
   },
   { immediate: true },
@@ -129,30 +149,50 @@ const showPredictedPanel = computed(
   () => form.type === 'income' && form.amountSource === 'predicted',
 )
 
-function onSave(): void {
+async function onSave(): Promise<void> {
   if (!isValid.value) return
-  saveRecurringItem({
-    ...(props.item ? { id: props.item.id } : {}),
-    name: form.name.trim(),
-    kind: form.type,
-    amount: form.amount,
-    cadence: form.cadence,
-    accountId: form.accountId,
-    nextOccurrence: form.nextOccurrence,
-    // Bills are always fixed and never carry the variable flag — the
-    // type-specific controls are hidden, not cleared, when switching tabs, so
-    // the invariant is enforced here rather than trusting stale form state.
-    amountSource: form.type === 'income' ? form.amountSource : 'fixed',
-    depositHistory: form.depositHistory,
-    isVariable: form.type === 'bill' ? form.isVariable : false,
-  })
-  emit('update:open', false)
+  saving.value = true
+  errorMessage.value = null
+  try {
+    await saveRecurringItem({
+      ...(props.item ? { id: props.item.id } : {}),
+      name: form.name.trim(),
+      kind: form.type,
+      amount: form.amount,
+      cadence: form.cadence,
+      accountId: form.accountId,
+      nextOccurrence: form.nextOccurrence,
+      // Bills are always fixed and never carry the variable flag — the
+      // type-specific controls are hidden, not cleared, when switching tabs, so
+      // the invariant is enforced here rather than trusting stale form state.
+      amountSource: form.type === 'income' ? form.amountSource : 'fixed',
+      depositHistory: form.depositHistory,
+      isVariable: form.type === 'bill' ? form.isVariable : false,
+      // Unticked -> absent, not `endsOn: undefined` — `exactOptionalPropertyTypes`
+      // distinguishes the two, and the DB enforces `ends_on >= starts_on`
+      // for whatever comes through here regardless.
+      ...(form.hasEndsOn ? { endsOn: form.endsOn } : {}),
+    })
+    emit('update:open', false)
+  } catch {
+    errorMessage.value = 'Could not save this item. Check your connection and try again.'
+  } finally {
+    saving.value = false
+  }
 }
 
-function onDelete(): void {
+async function onDelete(): Promise<void> {
   if (!props.item) return
-  removeRecurringItem(props.item.id)
-  emit('update:open', false)
+  deleting.value = true
+  errorMessage.value = null
+  try {
+    await removeRecurringItem(props.item.id)
+    emit('update:open', false)
+  } catch {
+    errorMessage.value = 'Could not delete this item. Check your connection and try again.'
+  } finally {
+    deleting.value = false
+  }
 }
 </script>
 
@@ -281,16 +321,39 @@ function onDelete(): void {
         </div>
       </div>
 
+      <div class="flex flex-col gap-2">
+        <div class="flex items-start gap-3">
+          <Checkbox
+            id="recurring-has-end"
+            :model-value="form.hasEndsOn"
+            aria-describedby="recurring-has-end-help"
+            @update:model-value="(value) => (form.hasEndsOn = value === true)"
+          />
+          <Label for="recurring-has-end" class="leading-snug">This rule ends on a date</Label>
+        </div>
+        <div v-if="form.hasEndsOn" class="flex flex-col gap-2 pl-7">
+          <Label for="recurring-ends-on">Last occurrence</Label>
+          <Input id="recurring-ends-on" v-model="form.endsOn" type="date" class="w-full font-mono" />
+        </div>
+        <p id="recurring-has-end-help" class="pl-7 text-xs text-muted-foreground">
+          Past occurrences stay. Nothing new is projected after this date.
+        </p>
+      </div>
+
       <div v-if="confirmingDelete" role="alertdialog" class="rounded-md border border-destructive/30 bg-destructive/10 p-3">
         <p class="text-sm font-medium">Delete {{ props.item?.name }}?</p>
         <p class="mt-1 text-xs text-muted-foreground">This removes it from every future projection. This can't be undone.</p>
         <div class="mt-3 flex gap-2">
-          <Button type="button" variant="destructive" size="sm" @click="onDelete">Delete</Button>
-          <Button type="button" variant="ghost" size="sm" @click="confirmingDelete = false">
+          <Button type="button" variant="destructive" size="sm" :disabled="deleting" @click="onDelete">
+            Delete
+          </Button>
+          <Button type="button" variant="ghost" size="sm" :disabled="deleting" @click="confirmingDelete = false">
             Keep it
           </Button>
         </div>
       </div>
+
+      <p v-if="errorMessage" role="alert" class="text-sm text-destructive">{{ errorMessage }}</p>
 
       <div class="flex items-center justify-between gap-2 pt-1">
         <Button
@@ -298,6 +361,7 @@ function onDelete(): void {
           type="button"
           variant="ghost"
           class="text-destructive hover:text-destructive"
+          :disabled="saving"
           @click="confirmingDelete = true"
         >
           Delete
@@ -306,7 +370,7 @@ function onDelete(): void {
 
         <div class="flex gap-2">
           <Button type="button" variant="outline" @click="emit('update:open', false)">Cancel</Button>
-          <Button type="submit" :disabled="!isValid">
+          <Button type="submit" :disabled="!isValid || saving">
             {{ isEditing ? 'Save changes' : 'Add recurring item' }}
           </Button>
         </div>

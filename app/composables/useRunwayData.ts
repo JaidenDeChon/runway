@@ -1,17 +1,18 @@
 /**
  * The app's single copy of the user's financial data.
  *
- * **Accounts and settings are Supabase-backed; recurring items and transfers
- * are not yet.** Issue #7 moved the accounts screen onto real rows —
- * `RunwayData.accounts` and the settings that ride along with them
+ * **Accounts, settings and recurring items are Supabase-backed; transfers are
+ * not yet.** Issue #7 moved the accounts screen onto real rows, and issue #8
+ * moved recurring items the same way — `RunwayData.accounts`,
+ * `RunwayData.recurringItems` and the settings that ride along with accounts
  * (`safetyCushion`, `monthlyDiscretionarySpend`, `timeZone`,
- * `staleAfterDays`) come from `public.accounts` and `public.user_settings`
- * under the signed-in user's own session. Recurring items and transfers stay
- * session-local `useState` — issues #8 and #9 own moving those — and start
- * **empty** rather than from `domain/seed.ts`: a seeded recurring item carries
- * an `accountId` like `'acct-checking'`, which dangles against the account
- * uuids the database actually holds, and the projection would silently bill
- * an account that does not exist.
+ * `staleAfterDays`) come from `public.accounts`, `public.recurring_rules` and
+ * `public.user_settings` under the signed-in user's own session. Transfers
+ * stay session-local `useState` — issue #9 owns moving those — and start
+ * **empty** rather than from `domain/seed.ts`: a seeded transfer carries
+ * account ids like `'acct-checking'`, which dangle against the account uuids
+ * the database actually holds, and the projection would silently move money
+ * between accounts that do not exist.
  *
  * This file is the seam. Every mutation lives here so a screen never reaches
  * around it to talk to Supabase directly, and RLS — not this file — is what
@@ -29,6 +30,12 @@ import {
   toHouseholdSettings,
   USER_SETTINGS_COLUMNS,
 } from '@/lib/supabase/accounts'
+import {
+  RECURRING_RULE_COLUMNS,
+  type RecurringItemDraft,
+  toRecurringItem,
+  toRecurringRuleColumns,
+} from '@/lib/supabase/recurring-items'
 import type { BalanceReading } from '~~/domain/accounts'
 import { activeAccounts, archivedAccounts } from '~~/domain/accounts'
 import type { IsoDate } from '~~/domain/dates'
@@ -36,27 +43,32 @@ import type { MinorUnits } from '~~/domain/money'
 import { resolveAmount } from '~~/domain/prediction'
 import type { Account, RecurringItem, RunwayData, Transfer } from '~~/domain/types'
 
-export type { AccountDraft }
+export type { AccountDraft, RecurringItemDraft }
 
 interface RemoteHousehold {
   readonly accounts: readonly Account[]
+  readonly recurringItems: readonly RecurringItem[]
   readonly settings: HouseholdSettings
 }
 
 /** What an anonymous visitor, or a request with no session, sees. */
-const EMPTY_HOUSEHOLD: RemoteHousehold = { accounts: [], settings: toHouseholdSettings(null) }
+const EMPTY_HOUSEHOLD: RemoteHousehold = {
+  accounts: [],
+  recurringItems: [],
+  settings: toHouseholdSettings(null),
+}
 
 interface LocalRecords {
   /** Whose session these records belong to, so a user switch can be detected. */
   readonly ownerId: string | null
-  readonly recurringItems: readonly RecurringItem[]
   readonly transfers: readonly Transfer[]
 }
 
 /**
  * Ids are generated here rather than in the domain because they are a storage
- * concern — a real backend would assign them. Still used for recurring items
- * and transfers; accounts get their id from `accounts.id`'s database default.
+ * concern — a real backend would assign them. Still used for transfers;
+ * accounts and recurring items now get their id from the database's own
+ * default, the same way accounts have since issue #7.
  */
 function createId(prefix: string): string {
   const globalCrypto = globalThis.crypto
@@ -86,13 +98,23 @@ export function useRunwayData() {
     'runway-household',
     async () => {
       if (!authUser.value) return EMPTY_HOUSEHOLD
-      const [accountsResult, settingsResult] = await Promise.all([
+      const [accountsResult, recurringRulesResult, settingsResult] = await Promise.all([
         client
           .from('accounts')
           .select(ACCOUNT_COLUMNS)
           // The seeded Checking/Savings rows share a created_at; id breaks the
           // tie in the order the design draws them.
           .order('created_at', { ascending: true })
+          .order('id', { ascending: true }),
+        client
+          .from('recurring_rules')
+          .select(RECURRING_RULE_COLUMNS)
+          // `anchor_date` is a phase, not a "next date" (see
+          // app/lib/supabase/recurring-items.ts), so this is not the list's
+          // display order — the page computes and sorts on the true next
+          // occurrence itself. It just needs to be deterministic; id breaks
+          // the tie the same way the accounts query does.
+          .order('anchor_date', { ascending: true })
           .order('id', { ascending: true }),
         client.from('user_settings').select(USER_SETTINGS_COLUMNS).maybeSingle(),
       ])
@@ -101,6 +123,10 @@ export function useRunwayData() {
       // logged — see CLAUDE.md on what must never reach a log.
       if (accountsResult.error) {
         console.error('accounts read failed', { code: accountsResult.error.code })
+        throw new Error('load-failed')
+      }
+      if (recurringRulesResult.error) {
+        console.error('recurring rules read failed', { code: recurringRulesResult.error.code })
         throw new Error('load-failed')
       }
       if (settingsResult.error) {
@@ -112,18 +138,18 @@ export function useRunwayData() {
         accounts: (accountsResult.data ?? []).map((row) =>
           toAccount(row, settings.discretionaryAccountId),
         ),
+        recurringItems: (recurringRulesResult.data ?? []).map(toRecurringItem),
         settings,
       }
     },
     { default: () => EMPTY_HOUSEHOLD, watch: [authUser] },
   )
 
-  // Recurring items and transfers are still held in memory and lost on
-  // reload — issues #8 and #9 own moving them onto Supabase. See the file
-  // comment for why they start empty rather than from `domain/seed.ts`.
+  // Transfers are still held in memory and lost on reload — issue #9 owns
+  // moving them onto Supabase. See the file comment for why they start empty
+  // rather than from `domain/seed.ts`.
   const localRecords = useState<LocalRecords>('runway-local-records', () => ({
     ownerId: authUser.value?.id ?? null,
-    recurringItems: [],
     transfers: [],
   }))
 
@@ -131,22 +157,23 @@ export function useRunwayData() {
   // created. Sign-out and sign-in are both client-side navigations — no full
   // page reload — so unlike the household `useAsyncData` above (which
   // re-fetches on `watch: [authUser]`), nothing was re-deriving these from
-  // the new session: as user A, add a recurring item; sign out; sign in as a
-  // different user D; A's item was still on screen.
+  // the new session: as user A, add a transfer; sign out; sign in as a
+  // different user D; A's transfer was still on screen.
   //
   // Keyed on the user's *id* changing, not on reference equality to
   // `authUser` itself: `authUsersEqual()` (app/plugins/supabase.client.ts)
   // already keeps `authUser`'s reference stable across an unchanged user, so
   // watching the id here means signing out and back in as the SAME user does
-  // not needlessly discard their in-progress, unsaved records — only an
-  // actual change of person clears them. Both `recurringItems` and
-  // `transfers` are cleared together: they share this one state object, and
-  // the leak reasoning is identical for each.
+  // not needlessly discard their in-progress, unsaved transfers — only an
+  // actual change of person clears them. Recurring items needed this same
+  // watch once, before issue #8 moved them onto the `useAsyncData` above —
+  // that fetch re-runs on the same `watch: [authUser]` transition, so the
+  // leak this watch exists to close is already closed for them by construction.
   watch(
     () => authUser.value?.id ?? null,
     (nextOwnerId) => {
       if (localRecords.value.ownerId === nextOwnerId) return
-      localRecords.value = { ownerId: nextOwnerId, recurringItems: [], transfers: [] }
+      localRecords.value = { ownerId: nextOwnerId, transfers: [] }
     },
   )
 
@@ -171,7 +198,7 @@ export function useRunwayData() {
   /** Archived accounts, most recently archived first. */
   const archived = computed(() => archivedAccounts(remote.value.accounts))
 
-  const recurringItems = computed(() => localRecords.value.recurringItems)
+  const recurringItems = computed(() => remote.value.recurringItems)
   const transfers = computed(() => localRecords.value.transfers)
 
   const safetyCushion = computed(
@@ -200,8 +227,13 @@ export function useRunwayData() {
   const staleAfterDays = computed(() => remote.value.settings.staleAfterDays)
 
   const isLoading = computed(() => pending.value)
-  /** Fixed copy, never a database message — see the read failure above. */
-  const loadError = computed(() => (error.value ? 'Could not load your accounts.' : null))
+  /**
+   * Fixed copy, never a database message — see the read failure above.
+   * Generic on purpose: this one fetch now backs both the accounts screen and
+   * the recurring-items screen, and a failure could be any of the three reads
+   * it makes.
+   */
+  const loadError = computed(() => (error.value ? 'Could not load your data.' : null))
 
   const data = computed<RunwayData>(() => ({
     accounts: accounts.value,
@@ -334,28 +366,60 @@ export function useRunwayData() {
     await refresh()
   }
 
-  function saveRecurringItem(item: Omit<RecurringItem, 'id'> & { id?: string }): RecurringItem {
-    const withId: RecurringItem = { ...item, id: item.id ?? createId('item') }
+  /**
+   * Inserts or updates a recurring rule. One write to one table — unlike
+   * `saveAccount`, this needs no RPC, because there is no second table that
+   * could partially fail alongside it.
+   *
+   * No optimistic update, matching every other mutation here: a refresh is
+   * cheaper than a client-side guess that can disagree with the database.
+   */
+  async function saveRecurringItem(draft: RecurringItemDraft): Promise<RecurringItem> {
+    const userId = requireUserId()
     // Prediction is resolved at save time, not at render time, so the row and
-    // the projection always read one stored figure.
-    const saved: RecurringItem = { ...withId, amount: resolveAmount(withId) }
-    const exists = localRecords.value.recurringItems.some((existing) => existing.id === saved.id)
-    localRecords.value = {
-      ...localRecords.value,
-      recurringItems: exists
-        ? localRecords.value.recurringItems.map((existing) =>
-            existing.id === saved.id ? saved : existing,
-          )
-        : [...localRecords.value.recurringItems, saved],
+    // the projection always read one stored figure. `resolveAmount` reads
+    // `depositHistory` and `id`; a brand-new draft has neither yet, and an
+    // unresolved id doesn't change what a fixed or already-predicted amount
+    // resolves to.
+    const amount = resolveAmount({ ...draft, id: draft.id ?? '' })
+    const columns = toRecurringRuleColumns({ ...draft, amount })
+
+    const { data: saved, error: saveError } = draft.id
+      ? await client
+          .from('recurring_rules')
+          .update(columns)
+          .eq('id', draft.id)
+          .eq('user_id', userId)
+          .select(RECURRING_RULE_COLUMNS)
+          .single()
+      : await client
+          .from('recurring_rules')
+          .insert({ ...columns, user_id: userId })
+          .select(RECURRING_RULE_COLUMNS)
+          .single()
+    if (saveError || !saved) {
+      console.error('recurring item save failed', { code: saveError?.code })
+      throw new Error('save-failed')
     }
-    return saved
+
+    await refresh()
+    const result = remote.value.recurringItems.find((item) => item.id === saved.id)
+    if (!result) throw new Error('save-failed')
+    return result
   }
 
-  function removeRecurringItem(itemId: string): void {
-    localRecords.value = {
-      ...localRecords.value,
-      recurringItems: localRecords.value.recurringItems.filter((item) => item.id !== itemId),
+  async function removeRecurringItem(itemId: string): Promise<void> {
+    const userId = requireUserId()
+    const { error: deleteError } = await client
+      .from('recurring_rules')
+      .delete()
+      .eq('id', itemId)
+      .eq('user_id', userId)
+    if (deleteError) {
+      console.error('recurring item delete failed', { code: deleteError.code })
+      throw new Error('save-failed')
     }
+    await refresh()
   }
 
   function addTransfer(transfer: Omit<Transfer, 'id' | 'createdAt'>): Transfer {
@@ -397,15 +461,19 @@ export function useRunwayData() {
   }
 
   /**
-   * Drops the session-local records, leaving accounts and settings alone.
+   * Drops the session-local transfers, leaving accounts, settings and
+   * recurring items alone.
    *
-   * Onboarding needs a blank slate to build its recurring-item step onto —
-   * with a leftover item present, the first-run flow would be adding a
-   * second one, not a first. **This must never touch database accounts**:
-   * they are the user's real data now, not seeded state to reset.
+   * Onboarding used to call this to give its recurring-item step a blank
+   * slate; now that items are real rows, a returning user's items are real
+   * data and this cannot clear them without deleting them — which a session
+   * reset must never do. `first-run.vue`'s own `itemId` ref already makes its
+   * recurring-item step idempotent (a repeat "Continue" upserts the same row
+   * instead of creating a second one), so onboarding does not need this for
+   * that purpose any more. Kept for transfers, which are still session-local.
    */
   function clearRecords(): void {
-    localRecords.value = { ownerId: localRecords.value.ownerId, recurringItems: [], transfers: [] }
+    localRecords.value = { ownerId: localRecords.value.ownerId, transfers: [] }
   }
 
   /** True when the user has nothing to project from — the "skipped onboarding" case. */
