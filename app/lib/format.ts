@@ -111,7 +111,8 @@ export function formatDaysAway(days: number): string {
   return days === 1 ? 'in 1 day' : `in ${days} days`
 }
 
-/** Title-cased cadence for a row's meta line: `Monthly`, `Biweekly`, `Weekly`. */
+/** Title-cased cadence for a row's meta line: `Monthly`, `Biweekly`, `Weekly`, `Annually`. */
 export function formatCadence(cadence: string): string {
+  if (cadence === 'annual') return 'Annually'
   return cadence.charAt(0).toUpperCase() + cadence.slice(1)
 }

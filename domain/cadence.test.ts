@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { occurrenceDates } from './cadence'
+import { nextOccurrenceOnOrAfter, occurrenceDates } from './cadence'
 import { toMinorUnits } from './money'
 import { LAST_DAY_OF_MONTH, type RecurringItem } from './types'
 
@@ -277,5 +277,86 @@ describe('occurrenceDates with a day set', () => {
         '2026-12-31',
       ),
     ).toEqual(['2026-08-15', '2026-09-01'])
+  })
+})
+
+describe('month-end clamping across leap and non-leap Februaries', () => {
+  it('clamps a monthly 31st anchor to Feb 29 in a leap year, without the clamp sticking', () => {
+    expect(
+      occurrenceDates(item({ nextOccurrence: '2028-01-31' }), '2028-01-01', '2028-03-31'),
+    ).toEqual(['2028-01-31', '2028-02-29', '2028-03-31'])
+  })
+
+  it('clamps a monthly 31st anchor to Feb 28 in a non-leap year, without the clamp sticking', () => {
+    expect(
+      occurrenceDates(item({ nextOccurrence: '2027-01-31' }), '2027-01-01', '2027-03-31'),
+    ).toEqual(['2027-01-31', '2027-02-28', '2027-03-31'])
+  })
+
+  it('LAST_DAY_OF_MONTH lands on the true last day of 28-, 29-, 30- and 31-day months', () => {
+    expect(
+      occurrenceDates(
+        item({ nextOccurrence: '2028-01-01', daysOfMonth: [LAST_DAY_OF_MONTH] }),
+        '2028-01-01',
+        '2028-04-30',
+      ),
+    ).toEqual(['2028-01-31', '2028-02-29', '2028-03-31', '2028-04-30'])
+
+    expect(
+      occurrenceDates(
+        item({ nextOccurrence: '2027-01-01', daysOfMonth: [LAST_DAY_OF_MONTH] }),
+        '2027-01-01',
+        '2027-02-28',
+      ),
+    ).toEqual(['2027-01-31', '2027-02-28'])
+  })
+})
+
+describe('nextOccurrenceOnOrAfter', () => {
+  it('returns the anchor itself when `from` equals it', () => {
+    expect(nextOccurrenceOnOrAfter(item({ nextOccurrence: '2026-08-20' }), '2026-08-20')).toBe(
+      '2026-08-20',
+    )
+  })
+
+  it('returns the next cycle when `from` is one day past the anchor', () => {
+    expect(nextOccurrenceOnOrAfter(item({ nextOccurrence: '2026-08-20' }), '2026-08-21')).toBe(
+      '2026-09-20',
+    )
+  })
+
+  it('returns null once endsOn has passed', () => {
+    expect(
+      nextOccurrenceOnOrAfter(
+        item({ nextOccurrence: '2026-08-20', endsOn: '2026-08-20' }),
+        '2026-08-21',
+      ),
+    ).toBeNull()
+  })
+
+  it('respects startsOn in the future', () => {
+    expect(
+      nextOccurrenceOnOrAfter(
+        item({ nextOccurrence: '2026-08-20', startsOn: '2026-10-20' }),
+        '2026-08-21',
+      ),
+    ).toBe('2026-10-20')
+  })
+
+  it('finds an annual rule anchored on Feb 29 from a Mar 1 start in a non-leap year — the case withinDays=400 exists for', () => {
+    expect(
+      nextOccurrenceOnOrAfter(
+        item({ cadence: 'annual', nextOccurrence: '2024-02-29' }),
+        '2025-03-01',
+      ),
+    ).toBe('2026-02-28')
+  })
+
+  it('returns null when a caller-supplied `withinDays` closes the search before the rule recurs', () => {
+    // Monthly, so the very next occurrence is only ~30 days out — but a
+    // 10-day window closes before it arrives.
+    expect(
+      nextOccurrenceOnOrAfter(item({ nextOccurrence: '2026-08-20' }), '2026-08-21', 10),
+    ).toBeNull()
   })
 })

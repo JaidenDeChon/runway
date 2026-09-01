@@ -57,15 +57,16 @@ export type Cadence = 'weekly' | 'biweekly' | 'monthly' | 'annual'
 /**
  * The cadences the recurring-item editor offers.
  *
- * Deliberately three, not four: `docs/design/recurring-items/spec.md` line 187
- * enumerates exactly Weekly / Biweekly / Monthly, so adding `annual` here is a
- * design decision, not a schema consequence. The schema and `occurrenceDates`
- * already support `annual` — see `domain/cadence.ts` — the picker just doesn't
- * offer it yet. The same is true of `daysOfMonth` / `daysOfWeek` below: an item
- * can be semi-monthly in the database and in the engine, but no screen offers a
- * way to say so until the recurring-items work lands.
+ * `docs/design/recurring-items/spec.md` line 187 enumerates only Weekly /
+ * Biweekly / Monthly, but issue #8's own in-scope list names "annual"
+ * explicitly, so this is the issue overriding the design artifact rather than
+ * a schema consequence — the schema and `occurrenceDates` have supported
+ * `annual` since #4 (see `domain/cadence.ts`); the picker simply didn't offer
+ * it until now. The same is true of `daysOfMonth` / `daysOfWeek` below: an
+ * item can be semi-monthly in the database and in the engine, but no screen
+ * offers a way to say so until the recurring-items work lands.
  */
-export const CADENCES: readonly Cadence[] = ['weekly', 'biweekly', 'monthly'] as const
+export const CADENCES: readonly Cadence[] = ['weekly', 'biweekly', 'monthly', 'annual'] as const
 
 /**
  * The `daysOfMonth` value meaning "the last day of whatever month this is".
