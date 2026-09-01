@@ -81,13 +81,24 @@ test.describe('creating a bill', () => {
     // and the date it falls on — see BurndownChart.vue's `summary`. This is
     // the actual acceptance criterion: the rule reaching a real projection,
     // not merely a row existing in a list.
+    //
+    // Compared as a boolean computed here, exactly as dashboard.spec.ts's
+    // horizon test does, rather than asserted with `toHaveAttribute` against a
+    // pattern: this label carries the lowest projected balance, and a failed
+    // string-comparison assertion prints both the expected pattern and the
+    // actual attribute into the CI log — which would put a balance in output
+    // this suite is never allowed to put one in, CLAUDE.md says so without
+    // exception. `expect.poll` also covers the label needing a beat to settle
+    // after the navigation above.
     const chart = page.getByRole('img', { name: /Balance forecast/ })
-    await expect(chart).toHaveAttribute(
-      'aria-label',
-      new RegExp(
-        `Lowest projected balance ${MINUS}\\$200 on ${shortDate(dueDate)}.*balance goes negative`,
-      ),
+    const expected = new RegExp(
+      `Lowest projected balance ${MINUS}\\$200 on ${shortDate(dueDate)}.*balance goes negative`,
     )
+    await expect
+      .poll(async () => expected.test((await chart.getAttribute('aria-label')) ?? ''), {
+        message: 'the chart did not report the expected low point on the expected date',
+      })
+      .toBe(true)
   })
 })
 
@@ -123,8 +134,13 @@ test.describe('ending a rule', () => {
     await page.locator('#recurring-amount').fill('50')
     const row = page.getByRole('button', { name: 'Edit E2E Ending Rent' })
     await clickUntil(dialog.getByRole('button', { name: 'Add recurring item' }), row)
-    await expect(row).toContainText('next')
-    await expect(row).not.toContainText('Ended')
+    // Scoped to a narrow text locator, not the whole row: the row also
+    // renders the item's amount, and a failed `toContainText` on the whole
+    // row would print that amount into the CI log on the way to explaining
+    // the failure — CLAUDE.md's "never a balance in an assertion message"
+    // rule allows no exception for a figure the test itself doesn't name.
+    await expect(row.getByText('next', { exact: false })).toBeVisible()
+    await expect(row.getByText('Ended', { exact: false })).toHaveCount(0)
 
     // Ending it: a last occurrence strictly before today means
     // nextOccurrenceOnOrAfter finds nothing from today forward.
@@ -134,12 +150,12 @@ test.describe('ending a rule', () => {
     await dialog.getByRole('button', { name: 'Save changes' }).click()
     await expect(dialog).toHaveCount(0)
 
-    await expect(row).toContainText('Ended')
+    await expect(row.getByText('Ended', { exact: false })).toBeVisible()
     // Not signalled by colour alone — the accessible name says so too.
     await expect(page.getByRole('button', { name: 'Edit E2E Ending Rent, ended' })).toBeVisible()
 
     // AC5 is explicitly non-destructive: the row stays, editable, after reload.
     await gotoHydrated(page, '/recurring-items')
-    await expect(row).toContainText('Ended')
+    await expect(row.getByText('Ended', { exact: false })).toBeVisible()
   })
 })
