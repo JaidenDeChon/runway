@@ -389,7 +389,7 @@ The table `domain/*` code should consult when wiring a store to this schema:
 | `Account.archivedOn` | `accounts.archived_on` | `null` maps to **absent**, not to `archivedOn: undefined` — see [Archiving, not deleting](#archiving-not-deleting) |
 | `RecurringItem.nextOccurrence` | `recurring_rules.anchor_date` | **names differ deliberately**: the domain expands in both directions from it, so it is an anchor, not a "next" |
 | `RecurringItem.daysOfMonth` / `.daysOfWeek` | `recurring_rules.days_of_month` / `.days_of_week` | same numbering on both sides, `-1` = month end, ISO weekdays. Optional in the domain, nullable here — both mean "the day the anchor names" |
-| `RecurringItem.depositHistory` | *derived* | `occurrences.actual_amount_cents where status = 'confirmed'`, ordered by `projected_date`. No array column — this is why occurrences are materialized |
+| `RecurringItem.depositHistory` | *derived* | `occurrences.actual_amount_cents where status = 'confirmed'`, ordered by `projected_date`. No array column — this is why occurrences are materialized. **As of issue #8, the app always reads this as `[]`**: occurrence materialization is not implemented yet, so there is nothing to derive it from. This is not a bug — it is why the recurring-items editor's "Predict from deposits" toggle stays disabled (`canPredict([])` is false) until that lands |
 | `Transfer.date` | `transfers.occurs_on` | |
 | `Transfer.createdAt` | `transfers.created_at` | epoch ms at the mapping edge; only ever a same-day tie-breaker |
 | `RunwayData.safetyCushion` | `user_settings.cushion_cents` | |
