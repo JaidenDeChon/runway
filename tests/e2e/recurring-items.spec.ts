@@ -28,11 +28,31 @@ function shortDate(iso: string): string {
   }).format(new Date(`${iso}T00:00:00Z`))
 }
 
-/** Today, or `daysAhead`/`daysBehind` from it, as `YYYY-MM-DD` — never a literal date, so this never goes stale. */
+/**
+ * Today, or `daysAhead`/`daysBehind` from it, as `YYYY-MM-DD` — never a
+ * literal date, so this never goes stale.
+ *
+ * Whole-day arithmetic in one consistent frame throughout, deliberately not
+ * `new Date(); date.setDate(date.getDate() + days)` — that mutates in the
+ * test runner's *local* time and only converts to UTC afterward on the way
+ * out through `toISOString()`, so the add can walk the result across a
+ * midnight the local step never saw: at 20:00 America/Los_Angeles, `days:
+ * -1` computed that way still lands on *today* in UTC. Invisible in CI,
+ * which runs UTC, and real on a developer's machine in the evening — the
+ * same hazard `accounts.spec.ts`'s `staleDate` helper names, mitigated
+ * there with a wide margin because a `days_behind` threshold tolerates
+ * being off by one; `ends_on`'s day boundary does not, so here the fix is
+ * in the arithmetic itself. `Date.now()` is already a UTC instant, so
+ * flooring it to a whole day and adding whole days in milliseconds never
+ * touches a local-time method at all — the same technique
+ * `domain/dates.ts`'s `addDays` uses internally, reproduced here rather
+ * than imported: Playwright's runtime does not resolve this repo's `~~/`
+ * alias (see `MINUS` above, redefined for the same reason).
+ */
 function isoDaysFromToday(days: number): string {
-  const date = new Date()
-  date.setDate(date.getDate() + days)
-  return date.toISOString().slice(0, 10)
+  const MS_PER_DAY = 86_400_000
+  const todayUtcMidnight = Math.floor(Date.now() / MS_PER_DAY) * MS_PER_DAY
+  return new Date(todayUtcMidnight + days * MS_PER_DAY).toISOString().slice(0, 10)
 }
 
 test.beforeEach(({ baseURL }) => {
