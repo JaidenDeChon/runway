@@ -135,12 +135,19 @@ watch(
   { immediate: true },
 )
 
-// A blank name or a zero amount both fail to save: recurring_rules has
-// `amount_cents > 0`, so a $0 item cannot reach the database, and Save
-// being disabled until it's real is this app's existing answer to that
-// (spec.md open question 8) — the same stance the blank-name guard already
-// took, just extended to the other field the constraint actually depends on.
-const isValid = computed(() => form.name.trim().length > 0 && form.amount > 0)
+// A blank name, a zero amount, or no account all fail to save:
+// recurring_rules has `amount_cents > 0` and `account_id not null`, so
+// either produces a database error, and Save being disabled until every
+// one is real is this app's existing answer to that (spec.md open
+// question 8) — the same stance the blank-name guard already took, now
+// extended to every field the database actually depends on. An empty
+// `accounts` list (the account step of onboarding was skipped, or every
+// account was deleted) leaves `form.accountId` `''`, which fails the same
+// way a blank name does rather than reaching the database as a malformed
+// uuid.
+const isValid = computed(
+  () => form.name.trim().length > 0 && form.amount > 0 && form.accountId.length > 0,
+)
 const namePlaceholder = computed(() =>
   form.type === 'bill' ? 'e.g. Electric & water' : 'e.g. Paycheck',
 )
@@ -272,6 +279,7 @@ async function onDelete(): Promise<void> {
           <Label for="recurring-account">Account</Label>
           <Select
             :model-value="form.accountId"
+            :disabled="accounts.length === 0"
             @update:model-value="(value) => value && (form.accountId = value as string)"
           >
             <SelectTrigger id="recurring-account" class="w-full">
@@ -283,6 +291,10 @@ async function onDelete(): Promise<void> {
               </SelectItem>
             </SelectContent>
           </Select>
+          <p v-if="accounts.length === 0" class="text-xs text-muted-foreground">
+            No accounts yet —
+            <NuxtLink to="/accounts" class="underline underline-offset-2">add one first</NuxtLink>.
+          </p>
         </div>
       </div>
 
