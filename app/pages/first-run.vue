@@ -34,10 +34,13 @@ useHead({ title: 'Welcome - Runway' })
 const { accounts, saveAccount, saveRecurringItem, clearRecords } = useRunwayData()
 const today = useToday()
 
-// Onboarding's recurring-item step is always a blank slate — see
-// `useRunwayData.clearRecords`. It only ever clears the session-local
-// records; it must never delete a database account, so a returning user with
-// accounts already on file simply adds another one here.
+// Drops any stale session-local transfers left over from a previous visit
+// — see `useRunwayData.clearRecords`. Recurring items are real rows now
+// (issue #8) and this no longer touches them: a returning user's items are
+// their real data, not seeded state to reset, and `itemId` below already
+// makes the recurring-item step idempotent (a repeat "Continue" upserts the
+// same row instead of creating a second one) without needing a blank slate
+// here. Never deletes a database account either, for the same reason.
 clearRecords()
 
 type Step = 'account' | 'item' | 'done'
