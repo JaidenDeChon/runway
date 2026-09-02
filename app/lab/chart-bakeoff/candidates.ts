@@ -198,8 +198,49 @@ export const CANDIDATES: readonly CandidateReport[] = [
     slug: 'chartjs',
     name: 'Chart.js',
     role: 'challenger',
-    packages: [],
-    verdicts: pendingVerdicts(),
+    packages: [
+      { name: 'chart.js', version: '4.5.1', license: 'MIT' },
+      { name: 'vue-chartjs', version: '5.3.4', license: 'MIT' },
+      { name: 'chartjs-plugin-annotation', version: '3.1.0', license: 'MIT' },
+    ],
+    verdicts: {
+      multiSeries: {
+        status: 'pass',
+        note: "Each dataset's borderColor/backgroundColor comes from getComputedStyle on the account's own var(--chart-N) — same reason as ECharts, canvas fillStyle can't read a var() directly. Confirmed correct, distinct colours per account in the browser, both themes.",
+      },
+      cushionLine: {
+        status: 'pass',
+        note: "chartjs-plugin-annotation's line + box annotation types — the whole reason this dependency exists, since Chart.js core has no reference-line primitive at all. Confirmed labelled, dashed line and shaded band in the browser.",
+      },
+      solidDashedSegments: {
+        status: 'pass',
+        note: "Chart.js's segment.borderDash callback is the one candidate in this spike with a genuine single-line, per-segment primitive — no second dataset needed, unlike every other candidate including the incumbent. Confirmed a clean solid-to-dashed transition at Today in the browser.",
+      },
+      eventMarkers: {
+        status: 'pass',
+        note: 'pointRadius/pointBackgroundColor as per-index arrays, 0-radius everywhere except occurrence days. Confirmed filled/hollow markers on the right days in the browser, both themes.',
+      },
+      minimumPoint: {
+        status: 'pass',
+        note: 'Same per-point array mechanism as event markers, a bigger radius and a destructive border only at the fixture\'s lowest index, plus an annotation label type for the "Lowest" text. Confirmed in the browser.',
+      },
+      tooltip: {
+        status: 'pass',
+        note: "Chart.js's native mode:'index' tooltip with a callbacks.label formatter — itemized, correct content on the first attempt, no defect found. The only real issue on this whole page (a stray default-black point revealed on hover, from Chart.js applying a fixed pointHoverRadius/colour on top of a per-point array) was fixed by mirroring pointHoverRadius/pointHoverBackgroundColor/pointHoverBorderColor onto the same arrays.",
+      },
+      clickIdentity: {
+        status: 'pass',
+        note: "options.onClick(event, elements) with interaction:{mode:'index',intersect:false} — elements[0].index maps straight to the fixture's own day array, no decoding needed. Confirmed in the browser: clicking near a point returned its real date (Aug 25, 2026) on the first attempt.",
+      },
+      legible375: {
+        status: 'pass',
+        note: 'Lines, cushion band, Today marker, event markers and the Lowest marker are all legible in the 375px frame in both themes.',
+      },
+      themeCorrectness: {
+        status: 'pass',
+        note: 'Everything drawn is resolved via getComputedStyle and re-resolved on a colorMode.value watcher, same pattern as ECharts. Both themes render correctly with no remount.',
+      },
+    },
   },
   {
     slug: 'vue-chrts',
