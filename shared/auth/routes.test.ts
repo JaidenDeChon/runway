@@ -10,7 +10,13 @@
 
 import { describe, expect, it } from 'vitest'
 import { navGroups } from '../../app/lib/navigation'
-import { normalizeAuthPath, requiresSession, routeAccess, SIGN_IN_PATH } from './routes'
+import {
+  LAB_PATH_PREFIX,
+  normalizeAuthPath,
+  requiresSession,
+  routeAccess,
+  SIGN_IN_PATH,
+} from './routes'
 
 describe('routeAccess', () => {
   it('protects a route it has never heard of', () => {
@@ -42,6 +48,21 @@ describe('routeAccess', () => {
     expect(routeAccess('/reset-password')).toBe('public')
     expect(routeAccess('/auth/confirm')).toBe('public')
     expect(routeAccess('/auth/error')).toBe('public')
+  })
+
+  it('leaves the chart-library bake-off open to everybody', () => {
+    // Issue #10. Synthetic fixture data only, and the tree does not exist as a
+    // route at all outside a RUNWAY_LAB build — see nuxt.config.ts.
+    expect(routeAccess(`${LAB_PATH_PREFIX}chart-bakeoff`)).toBe('public')
+    expect(routeAccess(`${LAB_PATH_PREFIX}chart-bakeoff/svg`)).toBe('public')
+    expect(routeAccess(`${LAB_PATH_PREFIX}chart-bakeoff/unovis`)).toBe('public')
+  })
+
+  it('does not widen access to a path that merely contains "lab"', () => {
+    // The prefix check must not turn into a substring check — a real screen
+    // named e.g. "/laboratory" must stay protected.
+    expect(routeAccess('/laboratory')).toBe('protected')
+    expect(routeAccess('/collaborate')).toBe('protected')
   })
 
   it('classifies a trailing slash the same as no trailing slash', () => {
