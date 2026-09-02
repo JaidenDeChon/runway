@@ -109,12 +109,13 @@ new dependency at all.
 
 ### Reverting this decision
 
-Every candidate's code is preserved, just gated out. Commit `9fdc73b` — the
-one landing `docs/spikes/chart-library-bakeoff.md` and this record, on
-`spike/chart-library-bakeoff`, immediately before the P8 dependency-pruning
-commit — is the last point at which all four candidates render with
-`RUNWAY_LAB=all`. Revert the P8 commit (or check out `9fdc73b`) to bring
-every candidate's dependencies and pages back.
+Every candidate's code is preserved, just gated out. Commit `9fdc73b` on
+`spike/chart-library-bakeoff` — the one landing
+`docs/spikes/chart-library-bakeoff.md` and this record — and every commit
+after it up to, but not including, the P8 dependency-pruning commit, has all
+four candidates rendering with `RUNWAY_LAB=all`. Revert the P8 commit (or
+check out any sha in that range) to bring every candidate's dependencies and
+pages back.
 
 ---
 

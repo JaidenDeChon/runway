@@ -37,6 +37,8 @@ function badgeClass(status: VerdictStatus): string {
       return 'bg-chart-warning/16 text-chart-warning'
     case 'fail':
       return 'bg-destructive/16 text-destructive'
+    case 'not-evaluated':
+      return 'bg-muted text-muted-foreground'
   }
 }
 </script>

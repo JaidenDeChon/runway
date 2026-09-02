@@ -20,7 +20,15 @@
 import type { CapabilityId } from './capabilities'
 import { CAPABILITIES } from './capabilities'
 
-export type VerdictStatus = 'pass' | 'partial' | 'fail'
+/**
+ * `not-evaluated` is deliberately not `fail`: a candidate that was never
+ * built (E, dropped per the plan's own risk table — see the checkpoint) must
+ * not read as having *failed* the 375px gate, which is what a bare `fail`
+ * would trigger in `CapabilityScorecard`'s "Disqualified" banner. Not
+ * evaluated and failed are different claims, and the scorecard has to be
+ * able to say which one it means.
+ */
+export type VerdictStatus = 'pass' | 'partial' | 'fail' | 'not-evaluated'
 
 export interface CapabilityVerdict {
   readonly status: VerdictStatus
@@ -45,8 +53,8 @@ export interface CandidateReport {
 }
 
 const NOT_YET_EVALUATED: CapabilityVerdict = {
-  status: 'fail',
-  note: 'Not yet built and observed in this spike.',
+  status: 'not-evaluated',
+  note: "Not built in this spike — dropped per the plan's risk table; see docs/spikes/chart-library-bakeoff.md.",
 }
 
 function pendingVerdicts(): Record<CapabilityId, CapabilityVerdict> {
