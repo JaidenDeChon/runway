@@ -104,8 +104,48 @@ export const CANDIDATES: readonly CandidateReport[] = [
     slug: 'unovis',
     name: 'Designated baseline — @unovis/vue + shadcn-vue chart chassis',
     role: 'baseline',
-    packages: [],
-    verdicts: pendingVerdicts(),
+    packages: [
+      { name: '@unovis/vue', version: '1.6.7', license: 'Apache-2.0' },
+      { name: '@unovis/ts', version: '1.6.7', license: 'Apache-2.0' },
+    ],
+    verdicts: {
+      multiSeries: {
+        status: 'pass',
+        note: "ChartConfig maps each series id to the account's own var(--chart-N) via entry.stroke (fixture.ts); ChartStyle emits a scoped --color-<key> var that every VisLine/VisScatter reads. Confirmed correct colours per account in the browser.",
+      },
+      cushionLine: {
+        status: 'pass',
+        note: "VisPlotline (labelText, dashed) + VisPlotband (from range.min to cushion) are purpose-built for exactly this — less code than the incumbent needed. Required an explicit labelOffsetX to stop the label clipping the frame's left edge at 375px.",
+      },
+      solidDashedSegments: {
+        status: 'pass',
+        note: "Two VisLine layers (past/future slices of the same rows) sharing one VisXYContainer — confirmed a clean solid-to-dashed transition exactly at the Today marker in the browser. Composition, not a single-line primitive, but it works and is little more code than the incumbent's per-series dash approach.",
+      },
+      eventMarkers: {
+        status: 'partial',
+        note: "VisScatter's own :data prop is not honoured per-component (see candidates.ts and UnovisChart.vue) — confirmed by isolating a scatter bound to a verified one-row computed and finding all 45 container rows rendered instead. Worked around by binding every scatter to the container's own rows and returning undefined from y() for days with no occurrence. Correct once worked around; partial because the documented API (a component-local data array) does not do what it says.",
+      },
+      minimumPoint: {
+        status: 'partial',
+        note: "Same workaround as event markers — a single highlighted, labelled point, correct once built around the data-override defect. Also needed an explicit labelColor: Unovis's own default label colour only switches for dark mode under html.dark-theme / html[data-theme=dark], which this app never sets (its dark mode is a bare .dark class) — left alone, the label was near-illegible in dark mode. Confirmed by reading unovis/ts/utils/theme.js, not guessed.",
+      },
+      tooltip: {
+        status: 'partial',
+        note: "The crosshair itself tracks the pointer correctly — its indicator circles land on the right series at the right x, confirmed in the browser. But the itemized tooltip content never appears: componentToString + ChartTooltipContent is the chassis's own documented pattern, wired exactly as shown, and no populated tooltip node ever appears in the DOM on hover. Root cause not confirmed within this spike's budget; componentToString is also the source of the hydration mismatch below, which makes one bug in that function more likely than two separate ones.",
+      },
+      clickIdentity: {
+        status: 'pass',
+        note: "A transparent VisScatter on the drawn line's actual points, wired through @unovis/ts's Scatter.selectors.point click event. Confirmed in the browser: clicking a rendered point returns its real date (Aug 23, 2026). Needed to be redesigned once — an initial full-height hit-strip (mirroring the incumbent's day-bands) doesn't fit the Scatter primitive, which only offers point-sized hit targets.",
+      },
+      legible375: {
+        status: 'pass',
+        note: 'Lines, cushion band, gridlines, ticks, Today marker and the Lowest marker are all legible in the 375px frame in both themes once the label-clipping and dark-label-colour issues above are fixed. Every one of those fixes was necessary to reach this — none was optional polish.',
+      },
+      themeCorrectness: {
+        status: 'partial',
+        note: "Every colour this file sets is explicit (var(--chart-N), var(--muted-foreground), color-mix() over var(--destructive)/var(--foreground)) and both themes render correctly for those. But the chassis's OWN defaults do not: Unovis ships dark-mode CSS selectors (html.dark-theme, html[data-theme=dark], etc. — unovis/ts/utils/theme.js) that don't match this app's actual dark-mode class, so anything left on an Unovis default stays wrong in dark mode unless the integrator notices and overrides it by hand.",
+      },
+    },
   },
   {
     slug: 'echarts',
