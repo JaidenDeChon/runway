@@ -46,7 +46,7 @@ export default defineNuxtConfig({
     'pages:extend'(pages) {
       for (let i = pages.length - 1; i >= 0; i--) {
         const page = pages[i]
-        if (!page || !page.path.startsWith(LAB_PATH_PREFIX)) continue
+        if (!page?.path.startsWith(LAB_PATH_PREFIX)) continue
         if (labIncludesNone) {
           pages.splice(i, 1)
           continue

@@ -50,6 +50,14 @@ export interface CandidateReport {
   /** Empty for the incumbent — it adds no new dependency. */
   readonly packages: readonly CandidatePackage[]
   readonly verdicts: Record<CapabilityId, CapabilityVerdict>
+  /**
+   * Set to the commit sha that removed this candidate's page and
+   * dependencies once P8 prunes it. A candidate with this set was fully
+   * evaluated (it has real verdicts, not `pendingVerdicts()`) but its page
+   * no longer exists — distinct from `vue-chrts`, which was never built at
+   * all. Revert that commit to bring the page back.
+   */
+  readonly prunedInCommit?: string
 }
 
 const NOT_YET_EVALUATED: CapabilityVerdict = {
@@ -112,6 +120,7 @@ export const CANDIDATES: readonly CandidateReport[] = [
     slug: 'unovis',
     name: 'Designated baseline — @unovis/vue + shadcn-vue chart chassis',
     role: 'baseline',
+    prunedInCommit: '5480530',
     packages: [
       { name: '@unovis/vue', version: '1.6.7', license: 'Apache-2.0' },
       { name: '@unovis/ts', version: '1.6.7', license: 'Apache-2.0' },
@@ -159,6 +168,7 @@ export const CANDIDATES: readonly CandidateReport[] = [
     slug: 'echarts',
     name: 'Apache ECharts',
     role: 'challenger',
+    prunedInCommit: '5480530',
     packages: [
       { name: 'echarts', version: '6.1.0', license: 'Apache-2.0' },
       { name: 'vue-echarts', version: '8.2.0', license: 'MIT' },
@@ -206,6 +216,7 @@ export const CANDIDATES: readonly CandidateReport[] = [
     slug: 'chartjs',
     name: 'Chart.js',
     role: 'challenger',
+    prunedInCommit: '5480530',
     packages: [
       { name: 'chart.js', version: '4.5.1', license: 'MIT' },
       { name: 'vue-chartjs', version: '5.3.4', license: 'MIT' },
@@ -261,4 +272,16 @@ export const CANDIDATES: readonly CandidateReport[] = [
 
 export function candidateBySlug(slug: string): CandidateReport | undefined {
   return CANDIDATES.find((candidate) => candidate.slug === slug)
+}
+
+/**
+ * Whether a candidate has a live `/lab/chart-bakeoff/<slug>` page to link to.
+ * `false` for two different reasons the index page needs to tell apart: a
+ * `prunedInCommit` candidate was built and evaluated, then its page was
+ * deleted; a candidate whose verdicts are all still `NOT_YET_EVALUATED` was
+ * never built at all, so it never had a page to begin with.
+ */
+export function candidateHasPage(candidate: CandidateReport): boolean {
+  if (candidate.prunedInCommit) return false
+  return Object.values(candidate.verdicts).some((verdict) => verdict.status !== 'not-evaluated')
 }
