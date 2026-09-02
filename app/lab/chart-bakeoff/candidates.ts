@@ -151,8 +151,48 @@ export const CANDIDATES: readonly CandidateReport[] = [
     slug: 'echarts',
     name: 'Apache ECharts',
     role: 'challenger',
-    packages: [],
-    verdicts: pendingVerdicts(),
+    packages: [
+      { name: 'echarts', version: '6.1.0', license: 'Apache-2.0' },
+      { name: 'vue-echarts', version: '8.2.0', license: 'MIT' },
+    ],
+    verdicts: {
+      multiSeries: {
+        status: 'pass',
+        note: "Each series' color comes from getComputedStyle on the account's own var(--chart-N) — resolved because canvas fillStyle can't read a var() the way an SVG attribute can (there is no element for the custom property to inherit through). Confirmed correct, distinct colours per account in the browser, both themes.",
+      },
+      cushionLine: {
+        status: 'pass',
+        note: 'markLine (labelled, dashed) + markArea (from range.min to cushion) are purpose-built for exactly this, same as the Unovis baseline — native primitives, not a hand-rolled rect and line.',
+      },
+      solidDashedSegments: {
+        status: 'pass',
+        note: 'Two line series per account (past/future halves of the same data, the other null) sharing one xAxis — the same two-series technique every non-incumbent candidate needed; ECharts has no native per-segment dash either. Confirmed a clean solid-to-dashed transition at Today in the browser.',
+      },
+      eventMarkers: {
+        status: 'pass',
+        note: 'A scatter series per account, one point only on days with an occurrence for that account, filled/hollow by direction. Confirmed visually in both themes.',
+      },
+      minimumPoint: {
+        status: 'pass',
+        note: 'A dedicated scatter point at the fixture\'s own lowest coordinate (not ECharts\' built-in markPoint type:"min", which would consider the look-back days the verdict excludes), styled and labelled to match the incumbent. Confirmed in the browser.',
+      },
+      tooltip: {
+        status: 'pass',
+        note: 'ECharts\' native axis-triggered tooltip + cross axisPointer, with a custom formatter for itemized rows. Took two real bugs to get there, both fixed and commented in EChartsChart.vue: (1) tooltip:{show:false} on the dashed "future" series — meant to hide a duplicate legend row — silently drops that series from the axis tooltip\'s params entirely, so hovering the future half of the line showed nothing; fixed by removing it and de-duplicating by name in the formatter instead. (2) hovering by default blurs series not at the exact hovered index, which reads as the past half of every line vanishing on hover; fixed with emphasis:{disabled:true}. Confirmed correct, itemized content on hover after both fixes.',
+      },
+      clickIdentity: {
+        status: 'pass',
+        note: "@click on VChart; params.name is the category axis value, which is the fixture's own IsoDate string — no decoding needed. Confirmed in the browser: clicking a rendered point returned its real date (Aug 22, 2026).",
+      },
+      legible375: {
+        status: 'pass',
+        note: 'Lines, cushion band, gridlines, Today marker, event markers and the Lowest marker are all legible in the 375px frame in both themes, with no clipping issues — the best rendered legibility of the non-incumbent candidates, arguably including the incumbent.',
+      },
+      themeCorrectness: {
+        status: 'pass',
+        note: 'Everything drawn is resolved via getComputedStyle and re-resolved on a colorMode.value watcher, so both themes render correctly with no remount — the whole option object recomputes, and vue-echarts patches the existing chart instance. This is the one candidate with no unresolved defect by the end of this spike.',
+      },
+    },
   },
   {
     slug: 'chartjs',
