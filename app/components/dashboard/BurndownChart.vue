@@ -27,14 +27,14 @@ import type { ChartDensity, ChartSeries } from '@/lib/burndown'
 import {
   containsZero,
   DESKTOP_LAYOUT,
-  dayBand,
+  dayBands,
   futureDashFor,
   gridLineYs,
-  linePath,
   MOBILE_LAYOUT,
   percentOf,
   scaleX,
   scaleY,
+  splitSeriesPath,
   tickIndices,
   tickStepForHorizon,
   valueRange,
@@ -91,18 +91,64 @@ const todayX = computed(() => scaleX(props.todayIndex, count.value, layout.value
 
 const gridLines = computed(() => gridLineYs(layout.value))
 
-const seriesPaths = computed(() =>
-  props.series.map((entry, index) => ({
-    id: entry.id,
-    stroke: entry.stroke,
-    dash: futureDashFor(index, props.density),
-    d: linePath(entry.points, range.value, count.value, layout.value),
-  })),
-)
+interface DrawnLine {
+  readonly key: string
+  /** Always a `var(--chart-N)` reference, never a literal colour. */
+  readonly stroke: string
+  readonly width: number
+  readonly dash: string
+  readonly past: string
+  readonly future: string
+}
 
-const combinedPath = computed(() =>
-  props.combined ? linePath(props.combined, range.value, count.value, layout.value) : '',
-)
+/**
+ * Every line the chart draws, in paint order: accounts first, combined last,
+ * so the heavier combined line stays on top — unchanged from before the
+ * split. Combined is dash index `0` (the simplest, most even pattern, for the
+ * primary line); an account's dash index shifts by one once a combined line
+ * exists, so the two never share a pattern.
+ */
+const drawnLines = computed<DrawnLine[]>(() => {
+  const lines: DrawnLine[] = props.series.map((entry, index) => {
+    const dashIndex = index + (props.combined ? 1 : 0)
+    const split = splitSeriesPath(
+      entry.points,
+      range.value,
+      count.value,
+      layout.value,
+      props.todayIndex,
+    )
+    return {
+      key: entry.id,
+      stroke: entry.stroke,
+      width: props.combined ? props.density.lineWeight * 0.55 : props.density.lineWeight,
+      dash: futureDashFor(dashIndex, props.density),
+      past: split.past,
+      future: split.future,
+    }
+  })
+  if (props.combined) {
+    const split = splitSeriesPath(
+      props.combined,
+      range.value,
+      count.value,
+      layout.value,
+      props.todayIndex,
+    )
+    lines.push({
+      key: 'combined',
+      stroke: 'var(--chart-1)',
+      width: props.density.lineWeight,
+      dash: futureDashFor(0, props.density),
+      past: split.past,
+      future: split.future,
+    })
+  }
+  return lines
+})
+
+/** Every day's hit band, computed once per layout change rather than twice per day per render. */
+const bands = computed(() => dayBands(count.value, layout.value))
 
 interface Marker {
   readonly key: string
@@ -236,18 +282,25 @@ const announcement = computed(() => {
   return events ? `${day}. ${balances}. Due: ${events}.` : `${day}. ${balances}.`
 })
 
+const todayDate = computed<IsoDate | null>(() => props.days[props.todayIndex] ?? null)
+
 const summary = computed(() => {
   const first = props.days[0]
   const last = props.days[props.days.length - 1]
   const span = first && last ? `${formatDateShort(first)} to ${formatDateShort(last)}` : ''
-  if (!props.lowest) return `Balance forecast, ${span}.`
+  // Past/future is now a property of the line itself, and a dash pattern says
+  // nothing to a screen reader. State the meaning first, the appearance second.
+  const split = todayDate.value
+    ? ` Recorded through ${formatDateShort(todayDate.value)}; everything after that is projected, drawn as a dashed line.`
+    : ''
+  if (!props.lowest) return `Balance forecast, ${span}.${split}`
   const side = props.status === 'short' ? 'below' : 'above'
   // The zero line is the only thing on screen saying the balance goes
   // negative, and a line is not readable. Said in words for the same reason
   // the low point is.
   const overdrawn = props.lowest.balance < 0 ? ' The balance goes negative in this window.' : ''
   return (
-    `Balance forecast, ${span}. Lowest projected balance ` +
+    `Balance forecast, ${span}.${split} Lowest projected balance ` +
     `${formatMoney(props.lowest.balance)} on ${formatDateShort(props.lowest.date)}, ` +
     `${side} your ${formatMoney(props.cushion)} safety cushion.${overdrawn}`
   )
@@ -365,27 +418,36 @@ function onFocus(): void {
         stroke-width="1.5"
       />
 
-      <path
-        v-for="entry in seriesPaths"
-        :key="entry.id"
-        :d="entry.d"
-        fill="none"
-        :stroke="entry.stroke"
-        :stroke-dasharray="entry.dash"
-        :stroke-width="props.combined ? props.density.lineWeight * 0.55 : props.density.lineWeight"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
-
-      <path
-        v-if="combinedPath"
-        :d="combinedPath"
-        fill="none"
-        class="stroke-chart-1"
-        :stroke-width="props.density.lineWeight"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
+      <!-- Two paths per line rather than one dashed path through the whole
+           series: history is always solid and the forecast always dashed
+           (#63), and a round linecap on a single dashed path would swallow
+           the gaps at the stroke widths this chart supports (Trap B) — butt
+           caps on both segments keep the dashes readable at every density. -->
+      <template v-for="line in drawnLines" :key="line.key">
+        <path
+          v-if="line.past"
+          :d="line.past"
+          fill="none"
+          :stroke="line.stroke"
+          :stroke-width="line.width"
+          stroke-linecap="butt"
+          stroke-linejoin="round"
+          :data-series="line.key"
+          data-segment="past"
+        />
+        <path
+          v-if="line.future"
+          :d="line.future"
+          fill="none"
+          :stroke="line.stroke"
+          :stroke-width="line.width"
+          :stroke-dasharray="line.dash"
+          stroke-linecap="butt"
+          stroke-linejoin="round"
+          :data-series="line.key"
+          data-segment="future"
+        />
+      </template>
 
       <circle
         v-for="marker in markers"
@@ -412,11 +474,12 @@ function onFocus(): void {
       <rect
         v-for="(date, index) in props.days"
         :key="`hit-${date}`"
-        :x="dayBand(index, count, layout).x"
+        :x="bands[index]?.x"
         :y="layout.top"
-        :width="dayBand(index, count, layout).width"
+        :width="bands[index]?.width"
         :height="plotBottom - layout.top"
         fill="transparent"
+        :data-day="date"
         @mouseenter="activeIndex = index"
         @click="emit('selectDay', date)"
       />
