@@ -38,8 +38,18 @@ interface ProbeContext {
 }
 
 interface DomainTableProbe {
-  readonly table: 'accounts' | 'recurring_rules' | 'occurrences' | 'transfers' | 'user_settings'
-  readonly pk: 'id' | 'user_id'
+  readonly table:
+    | 'accounts'
+    | 'recurring_rules'
+    | 'occurrences'
+    | 'transfers'
+    | 'user_settings'
+    | 'dashboard_hidden_accounts'
+  // 'account_id' for dashboard_hidden_accounts, whose primary key is the
+  // composite (user_id, account_id) — neither half alone is a sole key on
+  // most tables, but account_id is unique enough for this probe's purposes:
+  // each probe user gets exactly one hidden row, against their own account1.
+  readonly pk: 'id' | 'user_id' | 'account_id'
   /** The row owned by B that A must not reach. */
   readonly probeIdForB: () => string
   /** A row A will try to insert with user_id = B. Must satisfy every FK. */
@@ -101,6 +111,11 @@ async function buildProbeChain(
     returning id
   `
   if (!transfer) throw new Error(`could not create probe transfer for ${label}`)
+
+  await sql`
+    insert into public.dashboard_hidden_accounts (user_id, account_id)
+    values (${user.id}, ${account1.id})
+  `
 
   return {
     userId: user.id,
@@ -198,6 +213,18 @@ const descriptors: DomainTableProbe[] = [
     }),
     updateColumn: 'cushion_cents',
     updateValue: 999_999,
+  },
+  {
+    table: 'dashboard_hidden_accounts',
+    pk: 'account_id',
+    probeIdForB: () => contextB.account1Id,
+    plantPayload: () => ({
+      user_id: USER_B.id,
+      account_id: contextB.account1Id,
+    }),
+    // No non-key column to clobber but created_at.
+    updateColumn: 'created_at',
+    updateValue: '2020-01-01T00:00:00Z',
   },
 ]
 

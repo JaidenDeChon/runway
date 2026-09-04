@@ -428,3 +428,12 @@ insert into public.transfers (id, user_id, from_account_id, to_account_id, amoun
   ('30000000-0000-4000-8000-00000000000c', '00000000-0000-4000-8000-00000000000c',
    '10000000-0000-4000-8001-00000000000c', '10000000-0000-4000-8000-00000000000c',
    7500, '2026-08-05');
+
+-- dashboard_hidden_accounts (issue #12) — B Savings hidden from B's chart
+-- legend. Sits on user B, not A or C: A and C mirror domain/seed.ts and back
+-- every figure in docs/design/*/spec.md, so hiding one of A's accounts would
+-- change what every A-based E2E and every screenshot describes. B mirrors
+-- nothing, the same precedent the archived account and the extra cadence
+-- fixtures above already set.
+insert into public.dashboard_hidden_accounts (user_id, account_id) values
+  ('00000000-0000-4000-8000-00000000000b', '10000000-0000-4000-8001-00000000000b');
