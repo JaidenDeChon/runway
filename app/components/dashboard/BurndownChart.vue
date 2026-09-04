@@ -513,24 +513,34 @@ function onFocus(): void {
         >$0</span
       >
 
-      <div
-        v-if="lowestMarker && props.lowest"
-        class="absolute -translate-y-1/2 whitespace-nowrap"
-        :class="cn(lowestFlipped ? '-ml-3 -translate-x-full text-right' : 'ml-3')"
-        :style="{
-          left: `${percentOf(lowestMarker.cx, layout.width)}%`,
-          top: `${percentOf(lowestMarker.cy, layout.height)}%`,
-        }"
-      >
+      <template v-if="lowestMarker && props.lowest">
+        <!-- Above the marker and below it, not straddling it: a block
+             centered on the marker's own y collided with the line itself
+             whenever the low point sat right before a steep rise (the
+             marker's neighbourhood is exactly where that happens). Matches
+             reference.html's own lowestLabelY1/Y2, which separate the two
+             the same way. -->
         <MoneyText
           :amount="props.lowest.balance"
           size="sm"
-          class="block font-semibold text-destructive"
+          class="absolute -translate-y-full whitespace-nowrap font-semibold text-destructive"
+          :class="cn(lowestFlipped ? '-ml-3 -translate-x-full text-right' : 'ml-3')"
+          :style="{
+            left: `${percentOf(lowestMarker.cx, layout.width)}%`,
+            top: `${percentOf(lowestMarker.cy - 14, layout.height)}%`,
+          }"
         />
-        <span class="block text-[11px] text-muted-foreground">
+        <span
+          class="absolute whitespace-nowrap text-[11px] text-muted-foreground"
+          :class="cn(lowestFlipped ? '-ml-3 -translate-x-full text-right' : 'ml-3')"
+          :style="{
+            left: `${percentOf(lowestMarker.cx, layout.width)}%`,
+            top: `${percentOf(lowestMarker.cy + 14, layout.height)}%`,
+          }"
+        >
           Lowest · {{ formatDateShort(props.lowest.date) }}
         </span>
-      </div>
+      </template>
 
       <Popover>
         <PopoverTrigger
