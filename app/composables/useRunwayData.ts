@@ -1,9 +1,12 @@
 /**
  * The app's single copy of the user's financial data.
  *
- * **Accounts, settings and recurring items are Supabase-backed; transfers are
- * not yet.** Issue #7 moved the accounts screen onto real rows, and issue #8
- * moved recurring items the same way — `RunwayData.accounts`,
+ * **Accounts, settings, recurring items and the dashboard's two preferences
+ * are Supabase-backed; transfers are not yet.** Issue #7 moved the accounts
+ * screen onto real rows, issue #8 moved recurring items the same way, and
+ * issue #12 moved the dashboard's horizon and hidden-account selection off
+ * `useState` and onto `user_settings.default_horizon_days` and
+ * `public.dashboard_hidden_accounts` — `RunwayData.accounts`,
  * `RunwayData.recurringItems` and the settings that ride along with accounts
  * (`safetyCushion`, `monthlyDiscretionarySpend`, `timeZone`,
  * `staleAfterDays`) come from `public.accounts`, `public.recurring_rules` and
@@ -13,6 +16,12 @@
  * account ids like `'acct-checking'`, which dangle against the account uuids
  * the database actually holds, and the projection would silently move money
  * between accounts that do not exist.
+ *
+ * The dashboard's two preferences ride on the same `useAsyncData` as
+ * everything else, which runs on the server and transfers its payload to the
+ * client — unlike `useChartDensity`, there is no post-mount restore here and
+ * therefore no hydration mismatch to design around: the first server render
+ * already reads the stored horizon and hidden set.
  *
  * This file is the seam. Every mutation lives here so a screen never reaches
  * around it to talk to Supabase directly, and RLS — not this file — is what
@@ -25,8 +34,10 @@ import type { HouseholdSettings } from '@/lib/supabase/accounts'
 import {
   ACCOUNT_COLUMNS,
   type AccountDraft,
+  HIDDEN_ACCOUNT_COLUMNS,
   toAccount,
   toAccountColumns,
+  toHiddenAccountIds,
   toHouseholdSettings,
   USER_SETTINGS_COLUMNS,
 } from '@/lib/supabase/accounts'
@@ -49,6 +60,8 @@ interface RemoteHousehold {
   readonly accounts: readonly Account[]
   readonly recurringItems: readonly RecurringItem[]
   readonly settings: HouseholdSettings
+  /** Ids of the accounts hidden from the dashboard's chart legend. */
+  readonly hiddenAccountIds: readonly string[]
 }
 
 /** What an anonymous visitor, or a request with no session, sees. */
@@ -56,6 +69,7 @@ const EMPTY_HOUSEHOLD: RemoteHousehold = {
   accounts: [],
   recurringItems: [],
   settings: toHouseholdSettings(null),
+  hiddenAccountIds: [],
 }
 
 interface LocalRecords {
@@ -98,26 +112,28 @@ export function useRunwayData() {
     'runway-household',
     async () => {
       if (!authUser.value) return EMPTY_HOUSEHOLD
-      const [accountsResult, recurringRulesResult, settingsResult] = await Promise.all([
-        client
-          .from('accounts')
-          .select(ACCOUNT_COLUMNS)
-          // The seeded Checking/Savings rows share a created_at; id breaks the
-          // tie in the order the design draws them.
-          .order('created_at', { ascending: true })
-          .order('id', { ascending: true }),
-        client
-          .from('recurring_rules')
-          .select(RECURRING_RULE_COLUMNS)
-          // `anchor_date` is a phase, not a "next date" (see
-          // app/lib/supabase/recurring-items.ts), so this is not the list's
-          // display order — the page computes and sorts on the true next
-          // occurrence itself. It just needs to be deterministic; id breaks
-          // the tie the same way the accounts query does.
-          .order('anchor_date', { ascending: true })
-          .order('id', { ascending: true }),
-        client.from('user_settings').select(USER_SETTINGS_COLUMNS).maybeSingle(),
-      ])
+      const [accountsResult, recurringRulesResult, settingsResult, hiddenAccountsResult] =
+        await Promise.all([
+          client
+            .from('accounts')
+            .select(ACCOUNT_COLUMNS)
+            // The seeded Checking/Savings rows share a created_at; id breaks the
+            // tie in the order the design draws them.
+            .order('created_at', { ascending: true })
+            .order('id', { ascending: true }),
+          client
+            .from('recurring_rules')
+            .select(RECURRING_RULE_COLUMNS)
+            // `anchor_date` is a phase, not a "next date" (see
+            // app/lib/supabase/recurring-items.ts), so this is not the list's
+            // display order — the page computes and sorts on the true next
+            // occurrence itself. It just needs to be deterministic; id breaks
+            // the tie the same way the accounts query does.
+            .order('anchor_date', { ascending: true })
+            .order('id', { ascending: true }),
+          client.from('user_settings').select(USER_SETTINGS_COLUMNS).maybeSingle(),
+          client.from('dashboard_hidden_accounts').select(HIDDEN_ACCOUNT_COLUMNS),
+        ])
       // The database's own error message can name columns, constraints and
       // policies. It goes nowhere near the UI, and nothing but the code is
       // logged — see CLAUDE.md on what must never reach a log.
@@ -133,8 +149,15 @@ export function useRunwayData() {
         console.error('settings read failed', { code: settingsResult.error.code })
         throw new Error('load-failed')
       }
+      if (hiddenAccountsResult.error) {
+        console.error('hidden chart accounts read failed', {
+          code: hiddenAccountsResult.error.code,
+        })
+        throw new Error('load-failed')
+      }
       const settings = toHouseholdSettings(settingsResult.data)
       return {
+        hiddenAccountIds: toHiddenAccountIds(hiddenAccountsResult.data),
         accounts: (accountsResult.data ?? []).map((row) =>
           toAccount(row, settings.discretionaryAccountId),
         ),
@@ -169,24 +192,54 @@ export function useRunwayData() {
   // watch once, before issue #8 moved them onto the `useAsyncData` above —
   // that fetch re-runs on the same `watch: [authUser]` transition, so the
   // leak this watch exists to close is already closed for them by construction.
-  watch(
-    () => authUser.value?.id ?? null,
-    (nextOwnerId) => {
-      if (localRecords.value.ownerId === nextOwnerId) return
-      localRecords.value = { ownerId: nextOwnerId, transfers: [] }
-    },
-  )
-
   // Settings this screen reads but has no UI to write yet:
   // `cushion_cents`, `monthly_discretionary_cents` and `time_zone` ride along
   // on the one `user_settings` query the discretionary designation already
   // requires — a plain read, always. Their setters below write into this
   // session-local overlay instead of the database, exactly the stance
   // `docs/database/schema.md` already records for `time_zone`: the writer
-  // waits for the settings screen. No screen calls these setters today.
+  // waits for the settings screen. No screen calls those setters today.
   const settingsOverride = useState<Partial<HouseholdSettings>>(
     'runway-settings-override',
     () => ({}),
+  )
+
+  // The dashboard's hidden-account selection, held the same way while a write
+  // is in flight: `setAccountHidden` below sets this optimistically before the
+  // database confirms it, so the checkbox responds instantly rather than
+  // waiting on a round trip. `null` means "no optimistic value — read the
+  // stored set", not "hide nothing"; an empty array is a real, deliberate
+  // value once the user has un-hidden everything.
+  const hiddenOverride = useState<string[] | null>('runway-hidden-accounts-override', () => null)
+
+  // Session-local records, and both preference overlays, belong to whoever was
+  // signed in when they were created. Sign-out and sign-in are both
+  // client-side navigations — no full page reload — so unlike the household
+  // `useAsyncData` above (which re-fetches on `watch: [authUser]`), nothing
+  // was re-deriving these from the new session: as user A, add a transfer or
+  // hide an account; sign out; sign in as a different user D; A's transfer and
+  // A's hidden account were still on screen. Issue #12 is what makes the
+  // overlay reset below load-bearing rather than defensive: `settingsOverride`
+  // has existed since #7 with no live writer, so this leak was latent; the
+  // dashboard's setters are its first.
+  //
+  // Keyed on the user's *id* changing, not on reference equality to
+  // `authUser` itself: `authUsersEqual()` (app/plugins/supabase.client.ts)
+  // already keeps `authUser`'s reference stable across an unchanged user, so
+  // watching the id here means signing out and back in as the SAME user does
+  // not needlessly discard their in-progress, unsaved transfers — only an
+  // actual change of person clears them. Recurring items needed this same
+  // watch once, before issue #8 moved them onto the `useAsyncData` above —
+  // that fetch re-runs on the same `watch: [authUser]` transition, so the
+  // leak this watch exists to close is already closed for them by construction.
+  watch(
+    () => authUser.value?.id ?? null,
+    (nextOwnerId) => {
+      if (localRecords.value.ownerId === nextOwnerId) return
+      localRecords.value = { ownerId: nextOwnerId, transfers: [] }
+      settingsOverride.value = {}
+      hiddenOverride.value = null
+    },
   )
 
   const accountsById = computed(
@@ -225,6 +278,28 @@ export function useRunwayData() {
       : remote.value.settings.timeZone,
   )
   const staleAfterDays = computed(() => remote.value.settings.staleAfterDays)
+
+  /**
+   * The dashboard's stored horizon. Not a field on `RunwayData` — the
+   * projection engine takes its window as a parameter and does not know a
+   * "default" exists; see `docs/database/schema.md` § "The horizon is not a
+   * menu". A value outside the toggle's 30/60/90 (unreachable through the UI
+   * today, but the column allows 1–730) is returned verbatim rather than
+   * snapped to the nearest option.
+   */
+  const defaultHorizonDays = computed(
+    () => settingsOverride.value.defaultHorizonDays ?? remote.value.settings.defaultHorizonDays,
+  )
+
+  /**
+   * Ids of the accounts hidden from the dashboard's chart legend. The stored
+   * set is the hidden one, never the shown one — see the migration comment on
+   * `dashboard_hidden_accounts` — so an account with no row here is visible by
+   * default.
+   */
+  const hiddenAccountIds = computed<readonly string[]>(
+    () => hiddenOverride.value ?? remote.value.hiddenAccountIds,
+  )
 
   const isLoading = computed(() => pending.value)
   /**
@@ -461,6 +536,69 @@ export function useRunwayData() {
   }
 
   /**
+   * Persists the dashboard's horizon. Values outside `1..730` are ignored —
+   * the column's own check constraint, and the toggle itself never offers one
+   * anyway.
+   *
+   * Writes the overlay optimistically so the control responds the moment it
+   * is clicked, then persists with `upsert`, not `update`: a plain `update`
+   * would silently affect zero rows for a user whose settings row is missing
+   * — exactly the case `toHouseholdSettings(null)` exists for. Never throws
+   * — the design has no error copy for a failed preference write, and the
+   * projection is correct either way; a reverted control is the feedback.
+   * Does not call `refresh()`: a preference write must not re-run all four
+   * queries and re-render the chart underneath the user.
+   */
+  async function setDefaultHorizonDays(days: number): Promise<void> {
+    if (!Number.isInteger(days) || days < 1 || days > 730) return
+    const userId = authUser.value?.id
+    if (!userId) return
+    const previous = settingsOverride.value
+    settingsOverride.value = { ...settingsOverride.value, defaultHorizonDays: days }
+    const { error: writeError } = await client
+      .from('user_settings')
+      .upsert({ user_id: userId, default_horizon_days: days }, { onConflict: 'user_id' })
+    if (writeError) {
+      console.error('default horizon write failed', { code: writeError.code })
+      settingsOverride.value = previous
+    }
+  }
+
+  /**
+   * Hides or shows an account's series on the dashboard chart.
+   *
+   * Presence in `dashboard_hidden_accounts` *is* the value — there is no
+   * column to update — so hiding inserts a row and showing deletes one.
+   * Optimistic and non-throwing, for the same reasons `setDefaultHorizonDays`
+   * is: the checkbox reflects the change instantly, a failure reverts it and
+   * logs the error code only, and no `refresh()` follows a successful write.
+   */
+  async function setAccountHidden(accountId: string, hidden: boolean): Promise<void> {
+    const userId = authUser.value?.id
+    if (!userId) return
+    const previous = hiddenOverride.value ?? remote.value.hiddenAccountIds
+    const next = hidden
+      ? previous.includes(accountId)
+        ? previous
+        : [...previous, accountId]
+      : previous.filter((id) => id !== accountId)
+    hiddenOverride.value = [...next]
+    const { error: writeError } = hidden
+      ? await client
+          .from('dashboard_hidden_accounts')
+          .insert({ user_id: userId, account_id: accountId })
+      : await client
+          .from('dashboard_hidden_accounts')
+          .delete()
+          .eq('user_id', userId)
+          .eq('account_id', accountId)
+    if (writeError) {
+      console.error('dashboard account visibility write failed', { code: writeError.code })
+      hiddenOverride.value = [...previous]
+    }
+  }
+
+  /**
    * Drops the session-local transfers, leaving accounts, settings and
    * recurring items alone.
    *
@@ -494,6 +632,8 @@ export function useRunwayData() {
     transfers,
     safetyCushion,
     timeZoneOverride,
+    defaultHorizonDays,
+    hiddenAccountIds,
     isEmpty,
     accountName,
     saveAccount,
@@ -506,6 +646,8 @@ export function useRunwayData() {
     setSafetyCushion,
     setTimeZoneOverride,
     setMonthlyDiscretionarySpend,
+    setDefaultHorizonDays,
+    setAccountHidden,
     clearRecords,
   }
 }
