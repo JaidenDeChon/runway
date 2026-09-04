@@ -490,8 +490,20 @@ function onFocus(): void {
     </svg>
 
     <!-- Annotations live in HTML rather than <text>: SVG text scales with the
-         viewBox, which would render it at ~6px on a phone. -->
-    <div class="pointer-events-none absolute inset-0">
+         viewBox, which would render it at ~6px on a phone.
+
+         The box must match the SVG's exactly, not the wrapper's: the wrapper
+         also holds the tick row, so `inset-0` made this overlay taller than
+         the chart and pushed every percentOf() y down by that difference —
+         enough to drop the lowest-point label back onto the line the 14-unit
+         offsets exist to clear. The SVG is `h-auto w-full`, so its height is
+         width x (viewBox height / width); giving the overlay that same aspect
+         ratio reproduces its box exactly. -->
+    <div
+      class="pointer-events-none absolute inset-x-0 top-0"
+      data-chart-annotations
+      :style="{ aspectRatio: `${layout.width} / ${layout.height}` }"
+    >
       <span
         class="absolute -translate-x-1/2 -translate-y-full text-[11px] text-muted-foreground"
         :style="{

@@ -306,6 +306,32 @@ test.describe('the burndown chart', () => {
       })
       .toBe(true)
   })
+
+  // Regression: the annotation overlay used to be `absolute inset-0` inside a
+  // wrapper that also holds the x-tick row, so its box was taller than the
+  // chart and every percentage-positioned label was pushed down by the
+  // difference. That is not a cosmetic drift — it silently cancelled the
+  // 14-unit offsets that keep the lowest-point label off the line it
+  // annotates, putting the label back through the line. The invariant those
+  // offsets depend on is simply that the two boxes are the same box.
+  test('positions its annotation layer over exactly the chart, not the tick row', async ({
+    authenticatedPage: page,
+  }) => {
+    await gotoHydrated(page, '/')
+
+    const chart = page.getByRole('img', { name: /Balance forecast/ })
+    await expect(chart).toBeVisible()
+
+    const svgBox = await chart.boundingBox()
+    const overlayBox = await page.locator('[data-chart-annotations]').boundingBox()
+    expect(svgBox).not.toBeNull()
+    expect(overlayBox).not.toBeNull()
+
+    // Sub-pixel tolerance only: these are meant to be the same rectangle.
+    expect(Math.abs(overlayBox!.y - svgBox!.y)).toBeLessThan(1)
+    expect(Math.abs(overlayBox!.height - svgBox!.height)).toBeLessThan(1)
+    expect(Math.abs(overlayBox!.width - svgBox!.width)).toBeLessThan(1)
+  })
 })
 
 test.describe('opening a day from the chart', () => {
