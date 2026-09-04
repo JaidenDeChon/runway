@@ -33,6 +33,8 @@ without infrastructure, and it is enforced rather than promised
 | `classifyMargin(margin)` | the three-band verdict on its own |
 | `todayIn(zone, instant)` | which calendar day it is, in a zone (`domain/dates.ts`) |
 | `dailyDiscretionary(monthly, date)` | what discretionary spending costs on a day (`domain/discretionary.ts`) |
+| `materializationWindow(today)` | the sliding window materialized occurrences are kept for, `today - 90` to `today + 365` (`domain/materialization.ts`) |
+| `desiredOccurrences(items, window)` | every occurrence every rule produces inside a window, signed and de-duplicated — the desired set a database RPC reconciles `public.occurrences` against (`domain/materialization.ts`) |
 
 Everything returns plain serializable data — no class instances, no live
 references — so a result can be memoized, cached, or moved to a worker later
