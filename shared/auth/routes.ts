@@ -32,6 +32,19 @@ const GUEST_ONLY_PATHS = new Set<string>([SIGN_IN_PATH, '/sign-up', '/forgot-pas
 
 const PUBLIC_PATHS = new Set<string>(['/reset-password', '/auth/confirm', '/auth/error'])
 
+/**
+ * Issue #10's chart-library bake-off (`app/pages/lab/chart-bakeoff/`).
+ *
+ * A prefix rather than another `PUBLIC_PATHS` entry because the tree grows one
+ * page per candidate. It is safe to leave open: every page under it renders
+ * only `domain/seed.ts`'s synthetic fixture, never a signed-in user's data, and
+ * `nuxt.config.ts`'s `RUNWAY_LAB` gate means the tree does not exist as a route
+ * at all in a production build — this classification only ever matters inside
+ * a `RUNWAY_LAB` build, where a reviewer should be able to open it without a
+ * local Supabase and an account.
+ */
+export const LAB_PATH_PREFIX = '/lab/'
+
 /** Strips a trailing slash so `/sign-in/` and `/sign-in` classify identically. */
 export function normalizeAuthPath(path: string): string {
   const withoutQuery = path.split('?')[0]?.split('#')[0] ?? ''
@@ -43,6 +56,7 @@ export function routeAccess(path: string): RouteAccess {
   const normalized = normalizeAuthPath(path)
   if (GUEST_ONLY_PATHS.has(normalized)) return 'guest-only'
   if (PUBLIC_PATHS.has(normalized)) return 'public'
+  if (normalized.startsWith(LAB_PATH_PREFIX)) return 'public'
   return 'protected'
 }
 

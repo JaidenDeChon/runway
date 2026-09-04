@@ -74,8 +74,10 @@ follows those tags.
 Custom components (not shadcn primitives):
 
 - **BurndownChart** — the inline SVG. The export tags `ChartContainer`, `ChartTooltip` and
-  `ChartCrosshair`; there is no shadcn-vue chart primitive in the registry, so this is a bespoke
-  component composed of an SVG plus a Card-styled tooltip and a `Popover`.
+  `ChartCrosshair`, which do exist as a shadcn-vue `chart` registry item (a chassis around
+  `@unovis/vue` — see issue #10's bake-off, `docs/spikes/chart-library-bakeoff.md`); this component
+  predates that finding and stays a bespoke SVG plus a Card-styled tooltip and a `Popover`, by the
+  bake-off's own recommendation.
 - **AccountLegendRow** — Checkbox + colour swatch + name + trailing balance.
 - **OccurrenceRow** — date / label+account / amount grid row, reused by Upcoming and by the
   day-detail item list.
