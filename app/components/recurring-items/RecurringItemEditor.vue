@@ -182,32 +182,35 @@ async function onSave(): Promise<void> {
   saving.value = true
   errorMessage.value = null
   try {
-    await saveRecurringItem({
-      ...(props.item ? { id: props.item.id } : {}),
-      name: form.name.trim(),
-      kind: form.type,
-      amount: form.amount,
-      cadence: form.cadence,
-      accountId: form.accountId,
-      nextOccurrence: form.nextOccurrence,
-      // Bills are always fixed and never carry the variable flag — the
-      // type-specific controls are hidden, not cleared, when switching tabs, so
-      // the invariant is enforced here rather than trusting stale form state.
-      amountSource: form.type === 'income' ? form.amountSource : 'fixed',
-      depositHistory: form.depositHistory,
-      isVariable: form.type === 'bill' ? form.isVariable : false,
-      // Unticked -> absent, not `endsOn: undefined` — `exactOptionalPropertyTypes`
-      // distinguishes the two, and the DB enforces `ends_on >= starts_on`
-      // for whatever comes through here regardless.
-      ...(form.hasEndsOn ? { endsOn: form.endsOn } : {}),
-      // Round-tripped, not editable here — see the form field's own comment.
-      // Omitting these when the item never had one keeps a brand-new item's
-      // payload exactly as before; carrying them when it did is what stops an
-      // unrelated field edit from silently nulling them out.
-      ...(form.daysOfMonth ? { daysOfMonth: form.daysOfMonth } : {}),
-      ...(form.daysOfWeek ? { daysOfWeek: form.daysOfWeek } : {}),
-      ...(form.startsOn ? { startsOn: form.startsOn } : {}),
-    })
+    await saveRecurringItem(
+      {
+        ...(props.item ? { id: props.item.id } : {}),
+        name: form.name.trim(),
+        kind: form.type,
+        amount: form.amount,
+        cadence: form.cadence,
+        accountId: form.accountId,
+        nextOccurrence: form.nextOccurrence,
+        // Bills are always fixed and never carry the variable flag — the
+        // type-specific controls are hidden, not cleared, when switching tabs, so
+        // the invariant is enforced here rather than trusting stale form state.
+        amountSource: form.type === 'income' ? form.amountSource : 'fixed',
+        depositHistory: form.depositHistory,
+        isVariable: form.type === 'bill' ? form.isVariable : false,
+        // Unticked -> absent, not `endsOn: undefined` — `exactOptionalPropertyTypes`
+        // distinguishes the two, and the DB enforces `ends_on >= starts_on`
+        // for whatever comes through here regardless.
+        ...(form.hasEndsOn ? { endsOn: form.endsOn } : {}),
+        // Round-tripped, not editable here — see the form field's own comment.
+        // Omitting these when the item never had one keeps a brand-new item's
+        // payload exactly as before; carrying them when it did is what stops an
+        // unrelated field edit from silently nulling them out.
+        ...(form.daysOfMonth ? { daysOfMonth: form.daysOfMonth } : {}),
+        ...(form.daysOfWeek ? { daysOfWeek: form.daysOfWeek } : {}),
+        ...(form.startsOn ? { startsOn: form.startsOn } : {}),
+      },
+      today.value,
+    )
     emit('update:open', false)
   } catch {
     errorMessage.value = 'Could not save this item. Check your connection and try again.'

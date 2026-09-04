@@ -107,18 +107,21 @@ async function handleBuildRunway(): Promise<void> {
   savingItem.value = true
   itemError.value = null
   try {
-    const saved = await saveRecurringItem({
-      ...(itemId.value ? { id: itemId.value } : {}),
-      name: trimmed,
-      kind: itemForm.kind,
-      amount: itemForm.amount,
-      cadence: itemForm.cadence,
-      accountId: accountId.value,
-      nextOccurrence: itemForm.nextOccurrence,
-      amountSource: 'fixed',
-      depositHistory: [],
-      isVariable: false,
-    })
+    const saved = await saveRecurringItem(
+      {
+        ...(itemId.value ? { id: itemId.value } : {}),
+        name: trimmed,
+        kind: itemForm.kind,
+        amount: itemForm.amount,
+        cadence: itemForm.cadence,
+        accountId: accountId.value,
+        nextOccurrence: itemForm.nextOccurrence,
+        amountSource: 'fixed',
+        depositHistory: [],
+        isVariable: false,
+      },
+      today.value,
+    )
     itemId.value = saved.id
     step.value = 'done'
   } catch {

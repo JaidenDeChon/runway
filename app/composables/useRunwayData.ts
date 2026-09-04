@@ -1,23 +1,28 @@
 /**
  * The app's single copy of the user's financial data.
  *
- * **Accounts, settings and recurring items are Supabase-backed; transfers are
- * not yet.** Issue #7 moved the accounts screen onto real rows, and issue #8
- * moved recurring items the same way — `RunwayData.accounts`,
+ * **Accounts, settings, recurring items and their materialized occurrences
+ * are Supabase-backed; transfers are not yet.** Issue #7 moved the accounts
+ * screen onto real rows, issue #8 moved recurring items the same way, and
+ * issue #9 added `regenerateOccurrences`, keeping `public.occurrences`
+ * reconciled with those rules — `RunwayData.accounts`,
  * `RunwayData.recurringItems` and the settings that ride along with accounts
  * (`safetyCushion`, `monthlyDiscretionarySpend`, `timeZone`,
  * `staleAfterDays`) come from `public.accounts`, `public.recurring_rules` and
  * `public.user_settings` under the signed-in user's own session. Transfers
- * stay session-local `useState` — issue #9 owns moving those — and start
- * **empty** rather than from `domain/seed.ts`: a seeded transfer carries
- * account ids like `'acct-checking'`, which dangle against the account uuids
- * the database actually holds, and the projection would silently move money
- * between accounts that do not exist.
+ * are the last session-local `useState` records — issue #56 owns folding them
+ * into ordinary transactions — and start **empty** rather than from
+ * `domain/seed.ts`: a seeded transfer carries account ids like
+ * `'acct-checking'`, which dangle against the account uuids the database
+ * actually holds, and the projection would silently move money between
+ * accounts that do not exist.
  *
  * This file is the seam. Every mutation lives here so a screen never reaches
  * around it to talk to Supabase directly, and RLS — not this file — is what
  * actually stops a cross-user read or write; see `docs/auth.md` and
- * `docs/database/rls.md`.
+ * `docs/database/rls.md`. `regenerateOccurrences` must stay the only thing in
+ * `app/` that writes `public.occurrences` — `tests/guards/occurrence-write-sites.test.ts`
+ * enforces that structurally.
  */
 
 import { useAuthUser, useSupabaseClient } from '@/composables/useAuth'
@@ -30,6 +35,7 @@ import {
   toHouseholdSettings,
   USER_SETTINGS_COLUMNS,
 } from '@/lib/supabase/accounts'
+import { toRegenerationArgs } from '@/lib/supabase/occurrences'
 import {
   RECURRING_RULE_COLUMNS,
   type RecurringItemDraft,
@@ -39,6 +45,7 @@ import {
 import type { BalanceReading } from '~~/domain/accounts'
 import { activeAccounts, archivedAccounts } from '~~/domain/accounts'
 import type { IsoDate } from '~~/domain/dates'
+import { desiredOccurrences, materializationWindow } from '~~/domain/materialization'
 import type { MinorUnits } from '~~/domain/money'
 import { resolveAmount } from '~~/domain/prediction'
 import type { Account, RecurringItem, RunwayData, Transfer } from '~~/domain/types'
@@ -145,7 +152,7 @@ export function useRunwayData() {
     { default: () => EMPTY_HOUSEHOLD, watch: [authUser] },
   )
 
-  // Transfers are still held in memory and lost on reload — issue #9 owns
+  // Transfers are still held in memory and lost on reload — issue #56 owns
   // moving them onto Supabase. See the file comment for why they start empty
   // rather than from `domain/seed.ts`.
   const localRecords = useState<LocalRecords>('runway-local-records', () => ({
@@ -367,14 +374,65 @@ export function useRunwayData() {
   }
 
   /**
+   * Regenerates materialized occurrences for `ruleIds` (default: every rule
+   * the household holds) across `[today - 90, today + 365]`
+   * (`domain/materialization.ts` `materializationWindow`).
+   *
+   * `today` is a parameter rather than read here on purpose: `useToday` ->
+   * `useTimeZone` -> `useRunwayData`, so resolving it in this file would close
+   * an import cycle (see the note on `timeZoneOverride` above), and the
+   * domain's own rule is that `today` is never read from a clock.
+   *
+   * Every protection guarantee — a user-touched occurrence is never rewritten
+   * or deleted — lives inside `public.regenerate_occurrences`
+   * (`supabase/migrations/20260904015555_occurrence_regeneration.sql`). This
+   * function must stay the only thing in `app/` that writes
+   * `public.occurrences`; `tests/guards/occurrence-write-sites.test.ts`
+   * enforces that by reading every source file under `app/`.
+   */
+  async function regenerateOccurrences(
+    today: IsoDate,
+    ruleIds?: readonly string[],
+  ): Promise<{ upserted: number; deleted: number }> {
+    requireUserId()
+    const scope = ruleIds ?? remote.value.recurringItems.map((item) => item.id)
+    if (scope.length === 0) return { upserted: 0, deleted: 0 }
+
+    const window = materializationWindow(today)
+    const scopeIds = new Set(scope)
+    const items = remote.value.recurringItems.filter((item) => scopeIds.has(item.id))
+    const desired = desiredOccurrences(items, window)
+
+    const { data, error: regenerateError } = await client.rpc(
+      'regenerate_occurrences',
+      toRegenerationArgs(scope, window, desired),
+    )
+    if (regenerateError) {
+      // Never a message or a rule name — see CLAUDE.md on what must never
+      // reach a log, extended here to the database's own error text.
+      console.error('occurrence regeneration failed', { code: regenerateError.code })
+      throw new Error('regenerate-failed')
+    }
+    return data?.[0] ?? { upserted: 0, deleted: 0 }
+  }
+
+  /**
    * Inserts or updates a recurring rule. One write to one table — unlike
    * `saveAccount`, this needs no RPC, because there is no second table that
    * could partially fail alongside it.
    *
    * No optimistic update, matching every other mutation here: a refresh is
    * cheaper than a client-side guess that can disagree with the database.
+   *
+   * `today` is required, not optional: it makes it impossible to save a rule
+   * without stating the calendar frame `regenerateOccurrences`'s window is
+   * measured in, matching the domain's own discipline that `today` is always
+   * a parameter, never read from a clock inside this file.
    */
-  async function saveRecurringItem(draft: RecurringItemDraft): Promise<RecurringItem> {
+  async function saveRecurringItem(
+    draft: RecurringItemDraft,
+    today: IsoDate,
+  ): Promise<RecurringItem> {
     const userId = requireUserId()
     // Prediction is resolved at save time, not at render time, so the row and
     // the projection always read one stored figure. `resolveAmount` reads
@@ -405,6 +463,17 @@ export function useRunwayData() {
     await refresh()
     const result = remote.value.recurringItems.find((item) => item.id === saved.id)
     if (!result) throw new Error('save-failed')
+
+    // Materialization is best-effort and self-healing: the rule saved, and
+    // failing the user's action because a background regeneration hiccuped
+    // would be worse. The next horizon top-up
+    // (`useOccurrenceMaterialization`) repairs it, because regeneration is
+    // idempotent.
+    try {
+      await regenerateOccurrences(today, [result.id])
+    } catch {
+      // Already logged inside regenerateOccurrences, with a code and nothing else.
+    }
     return result
   }
 
@@ -502,6 +571,7 @@ export function useRunwayData() {
     restoreAccount,
     saveRecurringItem,
     removeRecurringItem,
+    regenerateOccurrences,
     addTransfer,
     setSafetyCushion,
     setTimeZoneOverride,

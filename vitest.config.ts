@@ -29,6 +29,9 @@ export default defineConfig({
             'shared/**/*.test.ts',
             'domain/**/*.test.ts',
             'tests/domain/**/*.test.ts',
+            // Source guards: no database, no Nuxt boot, no live stack — they
+            // read `app/`'s own files rather than running against one.
+            'tests/guards/**/*.test.ts',
           ],
         },
         resolve: {
