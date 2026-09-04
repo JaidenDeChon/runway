@@ -30,6 +30,12 @@ import { useIsDesktop } from '@/composables/useIsDesktop'
 import { useRunwayData } from '@/composables/useRunwayData'
 import { useToday } from '@/composables/useToday'
 import { accountColorVar } from '@/lib/account-colors'
+import {
+  endingBalances,
+  legendEntries,
+  nextHiddenAccounts,
+  visibleAccountIds,
+} from '@/lib/account-selection'
 import { ARROW_LINK } from '@/lib/arrow-link'
 import type { ChartSeries, LegendEntry } from '@/lib/burndown'
 import type { BalanceReading } from '~~/domain/accounts'
@@ -49,11 +55,26 @@ const LOOKBACK_DAYS = 14
 /** How long the export holds the skeleton before swapping in the chart. */
 const LOAD_DELAY_MS = 550
 
-const { data, accounts, accountsById, safetyCushion, isEmpty, saveBalances } = useRunwayData()
+const {
+  data,
+  accounts,
+  accountsById,
+  safetyCushion,
+  isEmpty,
+  saveBalances,
+  defaultHorizonDays,
+  hiddenAccountIds,
+  setAccountHidden,
+  setDefaultHorizonDays,
+} = useRunwayData()
 const today = useToday()
 const isDesktop = useIsDesktop()
 
-const horizonDays = ref(30)
+// Read from useRunwayData() rather than held as a ref: the horizon is a
+// stored preference (user_settings.default_horizon_days), so the page has
+// nothing of its own to track. The write side is the ToggleGroup's
+// `@update:horizon-days` binding below, straight through to `setDefaultHorizonDays`.
+const horizonDays = computed(() => defaultHorizonDays.value)
 // Persisted in the browser for signed-out visitors, which is everyone today.
 const density = useChartDensity()
 const densityOpen = ref(false)
@@ -66,13 +87,12 @@ const whatIf = ref(false)
 const editorOpen = ref(false)
 const activeDate = ref<IsoDate | null>(null)
 
-// Held as the *deselected* set rather than the selected one so an account added
-// on another screen appears on the chart instead of silently missing from it.
-const deselected = ref<string[]>([])
-
-const selectedAccountIds = computed(() =>
-  accounts.value.filter((account) => !deselected.value.includes(account.id)).map((a) => a.id),
-)
+// Held as the *hidden* set rather than the shown one so an account added on
+// another screen appears on the chart instead of silently missing from it —
+// now `useRunwayData().hiddenAccountIds`, stored in
+// `public.dashboard_hidden_accounts` under the user's own session rather than
+// held only in this page's memory.
+const selectedAccountIds = computed(() => visibleAccountIds(accounts.value, hiddenAccountIds.value))
 
 let loadTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -192,32 +212,29 @@ const upcoming = computed(() =>
   ),
 )
 
+// The legend figure is the balance at the *end* of the window, not today's —
+// read from `summary.ending`, which `project()` already found in the same
+// pass that built the series, never by indexing a series' last point.
 const legend = computed<LegendEntry[]>(() =>
-  accounts.value.map((account) => {
-    const points = legendProjection.value.byAccount.find(
-      (entry) => entry.accountId === account.id,
-    )?.points
-    return {
-      accountId: account.id,
-      name: account.name,
-      color: account.color,
-      // The legend figure is the balance at the *end* of the window, not today's.
-      endingBalance: points?.[points.length - 1]?.balance ?? account.balance,
-      checked: !deselected.value.includes(account.id),
-      disabled: selectedAccountIds.value.length === 1 && selectedAccountIds.value[0] === account.id,
-    }
-  }),
+  legendEntries(
+    accounts.value,
+    endingBalances(legendProjection.value.byAccount),
+    hiddenAccountIds.value,
+  ),
 )
 
 function setAccountChecked(accountId: string, checked: boolean): void {
-  if (checked) {
-    deselected.value = deselected.value.filter((id) => id !== accountId)
-    return
-  }
-  // Guarded here as well as in the legend's `disabled`: an empty chart has
-  // nothing to say, and the design's silent rejection was the worse answer.
-  if (selectedAccountIds.value.length <= 1) return
-  deselected.value = [...deselected.value, accountId]
+  // `nextHiddenAccounts` is the tested rule — including the guard that
+  // refuses to hide the last visible account, matching the legend's own
+  // `disabled` — so this function does not compute the next set itself.
+  const next = nextHiddenAccounts(
+    hiddenAccountIds.value,
+    selectedAccountIds.value,
+    accountId,
+    checked,
+  )
+  if (next === null) return
+  void setAccountHidden(accountId, !checked)
 }
 
 const activeOccurrences = computed<readonly Occurrence[]>(() =>
@@ -303,7 +320,7 @@ function saveOverride(override: OccurrenceOverride): void {
         :loading="loading"
         :what-if="whatIf"
         :desktop="isDesktop"
-        @update:horizon-days="(value) => (horizonDays = value)"
+        @update:horizon-days="(value) => void setDefaultHorizonDays(value)"
         @update:density="(value) => (density = value)"
         @update:density-open="(value) => (densityOpen = value)"
         @update:account-checked="setAccountChecked"
