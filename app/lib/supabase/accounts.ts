@@ -58,6 +58,7 @@ export interface HouseholdSettings {
   readonly timeZone: string | null
   readonly staleAfterDays: number
   readonly discretionaryAccountId: string | null
+  readonly defaultHorizonDays: number
 }
 
 /**
@@ -114,6 +115,7 @@ export function toHouseholdSettings(row: SelectedUserSettingsRow | null): Househ
       timeZone: null,
       staleAfterDays: DEFAULT_STALE_AFTER_DAYS,
       discretionaryAccountId: null,
+      defaultHorizonDays: 30,
     }
   }
   return {
@@ -122,5 +124,16 @@ export function toHouseholdSettings(row: SelectedUserSettingsRow | null): Househ
     timeZone: row.time_zone,
     staleAfterDays: row.balance_stale_after_days,
     discretionaryAccountId: row.discretionary_account_id,
+    defaultHorizonDays: row.default_horizon_days,
   }
+}
+
+export type HiddenAccountRow = Database['public']['Tables']['dashboard_hidden_accounts']['Row']
+/** Named columns, never `select('*')` — same rule as `ACCOUNT_COLUMNS`. */
+export const HIDDEN_ACCOUNT_COLUMNS = 'account_id' as const
+export type SelectedHiddenAccountRow = Pick<HiddenAccountRow, 'account_id'>
+
+/** Ids of the accounts the user has hidden from the dashboard's chart legend. */
+export function toHiddenAccountIds(rows: readonly SelectedHiddenAccountRow[] | null): string[] {
+  return (rows ?? []).map((row) => row.account_id)
 }

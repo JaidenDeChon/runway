@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { AccountRow, UserSettingsRow } from './accounts'
-import { toAccount, toAccountColumns, toHouseholdSettings } from './accounts'
+import type { AccountRow, SelectedHiddenAccountRow, UserSettingsRow } from './accounts'
+import { toAccount, toAccountColumns, toHiddenAccountIds, toHouseholdSettings } from './accounts'
 
 const row = (over: Partial<AccountRow> = {}): AccountRow => ({
   id: 'acct-1',
@@ -97,7 +97,16 @@ describe('toHouseholdSettings', () => {
       timeZone: null,
       staleAfterDays: 14,
       discretionaryAccountId: 'acct-1',
+      defaultHorizonDays: 30,
     })
+  })
+
+  it('carries a non-default stored horizon through, not just the column default', () => {
+    // The bug this issue fixes: the column was already selected and already
+    // in SelectedUserSettingsRow, but this mapping dropped it on the floor.
+    expect(toHouseholdSettings(settingsRow({ default_horizon_days: 90 })).defaultHorizonDays).toBe(
+      90,
+    )
   })
 
   it('falls back to the column defaults when there is no row yet', () => {
@@ -108,6 +117,25 @@ describe('toHouseholdSettings', () => {
       timeZone: null,
       staleAfterDays: 14,
       discretionaryAccountId: null,
+      defaultHorizonDays: 30,
     })
+  })
+})
+
+describe('toHiddenAccountIds', () => {
+  const hiddenRow = (accountId: string): SelectedHiddenAccountRow => ({ account_id: accountId })
+
+  it('maps null to an empty list', () => {
+    expect(toHiddenAccountIds(null)).toEqual([])
+  })
+
+  it('maps an empty list to an empty list', () => {
+    expect(toHiddenAccountIds([])).toEqual([])
+  })
+
+  it('maps each row to its account id, duplicates included', () => {
+    expect(
+      toHiddenAccountIds([hiddenRow('acct-1'), hiddenRow('acct-2'), hiddenRow('acct-1')]),
+    ).toEqual(['acct-1', 'acct-2', 'acct-1'])
   })
 })
