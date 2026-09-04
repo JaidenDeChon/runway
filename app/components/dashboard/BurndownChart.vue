@@ -30,6 +30,7 @@ import {
   dayBands,
   futureDashFor,
   gridLineYs,
+  labelFlipsLeft,
   MOBILE_LAYOUT,
   percentOf,
   scaleX,
@@ -201,6 +202,9 @@ const lowestMarker = computed(() => {
     cy: scaleY(props.lowest.balance, range.value, layout.value),
   }
 })
+
+/** Past 60% of the width the label would run off the card, so it flips to the marker's left. */
+const lowestFlipped = computed(() => labelFlipsLeft(lowestIndex.value, count.value, layout.value))
 
 const ticks = computed(() =>
   tickIndices(count.value, tickStepForHorizon(props.horizonDays), props.todayIndex).map(
@@ -509,16 +513,24 @@ function onFocus(): void {
         >$0</span
       >
 
-      <span
+      <div
         v-if="lowestMarker && props.lowest"
-        class="absolute translate-x-3 -translate-y-1/2 whitespace-nowrap text-[11px] text-muted-foreground"
+        class="absolute -translate-y-1/2 whitespace-nowrap"
+        :class="cn(lowestFlipped ? '-ml-3 -translate-x-full text-right' : 'ml-3')"
         :style="{
           left: `${percentOf(lowestMarker.cx, layout.width)}%`,
           top: `${percentOf(lowestMarker.cy, layout.height)}%`,
         }"
       >
-        Lowest · {{ formatDateShort(props.lowest.date) }}
-      </span>
+        <MoneyText
+          :amount="props.lowest.balance"
+          size="sm"
+          class="block font-semibold text-destructive"
+        />
+        <span class="block text-[11px] text-muted-foreground">
+          Lowest · {{ formatDateShort(props.lowest.date) }}
+        </span>
+      </div>
 
       <Popover>
         <PopoverTrigger
