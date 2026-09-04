@@ -212,8 +212,17 @@ async function onSave(): Promise<void> {
       today.value,
     )
     emit('update:open', false)
-  } catch {
-    errorMessage.value = 'Could not save this item. Check your connection and try again.'
+  } catch (err) {
+    // The account picker is already disabled while editing (see the
+    // template), so this path is defence in depth — the database itself
+    // rejects reassigning a live rule's account while it has occurrences
+    // (docs/database/schema.md, "Why the rule FK carries account_id"), and
+    // useRunwayData.ts's saveRecurringItem distinguishes that from a
+    // generic failure so this is never blamed on the connection.
+    errorMessage.value =
+      err instanceof Error && err.message === 'save-failed-account-in-use'
+        ? "Can't be moved to another account. End this item and add it on the other account instead."
+        : 'Could not save this item. Check your connection and try again.'
   } finally {
     saving.value = false
   }
@@ -282,7 +291,7 @@ async function onDelete(): Promise<void> {
           <Label for="recurring-account">Account</Label>
           <Select
             :model-value="form.accountId"
-            :disabled="accounts.length === 0"
+            :disabled="isEditing || accounts.length === 0"
             @update:model-value="(value) => value && (form.accountId = value as string)"
           >
             <SelectTrigger id="recurring-account" class="w-full">
@@ -297,6 +306,17 @@ async function onDelete(): Promise<void> {
           <p v-if="accounts.length === 0" class="text-xs text-muted-foreground">
             No accounts yet —
             <NuxtLink to="/accounts" class="underline underline-offset-2">add one first</NuxtLink>.
+          </p>
+          <!-- occurrences_rule_fk (docs/database/schema.md, "Why the rule FK
+               carries account_id") rejects reassigning a live rule's account
+               while it has occurrences, and regeneration means every saved
+               rule has some from its first save onward. Moving an item is a
+               rule split, the same shape as apply-to-future — not an
+               in-place edit — so the control is disabled rather than offering
+               an action the data model has always forbidden. -->
+          <p v-else-if="isEditing" class="text-xs text-muted-foreground">
+            Can't be moved to another account. End this item and add it on the
+            other account instead.
           </p>
         </div>
       </div>

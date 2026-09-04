@@ -400,4 +400,82 @@ describe.skipIf(LOCAL_STACK === null)('regenerate_occurrences', () => {
     const stillHistoric = afterRegen.find((row) => row.projected_date === oldDate)
     expect(stillHistoric).toEqual(historic)
   })
+
+  it("reassigning a rule's account is rejected once occurrences exist (occurrences_rule_fk)", async () => {
+    // Pins the data model's own behaviour, not a UI detail:
+    // docs/database/schema.md's "Why the rule FK carries account_id" is
+    // explicit that this reassignment is rejected by design, the same shape
+    // as apply-to-future — a rule split, never an in-place edit. Regenerating
+    // on every save (this file's own subject) is what makes this reachable
+    // on the very first save of any rule, which is why the editor now
+    // disables the Account control while editing rather than relying on this
+    // error alone.
+    caseIndex += 1
+    const household = await seedHousehold(context, {
+      label: LABEL,
+      accounts: [
+        {
+          id: 'a',
+          name: `FK probe account A ${caseIndex}`,
+          balance: toMinorUnits(1_000),
+          balanceAsOf: TODAY,
+          color: 'chart-2',
+          isDiscretionarySource: false,
+        },
+        {
+          id: 'b',
+          name: `FK probe account B ${caseIndex}`,
+          balance: toMinorUnits(1_000),
+          balanceAsOf: TODAY,
+          color: 'chart-3',
+          isDiscretionarySource: false,
+        },
+      ],
+      recurringItems: [
+        {
+          id: 'rule',
+          name: `FK probe rule ${caseIndex}`,
+          kind: 'bill',
+          amount: toMinorUnits(900),
+          cadence: 'monthly',
+          accountId: 'a',
+          nextOccurrence: '2026-08-20',
+          amountSource: 'fixed',
+          depositHistory: [],
+          isVariable: false,
+        },
+      ],
+    })
+
+    const accountAId = household.accountIds.get('a') as string
+    const accountBId = household.accountIds.get('b') as string
+    const probeRuleId = household.ruleIds.get('rule') as string
+    const window = materializationWindow(TODAY)
+
+    // At least one occurrence must exist for the FK to have anything to
+    // reject over — before saveRecurringItem started regenerating on every
+    // save, no app-created rule ever had one, which is exactly why this
+    // reassignment "worked by accident" until now.
+    const regenerated = await regenerate(context, [probeRuleId], window, [
+      baseItem(probeRuleId, { accountId: accountAId }),
+    ])
+    expect(regenerated.upserted).toBeGreaterThan(0)
+
+    const { error: reassignError } = await context.client
+      .from('recurring_rules')
+      .update({ account_id: accountBId })
+      .eq('id', probeRuleId)
+    expect(reassignError).not.toBeNull()
+    expect(reassignError?.code).toBe('23503')
+
+    // The rule still points at its original account — the rejected update
+    // changed nothing.
+    const { data: reread, error: rereadError } = await context.client
+      .from('recurring_rules')
+      .select('account_id')
+      .eq('id', probeRuleId)
+      .single()
+    expect(rereadError).toBeNull()
+    expect(reread?.account_id).toBe(accountAId)
+  })
 })

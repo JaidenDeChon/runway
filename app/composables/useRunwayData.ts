@@ -457,6 +457,15 @@ export function useRunwayData() {
           .single()
     if (saveError || !saved) {
       console.error('recurring item save failed', { code: saveError?.code })
+      // 23503 is Postgres' foreign_key_violation, and the one FK an ordinary
+      // edit can hit here is `occurrences_rule_fk`
+      // (docs/database/schema.md, "Why the rule FK carries account_id"):
+      // reassigning a rule's account while it has occurrences is rejected by
+      // design, not a connection problem. Distinguished so the editor can say
+      // so accurately — RecurringItemEditor.vue already disables the Account
+      // control while editing, so this is defence in depth for whatever
+      // reaches this call some other way.
+      if (saveError?.code === '23503') throw new Error('save-failed-account-in-use')
       throw new Error('save-failed')
     }
 

@@ -156,6 +156,16 @@ it, that reassignment is rejected while occurrences exist. Moving a rule between
 accounts is a rule split, the same shape as apply-to-future: close the old rule,
 open a new one on the new account.
 
+Issue #9's regeneration makes this reachable on the very first save of any
+rule — before it, no app-created rule ever had an occurrence, so the
+rejection was theoretical. `RecurringItemEditor.vue` now disables the Account
+control while editing an existing rule rather than offering an action the
+data model has always forbidden; `useRunwayData.ts`'s `saveRecurringItem`
+still distinguishes the `23503` (`foreign_key_violation`) error as defence in
+depth, for anything that reaches the write some other way. Moving an item
+between accounts is unimplemented — it would be this same rule-split shape —
+and belongs to its own issue, not this one.
+
 This is the schema's general stance — an invariant a reader has to remember is
 not an invariant. Everything else here is structural, and the one denormalized
 value is too.
@@ -317,6 +327,16 @@ predicate does not merely spare protected rows inside the window, it never
 considers rows outside it. `user_id` is derived from `(select auth.uid())`,
 never a parameter, so the function cannot act across two users' data in one
 call no matter what rule ids a caller names.
+
+**On the issue's wording, precisely.** Issue #9 says "ending or editing a
+rule updates only *future* non-overridden occurrences." Regeneration is
+actually not future-only: it rewrites and deletes unprotected rows across
+the *whole* window, look-back included — a `projected`, non-overridden row
+in the past is stale in exactly the same way a future one would be, since it
+never actually happened, and the RPC has no reason to treat the two
+differently. Only *protection* (`is_overridden`, or `status <> 'projected'`)
+is what the wording's "non-overridden" was really pointing at; "future" is
+not a second condition this implementation applies.
 
 **The invariant is structural, not just the RPC's own discipline.** A trigger,
 `private.protect_materialized_occurrence()` (`before update on
