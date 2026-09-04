@@ -131,3 +131,26 @@ export function occurrenceDates(item: RecurringItem, start: IsoDate, end: IsoDat
 
   return ascendingUnique(dates)
 }
+
+/**
+ * The first date on or after `from` on which `item` occurs, or `null` when the
+ * rule has no occurrence left — its `endsOn` has passed, or the search window
+ * closed before one arrived.
+ *
+ * `withinDays` bounds the search so an item that cannot recur (a closed
+ * window) terminates instead of walking forever. `400` rather than `366`:
+ * annual is the longest cadence, and an annual rule anchored on Feb 29 must
+ * still be found from a Mar 1 start in a non-leap year, which is more than a
+ * bare calendar year away from the previous Feb 29.
+ *
+ * Built on `occurrenceDates` rather than a second expansion path — one walk,
+ * one implementation. `occurrenceDates` already clamps `startsOn`/`endsOn`
+ * first, so an ended rule returns `null` for free.
+ */
+export function nextOccurrenceOnOrAfter(
+  item: RecurringItem,
+  from: IsoDate,
+  withinDays = 400,
+): IsoDate | null {
+  return occurrenceDates(item, from, addDays(from, withinDays))[0] ?? null
+}

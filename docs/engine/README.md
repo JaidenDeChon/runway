@@ -27,6 +27,7 @@ without infrastructure, and it is enforced rather than promised
 | `evaluate(summary, cushion)` | covered / tight / short, the margin, and the shortfall |
 | `shortfallThrough(data, question)` | "will I make it to this date?" and, if not, by how much |
 | `occurrencesIn(data, window)` | the individual events in a window, expanded from the rules |
+| `nextOccurrenceOnOrAfter(item, from, withinDays?)` | the first date on or after `from` a rule occurs, or `null` once it has ended (`domain/cadence.ts`) — what a list screen shows as "next", never the stored anchor |
 | `upcomingBills(data, today)` | the next occurrence of each bill ahead, for the shortfall screen's picker |
 | `signedAmount(item)` | the signed delta of a rule, so a screen never re-derives the sign from `kind` |
 | `classifyMargin(margin)` | the three-band verdict on its own |
@@ -159,6 +160,25 @@ the flat form was wrong in the one direction that matters.
 the closing balance in the same pass. `evaluate` takes that summary rather than
 a list of points precisely so that it *cannot* re-scan. If you find yourself
 writing a loop over `points` to find a minimum, the engine already found it.
+
+**Month-end clamping is an explicit, documented policy** — the issue that added
+recurring items asked for one rather than leaving it implicit:
+
+- A day the month does not have clamps to that month's last day. A rule on the
+  31st lands on Feb 28 (or Feb 29, in a leap year); `LAST_DAY_OF_MONTH` (`-1`)
+  always lands on the true last day, whatever length the month is.
+- **The clamp never sticks.** Each occurrence is built from the anchor and a
+  cycle count, never from the previous occurrence (`addMonthsClamped` in
+  `domain/dates.ts`, called from `monthAlignedDates` in `domain/cadence.ts`), so
+  a rule on the 31st returns to the 31st every month that has one — it does not
+  stay pinned to the 28th after February clamps it once.
+- **A clamp collision is one occurrence, not two.** `daysOfMonth: [30, 31]` in a
+  28-day February lands both on the same date; `ascendingUnique` in
+  `domain/cadence.ts` de-duplicates before returning, because
+  `occurrences` is unique on `(rule_id, projected_date)` and a duplicate could
+  not be stored regardless.
+- `nextOccurrenceOnOrAfter` inherits this for free — it is `occurrenceDates`'s
+  first result over a bounded window, not a second walk.
 
 ## Performance
 

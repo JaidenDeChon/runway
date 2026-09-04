@@ -38,6 +38,10 @@ const props = defineProps<{
   amount: MinorUnits
   cadence: Cadence
   nextOccurrence: IsoDate
+  /** True while the parent's save handler is awaiting the write. */
+  saving?: boolean
+  /** Set by the parent on a failed save; rendered inline. */
+  error?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -50,7 +54,18 @@ const emit = defineEmits<{
   build: []
 }>()
 
-const isValid = computed(() => props.name.trim().length > 0)
+// A blank name or a zero amount both fail to save: recurring_rules has
+// `amount_cents > 0`, and this step's default amount is $0, so the button
+// has to stay disabled until a real amount is typed — the same guard
+// AccountStepCard's name check already establishes, extended to the field
+// the constraint actually depends on.
+const isValid = computed(() => props.name.trim().length > 0 && props.amount > 0)
+const canBuild = computed(() => isValid.value && !props.saving)
+const validationHint = computed(() => {
+  if (props.name.trim().length === 0) return 'Name your bill or paycheck to continue.'
+  if (props.amount <= 0) return 'Enter an amount to continue.'
+  return null
+})
 
 const namePlaceholder = computed(() => (props.kind === 'income' ? 'e.g. Paycheck' : 'e.g. Rent'))
 
@@ -62,7 +77,8 @@ function onKindChange(value: unknown): void {
 }
 
 function onBuild(): void {
-  if (!isValid.value) return
+  // The gate exists in two places: disabling Continue, and here.
+  if (!canBuild.value) return
   emit('build')
 }
 </script>
@@ -138,19 +154,23 @@ function onBuild(): void {
         />
       </div>
 
+      <p v-if="props.error" role="alert" class="text-sm text-destructive">{{ props.error }}</p>
+
       <div class="flex gap-2 pt-1">
-        <Button type="button" variant="outline" @click="emit('back')">Back</Button>
+        <Button type="button" variant="outline" :disabled="props.saving" @click="emit('back')">
+          Back
+        </Button>
         <Button
           type="submit"
           class="flex-1"
-          :disabled="!isValid"
+          :disabled="!canBuild"
           :aria-describedby="isValid ? undefined : 'onboarding-item-build-help'"
         >
           Build my runway
         </Button>
       </div>
-      <p v-if="!isValid" id="onboarding-item-build-help" class="text-xs text-muted-foreground">
-        Name your bill or paycheck to continue.
+      <p v-if="validationHint" id="onboarding-item-build-help" class="text-xs text-muted-foreground">
+        {{ validationHint }}
       </p>
     </CardContent>
   </form>

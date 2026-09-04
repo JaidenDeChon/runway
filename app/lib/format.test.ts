@@ -80,4 +80,8 @@ describe('formatCadence', () => {
   it('title-cases for the row meta line', () => {
     expect(formatCadence('biweekly')).toBe('Biweekly')
   })
+
+  it('renders annual as "Annually" rather than a bare title-case', () => {
+    expect(formatCadence('annual')).toBe('Annually')
+  })
 })

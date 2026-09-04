@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * The recurring-item form — one body, mounted into a Sheet or a Dialog by
- * `ResponsiveEditor`. Mirrors `AccountEditor`'s shape and its two deliberate
+ * `ResponsiveEditor`. Mirrors `AccountEditor`'s shape and its deliberate
  * deviations from the export:
  *
  * - **Save is disabled while the name is blank**, rather than the export's
@@ -10,11 +10,19 @@
  *   confirmation and no undo" vs. a confirm step); `AccountEditor` already
  *   answered it for this app, so the same inline confirm is used here rather
  *   than inventing a second answer to the same question.
+ * - **An ends-on control**, which the design never drew (spec.md open
+ *   question 11: "Cadence has no end date, no skip, and no 'last
+ *   occurrence'") but issue #8 requires as a first-class verb — ending a rule
+ *   stops future occurrences without erasing past ones.
  *
  * Predicted income is resolved by `useRunwayData().saveRecurringItem` at save
  * time — this form only *previews* the predicted figure, via the same
  * `resolveAmount` the store calls, so the preview and the saved value can
  * never disagree.
+ *
+ * Every write is async and can fail — a dropped connection, an expired
+ * session — so `saving`/`deleting` disable the buttons and a failure renders
+ * inline rather than closing the editor out from under whatever the user typed.
  */
 import { computed, reactive, ref, watch } from 'vue'
 import MoneyInput from '@/components/MoneyInput.vue'
@@ -52,6 +60,9 @@ const today = useToday()
 
 const isEditing = computed(() => props.item !== null)
 const confirmingDelete = ref(false)
+const saving = ref(false)
+const deleting = ref(false)
+const errorMessage = ref<string | null>(null)
 
 const form = reactive({
   type: 'bill' as RecurringKind,
@@ -63,6 +74,20 @@ const form = reactive({
   amountSource: 'fixed' as AmountSource,
   depositHistory: [] as readonly MinorUnits[],
   isVariable: false,
+  hasEndsOn: false,
+  // Always holds a real date, even unticked, so ticking the checkbox has a
+  // sane value to show immediately rather than an empty date input.
+  endsOn: today.value as IsoDate,
+  // No control on this screen writes these three — `daysOfMonth`/`daysOfWeek`
+  // arrive from a screen that doesn't exist yet, and `startsOn` is only ever
+  // set by the apply-to-future split described in `domain/types.ts`. They are
+  // carried here anyway, `undefined` unless an edited item already had one, so
+  // saving an *unrelated* field change round-trips them unchanged instead of
+  // nulling them — the same failure shape `endsOn`'s idiom already guards
+  // against, extended to fields the form cannot show or edit.
+  daysOfMonth: undefined as readonly number[] | undefined,
+  daysOfWeek: undefined as readonly number[] | undefined,
+  startsOn: undefined as IsoDate | undefined,
 })
 
 watch(
@@ -70,6 +95,7 @@ watch(
   ([open, item]) => {
     if (!open) return
     confirmingDelete.value = false
+    errorMessage.value = null
     if (item) {
       Object.assign(form, {
         type: item.kind,
@@ -81,6 +107,11 @@ watch(
         amountSource: item.amountSource,
         depositHistory: item.depositHistory,
         isVariable: item.isVariable,
+        hasEndsOn: item.endsOn !== undefined,
+        endsOn: item.endsOn ?? today.value,
+        daysOfMonth: item.daysOfMonth,
+        daysOfWeek: item.daysOfWeek,
+        startsOn: item.startsOn,
       })
       return
     }
@@ -94,12 +125,29 @@ watch(
       amountSource: 'fixed',
       depositHistory: [],
       isVariable: false,
+      hasEndsOn: false,
+      endsOn: today.value,
+      daysOfMonth: undefined,
+      daysOfWeek: undefined,
+      startsOn: undefined,
     })
   },
   { immediate: true },
 )
 
-const isValid = computed(() => form.name.trim().length > 0)
+// A blank name, a zero amount, or no account all fail to save:
+// recurring_rules has `amount_cents > 0` and `account_id not null`, so
+// either produces a database error, and Save being disabled until every
+// one is real is this app's existing answer to that (spec.md open
+// question 8) — the same stance the blank-name guard already took, now
+// extended to every field the database actually depends on. An empty
+// `accounts` list (the account step of onboarding was skipped, or every
+// account was deleted) leaves `form.accountId` `''`, which fails the same
+// way a blank name does rather than reaching the database as a malformed
+// uuid.
+const isValid = computed(
+  () => form.name.trim().length > 0 && form.amount > 0 && form.accountId.length > 0,
+)
 const namePlaceholder = computed(() =>
   form.type === 'bill' ? 'e.g. Electric & water' : 'e.g. Paycheck',
 )
@@ -129,30 +177,57 @@ const showPredictedPanel = computed(
   () => form.type === 'income' && form.amountSource === 'predicted',
 )
 
-function onSave(): void {
+async function onSave(): Promise<void> {
   if (!isValid.value) return
-  saveRecurringItem({
-    ...(props.item ? { id: props.item.id } : {}),
-    name: form.name.trim(),
-    kind: form.type,
-    amount: form.amount,
-    cadence: form.cadence,
-    accountId: form.accountId,
-    nextOccurrence: form.nextOccurrence,
-    // Bills are always fixed and never carry the variable flag — the
-    // type-specific controls are hidden, not cleared, when switching tabs, so
-    // the invariant is enforced here rather than trusting stale form state.
-    amountSource: form.type === 'income' ? form.amountSource : 'fixed',
-    depositHistory: form.depositHistory,
-    isVariable: form.type === 'bill' ? form.isVariable : false,
-  })
-  emit('update:open', false)
+  saving.value = true
+  errorMessage.value = null
+  try {
+    await saveRecurringItem({
+      ...(props.item ? { id: props.item.id } : {}),
+      name: form.name.trim(),
+      kind: form.type,
+      amount: form.amount,
+      cadence: form.cadence,
+      accountId: form.accountId,
+      nextOccurrence: form.nextOccurrence,
+      // Bills are always fixed and never carry the variable flag — the
+      // type-specific controls are hidden, not cleared, when switching tabs, so
+      // the invariant is enforced here rather than trusting stale form state.
+      amountSource: form.type === 'income' ? form.amountSource : 'fixed',
+      depositHistory: form.depositHistory,
+      isVariable: form.type === 'bill' ? form.isVariable : false,
+      // Unticked -> absent, not `endsOn: undefined` — `exactOptionalPropertyTypes`
+      // distinguishes the two, and the DB enforces `ends_on >= starts_on`
+      // for whatever comes through here regardless.
+      ...(form.hasEndsOn ? { endsOn: form.endsOn } : {}),
+      // Round-tripped, not editable here — see the form field's own comment.
+      // Omitting these when the item never had one keeps a brand-new item's
+      // payload exactly as before; carrying them when it did is what stops an
+      // unrelated field edit from silently nulling them out.
+      ...(form.daysOfMonth ? { daysOfMonth: form.daysOfMonth } : {}),
+      ...(form.daysOfWeek ? { daysOfWeek: form.daysOfWeek } : {}),
+      ...(form.startsOn ? { startsOn: form.startsOn } : {}),
+    })
+    emit('update:open', false)
+  } catch {
+    errorMessage.value = 'Could not save this item. Check your connection and try again.'
+  } finally {
+    saving.value = false
+  }
 }
 
-function onDelete(): void {
+async function onDelete(): Promise<void> {
   if (!props.item) return
-  removeRecurringItem(props.item.id)
-  emit('update:open', false)
+  deleting.value = true
+  errorMessage.value = null
+  try {
+    await removeRecurringItem(props.item.id)
+    emit('update:open', false)
+  } catch {
+    errorMessage.value = 'Could not delete this item. Check your connection and try again.'
+  } finally {
+    deleting.value = false
+  }
 }
 </script>
 
@@ -204,6 +279,7 @@ function onDelete(): void {
           <Label for="recurring-account">Account</Label>
           <Select
             :model-value="form.accountId"
+            :disabled="accounts.length === 0"
             @update:model-value="(value) => value && (form.accountId = value as string)"
           >
             <SelectTrigger id="recurring-account" class="w-full">
@@ -215,6 +291,10 @@ function onDelete(): void {
               </SelectItem>
             </SelectContent>
           </Select>
+          <p v-if="accounts.length === 0" class="text-xs text-muted-foreground">
+            No accounts yet —
+            <NuxtLink to="/accounts" class="underline underline-offset-2">add one first</NuxtLink>.
+          </p>
         </div>
       </div>
 
@@ -281,16 +361,39 @@ function onDelete(): void {
         </div>
       </div>
 
+      <div class="flex flex-col gap-2">
+        <div class="flex items-start gap-3">
+          <Checkbox
+            id="recurring-has-end"
+            :model-value="form.hasEndsOn"
+            aria-describedby="recurring-has-end-help"
+            @update:model-value="(value) => (form.hasEndsOn = value === true)"
+          />
+          <Label for="recurring-has-end" class="leading-snug">This rule ends on a date</Label>
+        </div>
+        <div v-if="form.hasEndsOn" class="flex flex-col gap-2 pl-7">
+          <Label for="recurring-ends-on">Last occurrence</Label>
+          <Input id="recurring-ends-on" v-model="form.endsOn" type="date" class="w-full font-mono" />
+        </div>
+        <p id="recurring-has-end-help" class="pl-7 text-xs text-muted-foreground">
+          Past occurrences stay. Nothing new is projected after this date.
+        </p>
+      </div>
+
       <div v-if="confirmingDelete" role="alertdialog" class="rounded-md border border-destructive/30 bg-destructive/10 p-3">
         <p class="text-sm font-medium">Delete {{ props.item?.name }}?</p>
         <p class="mt-1 text-xs text-muted-foreground">This removes it from every future projection. This can't be undone.</p>
         <div class="mt-3 flex gap-2">
-          <Button type="button" variant="destructive" size="sm" @click="onDelete">Delete</Button>
-          <Button type="button" variant="ghost" size="sm" @click="confirmingDelete = false">
+          <Button type="button" variant="destructive" size="sm" :disabled="deleting" @click="onDelete">
+            Delete
+          </Button>
+          <Button type="button" variant="ghost" size="sm" :disabled="deleting" @click="confirmingDelete = false">
             Keep it
           </Button>
         </div>
       </div>
+
+      <p v-if="errorMessage" role="alert" class="text-sm text-destructive">{{ errorMessage }}</p>
 
       <div class="flex items-center justify-between gap-2 pt-1">
         <Button
@@ -298,6 +401,7 @@ function onDelete(): void {
           type="button"
           variant="ghost"
           class="text-destructive hover:text-destructive"
+          :disabled="saving"
           @click="confirmingDelete = true"
         >
           Delete
@@ -306,7 +410,7 @@ function onDelete(): void {
 
         <div class="flex gap-2">
           <Button type="button" variant="outline" @click="emit('update:open', false)">Cancel</Button>
-          <Button type="submit" :disabled="!isValid">
+          <Button type="submit" :disabled="!isValid || saving">
             {{ isEditing ? 'Save changes' : 'Add recurring item' }}
           </Button>
         </div>

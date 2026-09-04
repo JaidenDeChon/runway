@@ -34,10 +34,13 @@ useHead({ title: 'Welcome - Runway' })
 const { accounts, saveAccount, saveRecurringItem, clearRecords } = useRunwayData()
 const today = useToday()
 
-// Onboarding's recurring-item step is always a blank slate — see
-// `useRunwayData.clearRecords`. It only ever clears the session-local
-// records; it must never delete a database account, so a returning user with
-// accounts already on file simply adds another one here.
+// Drops any stale session-local transfers left over from a previous visit
+// — see `useRunwayData.clearRecords`. Recurring items are real rows now
+// (issue #8) and this no longer touches them: a returning user's items are
+// their real data, not seeded state to reset, and `itemId` below already
+// makes the recurring-item step idempotent (a repeat "Continue" upserts the
+// same row instead of creating a second one) without needing a blank slate
+// here. Never deletes a database account either, for the same reason.
 clearRecords()
 
 type Step = 'account' | 'item' | 'done'
@@ -47,6 +50,8 @@ const accountId = ref<string | null>(null)
 const itemId = ref<string | null>(null)
 const savingAccount = ref(false)
 const accountError = ref<string | null>(null)
+const savingItem = ref(false)
+const itemError = ref<string | null>(null)
 
 const accountForm = reactive({
   name: '',
@@ -92,23 +97,35 @@ function handleBack(): void {
   step.value = 'account'
 }
 
-function handleBuildRunway(): void {
+async function handleBuildRunway(): Promise<void> {
   const trimmed = itemForm.name.trim()
-  if (!trimmed || !accountId.value) return
-  const saved = saveRecurringItem({
-    id: itemId.value ?? undefined,
-    name: trimmed,
-    kind: itemForm.kind,
-    amount: itemForm.amount,
-    cadence: itemForm.cadence,
-    accountId: accountId.value,
-    nextOccurrence: itemForm.nextOccurrence,
-    amountSource: 'fixed',
-    depositHistory: [],
-    isVariable: false,
-  })
-  itemId.value = saved.id
-  step.value = 'done'
+  // The disabled button already guards this (RecurringItemStepCard's own
+  // isValid), including the amount: recurring_rules.amount_cents > 0 rejects
+  // the step's $0 default, so belt and suspenders here matches the account
+  // step's own guard above.
+  if (!trimmed || !accountId.value || itemForm.amount <= 0) return
+  savingItem.value = true
+  itemError.value = null
+  try {
+    const saved = await saveRecurringItem({
+      ...(itemId.value ? { id: itemId.value } : {}),
+      name: trimmed,
+      kind: itemForm.kind,
+      amount: itemForm.amount,
+      cadence: itemForm.cadence,
+      accountId: accountId.value,
+      nextOccurrence: itemForm.nextOccurrence,
+      amountSource: 'fixed',
+      depositHistory: [],
+      isVariable: false,
+    })
+    itemId.value = saved.id
+    step.value = 'done'
+  } catch {
+    itemError.value = 'Could not save this item. Check your connection and try again.'
+  } finally {
+    savingItem.value = false
+  }
 }
 
 const doneSummary = computed(() => {
@@ -167,6 +184,8 @@ watch(step, async () => {
           v-model:amount="itemForm.amount"
           v-model:cadence="itemForm.cadence"
           v-model:next-occurrence="itemForm.nextOccurrence"
+          :saving="savingItem"
+          :error="itemError"
           @back="handleBack"
           @build="handleBuildRunway"
         />
