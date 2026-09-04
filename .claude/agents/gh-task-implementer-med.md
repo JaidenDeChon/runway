@@ -39,6 +39,14 @@ you commit. A rate limit ends your turn without warning: a pushed branch survive
 it, an uncommitted working tree does not. Small, honest commits also let whoever
 resumes you see exactly how far you got.
 
+**You are the only agent writing to this branch.** If it moves and you did not
+move it — commits you did not make, an origin ahead of what you pushed — that is
+another writer, not an environment quirk. **Stop and report it. Never reset,
+never force-push, never amend over it.** `--force-with-lease` will not save you:
+once you have fetched the other writer's commit the lease check passes and the
+force succeeds. An agent has already reached exactly this point, guessed wrong
+about the cause, and force-pushed; only a `--soft` reset kept the work alive.
+
 If work already exists on the branch when you start, you are a resume. Read
 `git log --oneline main..HEAD` and the plan's step list, work out which steps are
 already done, and continue from there rather than starting over.

@@ -365,6 +365,84 @@ verdict about somebody's money that rests on a suite nobody actually ran is the
 worst artifact this project can produce. When the two rules appear to conflict,
 this one wins.
 
+## 7b. Exclusive ownership — one writer, one database owner
+
+**Two agents doing the same thing to the same resource is the most expensive
+failure mode this runner has.** It has happened twice, and neither time did a
+tool refuse the operation — both were caught afterwards, by hand:
+
+- A reviewer ran `db:reset` underneath a live Playwright run and destroyed it.
+  The suite died mid-flight, and the corpse looked exactly like a regression
+  that did not exist.
+- An implementer and this runner committed to the same branch concurrently. The
+  implementer saw commits it had not made, concluded the *environment* had an
+  "auto-commit mechanism", and on that wrong model reset and force-pushed over
+  them. `--force-with-lease` gave no protection: it had already fetched the
+  other agent's commit, so the lease check passed. A `--soft` reset is the only
+  reason nothing was lost — `--hard` would have destroyed the other agent's work
+  outright.
+
+Both cost far more to diagnose and repair than the work they collided with, and
+that cost comes out of the same token budget as the next real task. So:
+
+### The git write token
+
+**At any moment exactly one agent may commit or push to a branch, and you decide
+which one.** You coordinate the subagents, so ownership is yours to grant and
+revoke — it is never something a subagent may assume for itself.
+
+- When you spawn an implementer and tell it to commit each phase (`gh-task` §4),
+  **it holds the token for as long as it is alive.** You do not commit, amend,
+  rebase or push to that branch while it does — not to fix formatting, not to
+  reshape history, not to land a stray file. If something needs committing, send
+  it to the holder with `SendMessage`.
+- The token returns to you when the holder reports completion, or when you have
+  ordered it to stand down **and it has acknowledged**. "I told it to stop" is
+  not "it has stopped"; the second collision above happened precisely in that
+  gap.
+- Never run two agents that write to the same branch, even on different files.
+  Git conflicts at the commit level, not the file level.
+
+Record the holder in your checkpoint (`current.writer`) so a resumer inherits
+the answer instead of guessing at it.
+
+### If a branch moves under you
+
+**A branch that moved when you did not move it is evidence of another writer.
+Stop and report. Never reset and force-push.** This binds you and every agent
+you spawn, and it is what turns a collision into a five-minute repair instead of
+destroyed work.
+
+Diff first — `git diff <their-sha> <your-sha>` — and establish what actually
+differs before touching anything. Content is usually intact and only commit
+*shape* is at stake, which is cheap; it stops being cheap the instant someone
+"fixes" it blind.
+
+### The database owner
+
+The local Supabase stack is a **single shared mutable resource**. `db:reset`,
+`test:integration`, `test:rls` and `test:e2e` each take it over, and any two
+overlapping produce a result that measured the collision rather than the code.
+
+Unlike the git token, do **not** puppet-master this one. Database work happens
+on the fly in the middle of implementation, and routing every reset through you
+would cost more than it saves. Instead:
+
+- **Designate exactly one agent as the database owner for the task**, and pick a
+  capable one — the job needs the judgment to tell a real failure from a
+  collision, not just the ability to run a command. Say so explicitly in its
+  prompt, and name the role: it is the owner, not merely permitted.
+- Every other agent on the task — **including you** — must not run those four
+  commands, nor `supabase start` / `stop` / `db reset`, while an owner is
+  designated. If you need a number, ask the owner for it.
+- **The owner reports what it measured and at which SHA.** A suite result
+  without a SHA is not a result: the point of a shared stack is that the thing
+  measured may not be the thing being shipped.
+- Ownership ends when the owner reports completion. Then it is yours again.
+
+If you cannot get an uncontended run, that is a stopping point — not a licence
+to run anyway and caveat the number (§7a).
+
 ## 8. Checkpoint format
 
 ```
@@ -388,7 +466,9 @@ this one wins.
     "tier": "xhigh",
     "branch": "feat/dashboard",
     "pr": null,
-    "started_at": "2026-08-25T20:31:00Z"
+    "started_at": "2026-08-25T20:31:00Z",
+    "writer": "gh-task 4f1c8ab",
+    "db_owner": "gh-task 4f1c8ab"
   },
   "awaiting_review": [
     { "issue": 7, "pr": 51, "since": "2026-08-25T18:02:00Z", "reason": "feature" }
@@ -404,6 +484,12 @@ this one wins.
 
 `phase` is one of `resolving`, `planning`, `implementing`, `verifying`,
 `opening-pr`, `reviewing`, `disposing`. Set `current` to `null` between tasks.
+
+`writer` and `db_owner` name the agents currently holding the git write token
+and the database (§7b), or `"self"` when you hold one, or `null` when nobody
+does. A resumer that finds a name there must confirm that agent is actually gone
+before writing to the branch or touching the stack — a stale name is the same
+hazard as no name at all.
 
 Write it atomically — `jq` into a temp file, then `mv` — so a kill mid-write
 cannot leave you with truncated JSON you will not be able to parse on resume.

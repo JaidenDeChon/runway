@@ -221,6 +221,18 @@ Tell it two more things, both of which come from §1.6:
   git rather than in a lost transcript.
 - Where the checkpoint file is, so its own notes about deviations and open
   questions land somewhere a resumer will look.
+- That it is the **sole writer** on that branch for as long as it is alive, and
+  that if the branch moves and it did not move it, it must **stop and report —
+  never reset, never force-push.** `--force-with-lease` will not protect it once
+  it has fetched the other writer's commit.
+
+**Honour that from your side too.** While the implementer holds the write token
+you do not commit, amend, rebase or push to its branch — not to fix formatting,
+not to reshape history. Send it the change with `SendMessage` instead. The token
+returns to you when it reports completion, or when you have ordered it to stand
+down *and it has acknowledged*; "I told it to stop" is not "it has stopped", and
+that gap is where a real collision happened. See `gh-board-runner` §7b for the
+full rule and what it cost.
 
 ## 5. Verify and report
 
@@ -241,6 +253,16 @@ For database work specifically, a green run with the RLS tests skipped proves
 nothing (`docs/database/rls.md`). Bring the stack up and run `bun run test:rls`
 for real. Use exactly one `supabase start` — concurrent invocations deadlock on
 the CLI lock and create no containers at all.
+
+**You are the database owner for this task** unless you have explicitly handed
+that role to one other agent. The local stack is a single shared mutable
+resource: `db:reset`, `test:integration`, `test:rls` and `test:e2e` each take it
+over, and two of them overlapping measures the collision instead of the code.
+So never start one while another agent might be mid-run, and never let a
+reviewer or implementer reset the database on its own initiative — a `db:reset`
+under a live Playwright run destroys it, and the corpse looks exactly like a
+regression. **Name the SHA you measured at**, every time: a suite result without
+one is not a result, because the thing measured may not be the thing shipping.
 
 Keep a running account for the user of: the issue you resolved, the effort tiers
 you used and why, the files changed, verification results (including failures,
