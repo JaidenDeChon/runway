@@ -610,7 +610,7 @@ function onFocus(): void {
       <span
         v-for="tick in ticks"
         :key="`tick-${tick.index}`"
-        class="absolute -translate-x-1/2 text-[11px] text-muted-foreground"
+        class="absolute -translate-x-1/2 whitespace-nowrap text-[11px] text-muted-foreground"
         :style="{ left: `${tick.leftPct}%` }"
       >
         {{ formatDateShort(tick.date) }}
