@@ -22,10 +22,18 @@
  * composable's comment says it writes presentation numbers only. That is
  * checked here, against the real key, rather than trusted.
  *
- * The household on screen is user A's seeded Supabase rows, same as the
+ * The density tests' household is user A's seeded Supabase rows, same as the
  * accounts spec's read path — a fresh `page.goto` is enough to have a chart
- * to adjust, and nothing here writes, so `authenticatedPage` is the right
- * fixture rather than the empty household.
+ * to adjust, and nothing there writes, so `authenticatedPage` is the right
+ * fixture for them.
+ *
+ * The forecast-horizon test below is different: issue #12 made the horizon a
+ * *stored* preference (`user_settings.default_horizon_days`), so clicking
+ * `90d` is now a write. Running it on user A would permanently move A's
+ * stored horizon to 90 — failing the test's own first assertion on a second
+ * run, and changing the default for every other A-based spec. It runs on
+ * `emptyHouseholdPage` (user D) instead, adding one account through the UI
+ * first so the dashboard has something to chart.
  */
 
 import { assertBaseUrlIsLocal, clickUntil, expect, gotoHydrated, test } from './fixtures'
@@ -218,10 +226,29 @@ test.describe('the chart display settings', () => {
   }
 })
 
+/** Adds one account through the real UI, the way a user would. */
+async function addAccount(
+  page: import('@playwright/test').Page,
+  name: string,
+  balance: string,
+): Promise<void> {
+  await gotoHydrated(page, '/accounts')
+  const dialog = page.getByRole('dialog')
+  await clickUntil(page.getByRole('button', { name: 'Add account' }), dialog)
+  await page.locator('#account-name').fill(name)
+  await page.locator('#account-balance').fill(balance)
+  const row = page.getByRole('button', { name: `Edit ${name}` })
+  await clickUntil(dialog.getByRole('button', { name: 'Add account' }), row)
+  await expect(row).toBeVisible()
+}
+
 test.describe('the forecast horizon', () => {
   test('is a labelled group whose selection changes the window drawn', async ({
-    authenticatedPage: page,
+    emptyHouseholdPage: page,
   }) => {
+    // Issue #12 made the horizon a stored preference — see the file header
+    // comment for why this runs on D rather than A.
+    await addAccount(page, 'E2E Horizon', '1000')
     await gotoHydrated(page, '/')
 
     const group = page.getByRole('group', { name: 'Forecast horizon' })
