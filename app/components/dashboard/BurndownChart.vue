@@ -27,8 +27,8 @@ import type { ChartDensity, ChartSeries } from '@/lib/burndown'
 import {
   containsZero,
   DESKTOP_LAYOUT,
-  dashArrayFor,
   dayBand,
+  futureDashFor,
   gridLineYs,
   linePath,
   MOBILE_LAYOUT,
@@ -95,7 +95,7 @@ const seriesPaths = computed(() =>
   props.series.map((entry, index) => ({
     id: entry.id,
     stroke: entry.stroke,
-    dash: dashArrayFor(index, props.density),
+    dash: futureDashFor(index, props.density),
     d: linePath(entry.points, range.value, count.value, layout.value),
   })),
 )
