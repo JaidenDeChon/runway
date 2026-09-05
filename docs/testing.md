@@ -5,7 +5,7 @@ checked anything is worse than no suite, because it gets mistaken for evidence.
 
 | Suite | Command | Needs | Proves |
 | --- | --- | --- | --- |
-| Unit | `bun run test:unit` | nothing | Pure logic — the projection engine, money, dates, `app/lib`. |
+| Unit | `bun run test:unit` | nothing | Pure logic — the projection engine, money, dates, `app/lib`, plus `tests/guards/` (source-reading structural guards, e.g. "only one file may write `public.occurrences`"). |
 | Integration | `bun run test:integration` | local Supabase | RLS, tenancy, migrations, money at the storage boundary, the harness itself. |
 | RLS (a subset of integration) | `bun run test:rls` | local Supabase | Just the security posture — see [`database/rls.md`](./database/rls.md). |
 | E2E | `bun run test:e2e` | a browser **and** Supabase | Real user flows through the running app. |

@@ -10,16 +10,19 @@ Runway answers one question: *given what is coming, when does my balance dip
 lowest, and does it clear my cushion?* Every screen is a view onto `domain/`'s
 projection of that.
 
-**Sign-in has landed, and accounts are the first screen to follow it onto
-Supabase.** Every route is behind a Supabase session (`docs/auth.md`), the
-server validates that session rather than trusting the client, `user_id` is
-derived from it and never from a request, and issue #7 moved `/accounts` and
-`/first-run`'s account step onto real `public.accounts` and
-`public.user_settings` rows behind the `useRunwayData` seam. Recurring items
-and transfers are still `useState`, held in memory and lost on reload, and
-start **empty** rather than from `domain/seed.ts` — a seeded item's
-`accountId` would dangle against account ids the database never held. Moving
-those onto Supabase belongs to the issues that own each screen: #8 and #9.
+**Sign-in has landed, and accounts, recurring items and their materialized
+occurrences have followed it onto Supabase.** Every route is behind a
+Supabase session (`docs/auth.md`), the server validates that session rather
+than trusting the client, `user_id` is derived from it and never from a
+request, and issue #7 moved `/accounts` and `/first-run`'s account step onto
+real `public.accounts` and `public.user_settings` rows, issue #8 moved
+`/recurring-items` onto real `public.recurring_rules` rows, and issue #9 keeps
+`public.occurrences` reconciled with those rules through
+`public.regenerate_occurrences` — all behind the `useRunwayData` seam.
+Transfers are the last session-local `useState` records, held in memory and
+lost on reload, and start **empty** rather than from `domain/seed.ts` — a
+seeded transfer's `accountId` would dangle against account ids the database
+never held. Issue #56 owns folding transfers into ordinary transactions.
 `domain/seed.ts` is now a fixture the tests and the local database's seed
 build from, not something the running app ever reads.
 

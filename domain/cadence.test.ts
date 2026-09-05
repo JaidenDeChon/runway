@@ -312,6 +312,75 @@ describe('month-end clamping across leap and non-leap Februaries', () => {
   })
 })
 
+describe('distant anchors (issue #34 regression)', () => {
+  // #34 described `estimateStartIndex` and a `maxSteps` budget that returned
+  // `[]` for an anchor far from the window. Neither identifier exists any
+  // more — the rewrite above computes `firstCycle`/`lastCycle` directly from
+  // `daysBetween`/`monthIndex`, so there is no step budget left to exhaust.
+  // This pins the exact repro (anchor day 20 of August) across anchor years
+  // centuries away in both directions, because materialization (issue #9) is
+  // built directly on this primitive and a silent regression here would
+  // corrupt stored rows, not just a chart.
+  //
+  // The window is exactly 28 days — a multiple of both the weekly (7) and
+  // biweekly (14) step — so the count inside it is independent of which
+  // weekday Aug 20 happens to fall on in each anchor year (it differs: 1978's
+  // is a Sunday, 2043's a Thursday). A 30-day window would make this test
+  // flaky on exactly that phase difference.
+  const anchorYears = [1000, 1978, 2043, 2500]
+  const window = { start: '2026-08-01', end: '2026-08-28' }
+
+  it.each(anchorYears)('monthly: anchor year %d still produces the Aug 20 occurrence', (year) => {
+    expect(
+      occurrenceDates(
+        item({ cadence: 'monthly', nextOccurrence: `${year}-08-20` }),
+        window.start,
+        window.end,
+      ),
+    ).toEqual(['2026-08-20'])
+  })
+
+  it.each(anchorYears)('weekly: anchor year %d still produces four occurrences', (year) => {
+    expect(
+      occurrenceDates(
+        item({ cadence: 'weekly', nextOccurrence: `${year}-08-20` }),
+        window.start,
+        window.end,
+      ),
+    ).toHaveLength(4)
+  })
+
+  it.each(anchorYears)('biweekly: anchor year %d still produces two occurrences', (year) => {
+    expect(
+      occurrenceDates(
+        item({ cadence: 'biweekly', nextOccurrence: `${year}-08-20` }),
+        window.start,
+        window.end,
+      ),
+    ).toHaveLength(2)
+  })
+
+  it('monthly anchored in year 2500 produces all twelve occurrences over a full year', () => {
+    expect(
+      occurrenceDates(
+        item({ cadence: 'monthly', nextOccurrence: '2500-06-20' }),
+        '2026-01-01',
+        '2026-12-31',
+      ),
+    ).toHaveLength(12)
+  })
+
+  it('weekly anchored in year 1000 produces all fifty-two occurrences over a full year', () => {
+    expect(
+      occurrenceDates(
+        item({ cadence: 'weekly', nextOccurrence: '1000-01-03' }),
+        '2026-01-01',
+        '2026-12-31',
+      ),
+    ).toHaveLength(52)
+  })
+})
+
 describe('nextOccurrenceOnOrAfter', () => {
   it('returns the anchor itself when `from` equals it', () => {
     expect(nextOccurrenceOnOrAfter(item({ nextOccurrence: '2026-08-20' }), '2026-08-20')).toBe(

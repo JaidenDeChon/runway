@@ -51,6 +51,15 @@ If you catch yourself padding to look thorough, stop and delete the padding.
    `bun run lint`, `bun run typecheck`, `bun run test`, `bun run build`. For
    database work bring the stack up and use it — one `supabase start` only,
    concurrent invocations deadlock on the CLI lock.
+
+   **But the local stack is shared, and you do not own it.** Before you run
+   `db:reset`, `test:integration`, `test:rls` or `test:e2e`, ask the agent that
+   spawned you whether anyone else is mid-run, and wait for the answer. A
+   `db:reset` underneath a live Playwright run destroys it, and the wreckage
+   reads as a regression that does not exist — a reviewer has already done this
+   once and nearly reported the phantom. If you cannot get an uncontended run,
+   say the check was blocked. That is a real and useful finding; a number
+   measured against a collision is not.
 6. **Probe the security boundary rather than reading it.** For any RLS or policy
    change, prove the tests can fail: loosen a policy
    (`alter policy X on public.T using (true)`), confirm the suite goes red, then

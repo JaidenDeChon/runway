@@ -14,6 +14,7 @@
  * the other two assertions the old implementation could not have passed.
  */
 
+import { adminSql, LOCAL_STACK } from '../support/database'
 import { assertBaseUrlIsLocal, clickUntil, expect, gotoHydrated, test } from './fixtures'
 
 /** U+2212, the typographic minus the app renders — see negative-balances.spec.ts. */
@@ -119,6 +120,63 @@ test.describe('creating a bill', () => {
         message: 'the chart did not report the expected low point on the expected date',
       })
       .toBe(true)
+  })
+})
+
+test.describe('materialization', () => {
+  test('AC10: creating a recurring item through the UI materializes occurrence rows', async ({
+    emptyHouseholdPage: page,
+  }) => {
+    // Skipped rather than asserting against a stack this process cannot
+    // reach — the surrounding UI assertions all still run without it, but
+    // the database check below genuinely cannot.
+    test.skip(LOCAL_STACK === null, 'needs the local Supabase stack to read occurrences')
+
+    await createAccount(page, 'E2E Materialize Checking', '1000')
+
+    const dueDate = isoDaysFromToday(6)
+    await gotoHydrated(page, '/recurring-items')
+    const dialog = page.getByRole('dialog')
+    await clickUntil(page.getByRole('button', { name: 'Add recurring item' }), dialog)
+    await page.locator('#recurring-name').fill('E2E Materialize Rent')
+    await page.locator('#recurring-amount').fill('700')
+    await page.locator('#recurring-next-occurrence').fill(dueDate)
+    const row = page.getByRole('button', { name: 'Edit E2E Materialize Rent' })
+    await clickUntil(dialog.getByRole('button', { name: 'Add recurring item' }), row)
+    await expect(row).toBeVisible()
+
+    // `saveRecurringItem` regenerates occurrences for the saved rule right
+    // after the save that created it — see useRunwayData.ts. Polled rather
+    // than asserted once: the RPC call happens after the row the UI already
+    // waited on, not before it.
+    const sql = adminSql()
+    try {
+      // Captured by the poll callback below, so the final assertion can
+      // check *which* dates appeared, not merely that some row did.
+      let dates: string[] = []
+      await expect
+        .poll(
+          async () => {
+            const rows = await sql<{ projected_date: string }[]>`
+              select o.projected_date::text as projected_date
+                from public.occurrences o
+                join public.recurring_rules r on r.id = o.rule_id
+               where r.name = 'E2E Materialize Rent'
+               order by o.projected_date
+            `
+            dates = rows.map((r) => r.projected_date)
+            return dates.length
+          },
+          { message: 'expected occurrence rows to appear for the newly created rule' },
+        )
+        .toBeGreaterThan(0)
+
+      // The specific due date typed into the form is one of them — not just
+      // that *some* row exists.
+      expect(dates).toContain(dueDate)
+    } finally {
+      await sql.end()
+    }
   })
 })
 

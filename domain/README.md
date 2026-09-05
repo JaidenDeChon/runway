@@ -32,10 +32,12 @@ runtime APIs.
 - `overrides.ts` — occurrence-level edits. `prediction.ts` — income predicted from deposit history.
   `accounts.ts`, `transfers.ts` — invariants over those collections. `seed.ts` — the synthetic
   fixture the app boots with, mirrored by `supabase/seed.sql`.
+- `materialization.ts` — the desired set of materialized `public.occurrences` rows for a sliding
+  window (`materializationWindow`, `desiredOccurrences`), expanded through `cadence.ts`'s
+  `occurrenceDates` so there is exactly one implementation of cadence expansion. It computes the
+  set; a database RPC applies it, guarding user-touched rows — see `docs/database/schema.md`.
 - `fixtures/` — the golden scenarios and their committed output. See `fixtures/README.md`.
 
 **Start at `docs/engine/README.md`**: the public API with worked examples, the rules that are easy
 to get wrong (as-of anchoring, transfer neutrality, `verdictFrom`), the performance budget, and how
 the whole thing is tested.
-
-Issue #9 (occurrence materialization) lands here too.

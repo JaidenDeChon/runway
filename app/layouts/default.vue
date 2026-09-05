@@ -10,10 +10,18 @@ import {
 } from '@/components/ui/breadcrumb'
 import { Separator } from '@/components/ui/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import { useOccurrenceMaterialization } from '@/composables/useOccurrenceMaterialization'
 import { resolveBreadcrumbs } from '@/lib/navigation'
 
 const route = useRoute()
 const crumbs = computed(() => resolveBreadcrumbs(route.path))
+
+// Keeps the materialized occurrence horizon current as the calendar
+// advances. Client-only and idempotent — see the composable, and
+// docs/database/schema.md. `default.vue` is the authenticated shell for `/`,
+// `/accounts`, `/recurring-items` and `/will-i-make-it`, and mounts once
+// across SPA navigation between them.
+useOccurrenceMaterialization().startHorizonUpkeep()
 
 // SSR safety: SidebarProvider's own `defaultOpen` default is
 // `!defaultDocument?.cookie.includes('sidebar_state=false')`, which evaluates

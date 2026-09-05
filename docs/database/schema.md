@@ -171,6 +171,16 @@ it, that reassignment is rejected while occurrences exist. Moving a rule between
 accounts is a rule split, the same shape as apply-to-future: close the old rule,
 open a new one on the new account.
 
+Issue #9's regeneration makes this reachable on the very first save of any
+rule — before it, no app-created rule ever had an occurrence, so the
+rejection was theoretical. `RecurringItemEditor.vue` now disables the Account
+control while editing an existing rule rather than offering an action the
+data model has always forbidden; `useRunwayData.ts`'s `saveRecurringItem`
+still distinguishes the `23503` (`foreign_key_violation`) error as defence in
+depth, for anything that reaches the write some other way. Moving an item
+between accounts is unimplemented — it would be this same rule-split shape —
+and belongs to its own issue, not this one.
+
 This is the schema's general stance — an invariant a reader has to remember is
 not an invariant. Everything else here is structural, and the one denormalized
 value is too.
@@ -330,7 +340,13 @@ a user retimes an occurrence — a retime writes `actual_date`, leaving the key
 untouched.
 
 **A row is protected iff `is_overridden` or `status <> 'projected'`.**
-Regeneration (issue #9) upserts on `(rule_id, projected_date)`:
+Issue #9 implements this with `public.regenerate_occurrences` (`security
+invoker`, `supabase/migrations/20260904015555_occurrence_regeneration.sql`),
+a single function a caller invokes with the rule ids in scope, a window, and
+the desired `(rule_id, projected_date, projected_amount_cents)` set computed
+by `domain/materialization.ts`'s `desiredOccurrences` — the engine's own
+`occurrenceDates`, never a second cadence expander in SQL. In one transaction
+it:
 
 ```sql
 insert into public.occurrences (user_id, account_id, rule_id, projected_date, projected_amount_cents)
@@ -341,8 +357,101 @@ do update set
 where not occurrences.is_overridden and occurrences.status = 'projected';
 ```
 
-Deleting now-out-of-window rows (a rule's window shrank) uses the same
-predicate, so a protected row is never silently removed either.
+and then deletes now-out-of-window, now-undesired rows with the same
+predicate as a conjunct, bounded by the window:
+
+```sql
+delete from public.occurrences o
+ where o.user_id = (select auth.uid())
+   and o.rule_id = any (p_rule_ids)
+   and o.projected_date between p_window_start and p_window_end
+   and not o.is_overridden
+   and o.status = 'projected'
+   and not exists (select 1 from desired d
+                     where d.rule_id = o.rule_id and d.projected_date = o.projected_date);
+```
+
+The window bound on the delete is what makes **past occurrences retained as
+history** true: a row that has fallen behind the window as `today` advanced
+is not in the delete's result set at all, regardless of protection — the
+predicate does not merely spare protected rows inside the window, it never
+considers rows outside it. `user_id` is derived from `(select auth.uid())`,
+never a parameter, so the function cannot act across two users' data in one
+call no matter what rule ids a caller names.
+
+**On the issue's wording, precisely.** Issue #9 says "ending or editing a
+rule updates only *future* non-overridden occurrences." Regeneration is
+actually not future-only: it rewrites and deletes unprotected rows across
+the *whole* window, look-back included — a `projected`, non-overridden row
+in the past is stale in exactly the same way a future one would be, since it
+never actually happened, and the RPC has no reason to treat the two
+differently. Only *protection* (`is_overridden`, or `status <> 'projected'`)
+is what the wording's "non-overridden" was really pointing at; "future" is
+not a second condition this implementation applies.
+
+**The invariant is structural, not just the RPC's own discipline.** A trigger,
+`private.protect_materialized_occurrence()` (`before update on
+public.occurrences`), independently raises `check_violation` if
+`projected_date` ever changes, or if a protected row's
+`projected_amount_cents` changes outside this RPC's own guarded path. The
+RPC's `where` clauses already exclude those writes, so the trigger costs
+nothing on the happy path; it exists so a future writer that reaches around
+the RPC gets a loud abort instead of a silent clobber.
+
+**Trigger point: on rule save, plus a client-side horizon top-up.** There is
+no scheduler in this project (`no-timed-triggers`), and pure on-read would
+make a `GET` perform writes. So regeneration runs from two call sites:
+`useRunwayData().saveRecurringItem` regenerates the one saved rule right
+after the save that created or changed it, and
+`useOccurrenceMaterialization().startHorizonUpkeep()` — installed once in
+`app/layouts/default.vue`, client-only — tops up every rule's horizon as
+`today` advances or a rule appears that came from outside the app. Both are
+harmless to run twice: the upsert's `is distinct from` conjunct on the
+amount means an unchanged rule's regeneration is `{ upserted: 0, deleted: 0 }`
+and moves no `updated_at`.
+
+**The window: `today - 90` to `today + 365`**
+(`domain/materialization.ts` `MATERIALIZATION_LOOKBACK_DAYS` /
+`MATERIALIZATION_HORIZON_DAYS`), deliberately not
+`user_settings.default_horizon_days` — see
+[The horizon is not a menu](#the-horizon-is-not-a-menu): a UI toggle must
+never resize what is stored. A rule on an archived account is still
+materialized, matching [Archiving, not deleting](#archiving-not-deleting).
+
+**Status vocabulary.** Issue #9's own text describes three states —
+`projected` / `overridden` / `settled` — that map onto this schema's actual
+columns rather than a new enum:
+
+| issue's word | schema |
+|---|---|
+| projected | `status = 'projected'` and `is_overridden = false` |
+| overridden | `is_overridden = true` — at *any* status |
+| settled | `status = 'confirmed'`, which `occurrences_confirmed_has_actual_ck` already forces to carry an `actual_amount_cents` |
+| *(no issue word)* | `status = 'skipped'` — this cycle's bill or income cancelled |
+
+`is_overridden` is not folded into the enum because it is not mutually
+exclusive with the others: a user can retime a future paycheck (overridden,
+still `projected`) or skip a bill deliberately (overridden *and* `skipped`).
+The enum stays `('projected', 'confirmed', 'skipped')`, unchanged by this
+issue.
+
+**`supabase/seed.sql`'s own occurrence generator is a separate, narrower
+code path, deliberately not unified with `regenerate_occurrences`.** It
+materializes forward from `greatest(anchor_date, starts_on)` through a fixed
+horizon, once, at seed time; the app materializes a whole sliding window in
+both directions, repeatedly, as rules change and the calendar advances. They
+solve different problems and `tests/rls/seed-fidelity.test.ts` pins the
+seed's own exact output, so touching it would churn that test's assertions
+for no benefit. (The seed already carries its own comment on why it cannot
+use Postgres' `generate_series(..., interval '1 month')` to do it — that
+step is sticky, `addMonthsClamped` is not.) One consequence worth knowing:
+once the horizon top-up runs against a seeded user's real session — which
+happens the moment that user loads an authenticated page — their
+`occurrences` rows extend past what the seed alone produced, and
+`seed-fidelity`'s exact-match assertion needs a fresh `bun run db:reset` to
+hold again. Harmless for CI (`database` and `e2e` are separate jobs, each
+starting its own stack from empty); worth knowing when reusing one local
+stack across manual suite runs in the wrong order.
 
 ### Rule splitting
 
@@ -440,7 +549,7 @@ The table `domain/*` code should consult when wiring a store to this schema:
 | `Account.archivedOn` | `accounts.archived_on` | `null` maps to **absent**, not to `archivedOn: undefined` — see [Archiving, not deleting](#archiving-not-deleting) |
 | `RecurringItem.nextOccurrence` | `recurring_rules.anchor_date` | **names differ deliberately**: the domain expands in both directions from it, so it is an anchor, not a "next" |
 | `RecurringItem.daysOfMonth` / `.daysOfWeek` | `recurring_rules.days_of_month` / `.days_of_week` | same numbering on both sides, `-1` = month end, ISO weekdays. Optional in the domain, nullable here — both mean "the day the anchor names" |
-| `RecurringItem.depositHistory` | *derived* | `occurrences.actual_amount_cents where status = 'confirmed'`, ordered by `projected_date`. No array column — this is why occurrences are materialized. **As of issue #8, the app always reads this as `[]`**: occurrence materialization is not implemented yet, so there is nothing to derive it from. This is not a bug — it is why the recurring-items editor's "Predict from deposits" toggle stays disabled (`canPredict([])` is false) until that lands |
+| `RecurringItem.depositHistory` | *derived* | `occurrences.actual_amount_cents where status = 'confirmed'`, ordered by `projected_date`. No array column — this is why occurrences are materialized. **The app still always reads this as `[]`**: issue #9 materializes `projected` rows, but nothing creates a `confirmed` one yet — that is the occurrence editor (#15) or reconciliation (#26). This is not a bug — it is why the recurring-items editor's "Predict from deposits" toggle stays disabled (`canPredict([])` is false) until one of those lands |
 | `Transfer.date` | `transfers.occurs_on` | |
 | `Transfer.createdAt` | `transfers.created_at` | epoch ms at the mapping edge; only ever a same-day tie-breaker |
 | `RunwayData.safetyCushion` | `user_settings.cushion_cents` | |

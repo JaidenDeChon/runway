@@ -314,6 +314,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      regenerate_occurrences: {
+        Args: {
+          p_occurrence_amount_cents: number[]
+          p_occurrence_dates: string[]
+          p_occurrence_rule_ids: string[]
+          p_rule_ids: string[]
+          p_window_end: string
+          p_window_start: string
+        }
+        Returns: {
+          deleted: number
+          upserted: number
+        }[]
+      }
       save_account: {
         Args: {
           p_balance_as_of: string
