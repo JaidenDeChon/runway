@@ -76,6 +76,23 @@ function legendRow(page: import('@playwright/test').Page, name: string) {
     .filter({ has: legendCheckbox(page, name) })
 }
 
+/**
+ * Asserts an element's text equals `expected` without ever printing what it
+ * actually said.
+ *
+ * `toHaveText` prints the *received* string on failure, and on this screen
+ * that string is a balance — the same defect as `negative-balances.spec.ts:157`.
+ * A literal inside a *selector* is a different matter and stays as it is: it is
+ * a constant already committed to this file, and a failure prints the selector
+ * rather than anything read back from the running app.
+ *
+ * `expect.poll` also keeps the auto-retry `toHaveText` gave us, which a bare
+ * `textContent()` comparison silently drops.
+ */
+async function expectTextToBe(locator: import('@playwright/test').Locator, expected: string) {
+  await expect.poll(async () => (await locator.textContent())?.trim() === expected).toBe(true)
+}
+
 test.beforeEach(({ baseURL }) => {
   assertBaseUrlIsLocal(baseURL)
 })
@@ -91,15 +108,22 @@ test.describe('the verdict bands', () => {
     await expect(card.locator('[data-slot="badge"]')).toHaveText('Covered')
 
     const headline = card.locator('span.font-mono').first()
-    await expect(headline).toHaveText('$2,000')
+    await expectTextToBe(headline, '$2,000')
 
     // Compared as a boolean rather than asserted as a string: a failed string
     // comparison here would print the chart's full `aria-label`, which
     // carries the same balance, into the report. `false` never does.
+    // Polled, not compared once: this runs right after hydration, and a bare
+    // read races the chart's first paint. Still a boolean either way — a
+    // failure prints `false`, never the label, which carries the balance.
     const chart = page.getByRole('img', { name: /Balance forecast/ })
-    const label = await chart.getAttribute('aria-label')
-    const headlineText = await headline.textContent()
-    expect(label !== null && headlineText !== null && label.includes(headlineText)).toBe(true)
+    await expect
+      .poll(async () => {
+        const label = await chart.getAttribute('aria-label')
+        const headlineText = await headline.textContent()
+        return label !== null && headlineText !== null && label.includes(headlineText)
+      })
+      .toBe(true)
   })
 
   test('tight: a margin under $250 gets a warning, not an alert', async ({
@@ -113,7 +137,7 @@ test.describe('the verdict bands', () => {
     await expect(card.locator('[data-slot="alert"]')).toHaveCount(0)
 
     const headline = card.locator('span.font-mono').first()
-    await expect(headline).toHaveText('$700')
+    await expectTextToBe(headline, '$700')
     await expect(headline).not.toHaveClass(/text-destructive/)
   })
 
@@ -124,13 +148,13 @@ test.describe('the verdict bands', () => {
     await gotoHydrated(page, '/')
 
     const card = lowestBalanceCard(page)
-    await expect(card.locator('[data-slot="badge"]')).toHaveText('Short by $500')
+    await expectTextToBe(card.locator('[data-slot="badge"]'), 'Short by $500')
     await expect(
       card.getByText(/Projected to dip \$500 below your safety cushion on/),
     ).toBeVisible()
 
     const headline = card.locator('span.font-mono').first()
-    await expect(headline).toHaveText('$100')
+    await expectTextToBe(headline, '$100')
     await expect(headline).toHaveClass(/text-destructive/)
   })
 })
@@ -149,10 +173,10 @@ test.describe('the account selector', () => {
 
     const combinedCheckbox = legendCheckbox(page, 'E2E Selector Combined')
     await clickUntil(combinedCheckbox, card.getByText('Short by $500', { exact: true }))
-    await expect(badge).toHaveText('Short by $500')
+    await expectTextToBe(badge, 'Short by $500')
 
     const headline = card.locator('span.font-mono').first()
-    await expect(headline).toHaveText('$100')
+    await expectTextToBe(headline, '$100')
 
     // Deselected, not gone: `docs/design/dashboard/screens/single-account.png`
     // specifies the legend keeps every account's own figure regardless of
@@ -191,7 +215,7 @@ test.describe('the account selector', () => {
     await gotoHydrated(page, '/')
 
     await expect(legendCheckbox(page, 'E2E Persist Combined')).not.toBeChecked()
-    await expect(lowestBalanceCard(page).locator('[data-slot="badge"]')).toHaveText('Short by $500')
+    await expectTextToBe(lowestBalanceCard(page).locator('[data-slot="badge"]'), 'Short by $500')
   })
 })
 
