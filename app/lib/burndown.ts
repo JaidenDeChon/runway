@@ -15,9 +15,10 @@
  * alongside `format.ts` and `navigation.ts`.
  */
 
+import { accountColorVar } from '@/lib/account-colors'
 import type { MinorUnits } from '~~/domain/money'
-import type { DayPoint } from '~~/domain/projection'
-import type { AccountColor } from '~~/domain/types'
+import type { AccountSeries, DayPoint } from '~~/domain/projection'
+import type { Account, AccountColor } from '~~/domain/types'
 
 export interface ChartLayout {
   /** viewBox units, not pixels — the SVG is scaled to its container. */
@@ -126,16 +127,21 @@ export function normalizeDensity(value: unknown): ChartDensity | null {
 }
 
 /**
- * The dash pattern for the nth account line.
+ * The dash pattern for the *projected* half of the nth drawn line.
  *
- * Patterned by position rather than all-solid so the lines stay tellable apart
- * where they cross, and — more importantly — without relying on colour alone.
- * The first line is solid; the rest step through denser patterns.
+ * Dash presence is the past/future channel — history is never dashed — so
+ * every index gets a pattern here, unlike the series-identity version this
+ * replaces. The pattern still varies by index so two accounts stay tellable
+ * apart in the future half without relying on colour.
  */
-export function dashArrayFor(index: number, density: ChartDensity): string | undefined {
-  if (index <= 0) return undefined
-  const unit = density.dashDensity
-  return index === 1 ? `${unit} ${unit}` : `${unit * 3} ${unit}`
+export function futureDashFor(lineIndex: number, density: ChartDensity): string {
+  const dash = density.dashDensity
+  // The gap has to clear the stroke, not just follow the slider: a 3-unit gap
+  // under a 14-unit stroke is a notch, and at 375px it disappears entirely.
+  const gap = Math.max(density.dashDensity, Math.round(density.lineWeight * 1.25))
+  if (lineIndex <= 0) return `${dash} ${gap}`
+  if (lineIndex === 1) return `${dash * 2} ${gap}`
+  return `${dash * 2} ${gap} ${dash} ${gap}`
 }
 
 export function plotWidth(layout: ChartLayout): number {
@@ -215,7 +221,12 @@ function round(value: number): number {
 }
 
 /**
- * A polyline through one series.
+ * A polyline through `points`, whose first point sits at absolute day index
+ * `startIndex` of `count`.
+ *
+ * `startIndex` exists because the previous signature mapped the *slice-local*
+ * index: a slice that did not start at day 0 was drawn from the left edge of
+ * the plot. A caller drawing a whole series omits it.
  *
  * Straight segments, not a curve: between two events the balance genuinely does
  * not move, and a smoothed line would invent balances the engine never
@@ -226,15 +237,52 @@ export function linePath(
   range: ValueRange,
   count: number,
   layout: ChartLayout,
+  startIndex = 0,
 ): string {
   if (points.length === 0) return ''
   return points
     .map((point, index) => {
-      const x = round(scaleX(index, count, layout))
+      const x = round(scaleX(startIndex + index, count, layout))
       const y = round(scaleY(point.balance, range, layout))
       return `${index === 0 ? 'M' : 'L'}${x} ${y}`
     })
     .join(' ')
+}
+
+/** Two paths through one series, split at `todayIndex` so history and forecast can be drawn differently. */
+export interface SplitPath {
+  /** Day 0 through `todayIndex` inclusive. `''` when there is no past segment to draw. */
+  readonly past: string
+  /** `todayIndex` through the last day, inclusive. `''` when there is no future segment. */
+  readonly future: string
+}
+
+/**
+ * Splits one series into a past path (solid) and a future path (dashed), the
+ * two joined at `todayIndex` with no gap.
+ *
+ * The boundary day is deliberately included in **both** slices — that shared
+ * vertex is what closes the seam between the two paths. A segment with fewer
+ * than two points returns `''` rather than a lone `M x y`: a one-point path
+ * renders as a dot under a round linejoin and as nothing under butt caps,
+ * either of which is a rendering artifact at exactly the boundary this
+ * function exists to make clean.
+ */
+export function splitSeriesPath(
+  points: readonly DayPoint[],
+  range: ValueRange,
+  count: number,
+  layout: ChartLayout,
+  todayIndex: number,
+): SplitPath {
+  if (points.length === 0 || count <= 1) return { past: '', future: '' }
+  const clamped = Math.min(Math.max(todayIndex, 0), points.length - 1)
+  const pastPoints = points.slice(0, clamped + 1)
+  const futurePoints = points.slice(clamped)
+  return {
+    past: pastPoints.length > 1 ? linePath(pastPoints, range, count, layout, 0) : '',
+    future: futurePoints.length > 1 ? linePath(futurePoints, range, count, layout, clamped) : '',
+  }
 }
 
 /** The invisible hover/tap target for day `index`, half-width at either end. */
@@ -248,6 +296,21 @@ export function dayBand(
   const start = Math.max(layout.left, scaleX(index, count, layout) - step / 2)
   const end = Math.min(layout.left + plotWidth(layout), scaleX(index, count, layout) + step / 2)
   return { x: round(start), width: round(Math.max(end - start, 0)) }
+}
+
+/** One day's hit band. */
+export interface DayBand {
+  readonly x: number
+  readonly width: number
+}
+
+/** Every day's hit band, computed once per layout change instead of twice per day per render. */
+export function dayBands(count: number, layout: ChartLayout): readonly DayBand[] {
+  const bands: DayBand[] = []
+  for (let index = 0; index < count; index++) {
+    bands.push(dayBand(index, count, layout))
+  }
+  return bands
 }
 
 /**
@@ -290,4 +353,60 @@ export function gridLineYs(layout: ChartLayout, lines = 4): number[] {
 /** A coordinate as a percentage of the viewBox, for positioning HTML over the SVG. */
 export function percentOf(value: number, total: number): number {
   return round((value / total) * 100)
+}
+
+/** Past this fraction of the viewBox width a label must flip left to stay on the card. */
+export const LABEL_FLIP_PERCENT = 60
+
+/**
+ * Whether a label anchored at day `index` should flip to the left of its
+ * point instead of sitting to the right of it, so it cannot run off the card.
+ *
+ * The same rule the tooltip already uses for its own flip — one function so
+ * the two can never disagree.
+ */
+export function labelFlipsLeft(index: number, count: number, layout: ChartLayout): boolean {
+  return percentOf(scaleX(index, count, layout), layout.width) > LABEL_FLIP_PERCENT
+}
+
+/** What the chart draws: one line per resolved account, plus the combined line. */
+export interface ChartLines {
+  /** One entry per projected account that resolves to a known account, in projection order. */
+  readonly series: readonly ChartSeries[]
+  /** The summed line, present only when two or more account lines are drawn. */
+  readonly combined: readonly DayPoint[] | null
+  /** What the chart actually draws: `series.length`, plus one when `combined` is present. */
+  readonly lineCount: number
+}
+
+/**
+ * The series-count rule: one line per selected account that still resolves to
+ * a known account, plus a combined line only once two or more of those are
+ * actually drawn.
+ *
+ * Keyed off the lines that resolve, not off how many account ids were asked
+ * for — those differ only when a selected id has no account behind it, in
+ * which case drawing a "combined" of one line was the bug this replaces.
+ */
+export function chartLines(
+  byAccount: readonly AccountSeries[],
+  combined: readonly DayPoint[],
+  accountsById: ReadonlyMap<string, Account>,
+): ChartLines {
+  const series: ChartSeries[] = []
+  for (const entry of byAccount) {
+    const account = accountsById.get(entry.accountId)
+    if (!account) continue
+    series.push({
+      id: account.id,
+      name: account.name,
+      stroke: accountColorVar(account.color),
+      points: entry.points,
+    })
+  }
+  return {
+    series,
+    combined: series.length > 1 && combined.length > 0 ? combined : null,
+    lineCount: series.length + (series.length > 1 && combined.length > 0 ? 1 : 0),
+  }
 }

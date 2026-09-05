@@ -36,7 +36,7 @@
 
 import { test as base, expect } from '@playwright/test'
 import { createServerClient } from '@supabase/ssr'
-import { adminSql, LOCAL_STACK, type SeedUser, USER_A, USER_D } from '../support/database'
+import { adminSql, LOCAL_STACK, type SeedUser, USER_A, USER_C, USER_D } from '../support/database'
 import { assertLocalOnly, assertLocalUrl, hostOf, isLoopbackHost } from '../support/stack'
 
 export { expect }
@@ -151,11 +151,13 @@ export async function assertSessionAuthenticates(session: BrowserSession): Promi
  * must succeed even when the write path under test is broken, so it cannot be
  * blockable by that same mechanism.
  *
- * Deleting `accounts` cascades to `recurring_rules`, `occurrences` and
- * `transfers` (`docs/database/schema.md`), so the account delete alone is
- * enough to clear everything the E2E suite could have written for D.
- * `user_settings` is reset alongside it in case a test ever sets the
- * discretionary designation or the staleness threshold.
+ * Deleting `accounts` cascades to `recurring_rules`, `occurrences`,
+ * `transfers` and now `dashboard_hidden_accounts` (`docs/database/schema.md`),
+ * so the account delete alone is enough to clear everything the E2E suite
+ * could have written for D — no explicit `dashboard_hidden_accounts` delete is
+ * needed. `user_settings` is reset alongside it in case a test ever sets the
+ * discretionary designation, the staleness threshold, or (issue #12) the
+ * dashboard's stored horizon.
  */
 export async function resetEmptyHousehold(): Promise<void> {
   const sql = adminSql()
@@ -163,9 +165,30 @@ export async function resetEmptyHousehold(): Promise<void> {
     await sql`delete from public.accounts where user_id = ${USER_D.id}`
     await sql`
       update public.user_settings
-      set discretionary_account_id = null, balance_stale_after_days = 14
+      set discretionary_account_id = null, balance_stale_after_days = 14, default_horizon_days = 30
       where user_id = ${USER_D.id}
     `
+  } finally {
+    await sql.end()
+  }
+}
+
+/**
+ * Clears user A's persisted chart-account selection, over the admin connection.
+ *
+ * Issue #12 made hiding a chart account a write to `dashboard_hidden_accounts`,
+ * not page-local state. `dashboard.spec.ts`'s "renders one segment pair per
+ * line" test toggles A's Savings checkbox off to prove the segment count
+ * reacts — same as `default_horizon_days` above, that click now durably
+ * changes A's row, and unlike the horizon test this one cannot simply move to
+ * user D: it needs A's two real seeded accounts, not an empty household. So
+ * the fixture resets A's hidden set instead, before and after, the same
+ * belt-and-braces the horizon test gets from running on D.
+ */
+export async function resetUserAChartSelection(): Promise<void> {
+  const sql = adminSql()
+  try {
+    await sql`delete from public.dashboard_hidden_accounts where user_id = ${USER_A.id}`
   } finally {
     await sql.end()
   }
@@ -207,6 +230,17 @@ interface RunwayFixtures {
   emptyHouseholdSession: BrowserSession
   /** A page that already holds a verified session for user D. */
   emptyHouseholdPage: import('@playwright/test').Page
+  /**
+   * A verified session for user C — the short household `domain/seed.test.ts`
+   * proves is short at every horizon the dashboard offers, on every day for
+   * over a year (see the file's own doc comment). **Read-only**: unlike D,
+   * this fixture resets nothing before or after, because
+   * `tests/rls/seed-fidelity.test.ts` holds C to `domain/seed.ts` exactly — a
+   * test using this fixture must not write through it.
+   */
+  shortHouseholdSession: BrowserSession
+  /** A page that already holds a verified session for user C. Read-only — see above. */
+  shortHouseholdPage: import('@playwright/test').Page
 }
 
 export const test = base.extend<RunwayFixtures>({
@@ -250,6 +284,27 @@ export const test = base.extend<RunwayFixtures>({
   emptyHouseholdPage: async ({ page, context, baseURL, emptyHouseholdSession }, use) => {
     await context.addCookies(
       emptyHouseholdSession.cookies.map((cookie) => ({
+        name: cookie.name,
+        value: cookie.value,
+        url: baseURL ?? 'http://127.0.0.1:3000',
+      })),
+    )
+    await use(page)
+  },
+
+  // biome-ignore lint/correctness/noEmptyPattern: Playwright's fixture signature requires the destructured first argument even when nothing is taken from it.
+  shortHouseholdSession: async ({}, use) => {
+    requireStackOrSkip()
+    const session = await mintBrowserSession(USER_C)
+    await assertSessionAuthenticates(session)
+    await use(session)
+    // No reset: this household is never written to, so there is nothing to
+    // put back.
+  },
+
+  shortHouseholdPage: async ({ page, context, baseURL, shortHouseholdSession }, use) => {
+    await context.addCookies(
+      shortHouseholdSession.cookies.map((cookie) => ({
         name: cookie.name,
         value: cookie.value,
         url: baseURL ?? 'http://127.0.0.1:3000',

@@ -168,8 +168,12 @@ The export always seeds two accounts and seven recurring items, so the no-data d
 rendered and the design specifies no copy for it. It is nevertheless required: First run offers
 "Skip to dashboard", which lands a user here with nothing. See Open questions.
 
-### Error — not specified
-The design has no error state for a failed projection or load.
+### Error — not specified in the design; answered since (issue #11)
+The design has no error state for a failed projection or load. Built at the page rather than the
+card: a failed load leaves `accounts` empty, and `LowestBalanceCard` would otherwise render
+"$0 · Covered" — a confident answer about money that never actually loaded, which is worse than an
+error. A destructive `Alert` with a "Try again" button calling `useRunwayData().refresh()`, copying
+the idiom already shipped on `/accounts` and `/recurring-items`.
 
 ### Horizon 90d — `screens/horizon-90.png`
 `60d`/`90d` widen the window and change the x-tick step (7d ≤30, 14d ≤60, 21d otherwise). The
@@ -376,6 +380,57 @@ trustworthy than it looks. No new token, no new component.
 **To see it**, give two accounts different "Balance as of" dates on `/accounts`. No seeded household
 carries a stale reading, so it never appears on a fresh load.
 
+### Solid past / dashed future (issue #63)
+
+Every line on the chart — each account and the combined line — now draws as two SVG paths joined at
+today: solid through the recorded half, dashed through the projected half. Time is the past/future
+channel (dash presence), carried by every line the same way; series identity stays colour, plus a
+per-series dash *pattern* in the future half so two lines are still tellable apart once colour starts
+repeating (`domain/types.ts` offers three account colours). `reference.html:436-441,115-116,445-449`
+is where this comes from — its own `buildPath` already splits at today and already leaves the past
+path with no `stroke-dasharray`.
+
+Two departures from the export, both deliberate:
+
+- **`stroke-linecap="butt"`, not `"round"`.** The export's own screenshots
+  (`screens/single-account.png`) show the projected half rendering *solid* even though its code
+  computes a dash array for it — at the export's own line-weight/dash-density defaults, a round cap
+  overhangs each dash gap by half the stroke width and closes it completely. Butt caps on both
+  segments fix it; `stroke-linejoin` stays `round` for interior corners.
+- **The lowest-point amount label sits 14 units above the marker, the date 14 below** — not the
+  export's `-30`/`+16` — because this build's amount/date text is smaller than the export's
+  (`font-size 42`/`26`, no monospace token here; see Open question 3). The principle is the same as
+  the export's: never centred on the marker's own y, because a centred block collides with the line
+  itself whenever the low point sits just before a steep rise.
+
+**The lowest-point amount label, not just the date, is now implemented** — `Lowest · {date}`
+stacked under the amount in `--destructive`, per `reference.html:128-129` and the spec's own Token
+usage line above ("the lowest-point marker ring and amount label"). The Copy list's annotation list
+was incomplete, not restrictive.
+
+**Open question 6 (no error state) is now answered** — see the entry below.
+
+### What the dashboard remembers
+
+Issue #12 moved two of this screen's controls from session-only state onto stored preferences, and
+left a third exactly where it was — on purpose, not by neglect:
+
+- **The forecast horizon** (`30d`/`60d`/`90d`) is `user_settings.default_horizon_days`, read and
+  written through `useRunwayData()`. It is user data: the number means the same thing on every
+  device the user signs into, so it belongs to the account rather than the browser.
+- **Which accounts are on the chart** is `public.dashboard_hidden_accounts`, storing the **hidden**
+  set rather than the shown one — the reason is the same one `docs/database/schema.md` gives: an
+  account added on another screen, or another device, must appear on the chart by default instead
+  of silently missing from it because a shown-set forgot to name it.
+- **Chart density** (line weight, dash density, marker size) stays in `localStorage`, unmoved.
+  `CLAUDE.md` draws the line this sits on: the browser's timezone, viewport and colour-scheme
+  preference are device-derived facts, re-derived on each device rather than stored as user data,
+  and density is in that category too — a cosmetic judgment about *this screen on this device*, not
+  a fact about the user's money. Whether that classification should hold — whether a signed-in user
+  would actually expect their density to follow them to a second device — is a live question, not a
+  closed one, and is deferred to a follow-up issue (#72) rather than decided silently in either
+  direction.
+
 ---
 
 ## Open questions
@@ -395,7 +450,8 @@ carries a stale reading, so it never appears on a fresh load.
 5. **No empty state.** First run offers "Skip to dashboard", so a user can arrive with zero accounts
    and zero recurring items. The design has no copy, no illustration and no call to action for that.
    Cross-screen; needs a decision with the first-run screen.
-6. **No error state** for a projection that fails to load.
+6. **No error state** for a projection that fails to load. **Answered (issue #11):** see the
+   "Error — not specified" entry under States, above.
 7. **Zero crossing.** The only banded region is *below the safety cushion*. A balance that goes
    negative gets no distinct treatment, and the y-axis has no emphasised zero line. Should crossing
    zero read differently from crossing the cushion?

@@ -45,6 +45,32 @@ export type Database = {
         }
         Relationships: []
       }
+      dashboard_hidden_accounts: {
+        Row: {
+          account_id: string
+          created_at: string
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dashboard_hidden_accounts_account_fk"
+            columns: ["user_id", "account_id"]
+            isOneToOne: true
+            referencedRelation: "accounts"
+            referencedColumns: ["user_id", "id"]
+          },
+        ]
+      }
       occurrences: {
         Row: {
           account_id: string

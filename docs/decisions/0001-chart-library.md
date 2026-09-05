@@ -93,6 +93,9 @@ new dependency at all.
   by every challenger candidate in this spike. Estimated small — the
   scaffolding (`todayIndex`, per-series colour, the geometry helpers in
   `burndown.ts`) already exists.
+  **Landed 2026-09-04, issues #11 and #63** — no new dependency, exactly as
+  estimated: `splitSeriesPath` in `burndown.ts` plus butt linecaps in
+  `BurndownChart.vue`.
 - No new production dependency. `@unovis/vue`, `@unovis/ts`, `echarts`,
   `vue-echarts`, `chart.js`, `vue-chartjs`, and `chartjs-plugin-annotation`
   are all removed from `package.json` in this branch's P8 commit — see

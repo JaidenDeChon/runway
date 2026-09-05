@@ -120,6 +120,21 @@ positive amount — see [One row, not two legs](#one-row-not-two-legs).
 `user_id` being the primary key is itself the RLS-predicate index — no
 separate `user_settings_user_id_idx`.
 
+### `dashboard_hidden_accounts`
+
+| column | type | notes |
+|---|---|---|
+| `user_id`, `account_id` | `uuid` | composite PK **and** composite FK → `accounts (user_id, id)`, cascade delete |
+| `created_at` | `timestamptz` | default `now()` |
+
+One row per account the user has unchecked in the dashboard's chart legend.
+Presence means hidden; absence means shown — see [A hidden set, not a visible
+one](#a-hidden-set-not-a-visible-one). `user_id` is the leading column of the
+primary key, so that index is the RLS-predicate index; no separate
+`dashboard_hidden_accounts_user_id_idx` exists. No `updated_at` and no
+trigger: the row's existence is the value, so hiding inserts and showing
+deletes rather than either ever updating a row in place.
+
 ## Design decisions
 
 ### Cross-user integrity: composite foreign keys
@@ -259,6 +274,42 @@ nothing for that price: nothing downstream is made safe by 45 being rejected,
 and the toggle constrains its own values in the UI regardless. The range that
 remains is a sanity bound, catching `0` and `32767` while staying out of the
 way of any horizon a person might actually want.
+
+Issue #12 gives this column its first writer: every click on the dashboard's
+30/60/90 toggle persists the choice here, under the column's own name — the
+last horizon you chose becomes your *default*. A value the toggle cannot
+reach (stored outside `{30, 60, 90}`, unreachable through the UI today) is
+still respected verbatim rather than snapped to the nearest menu entry — see
+`app/composables/useRunwayData.ts` `setDefaultHorizonDays`.
+
+### A hidden set, not a visible one
+
+`dashboard_hidden_accounts` stores which accounts a user has **unchecked** in
+the dashboard's chart legend, not which ones are checked. Three candidates
+were weighed for this preference, and the hidden-set join table won:
+
+- **A `uuid[]` column on `user_settings`.** Cheapest — no new table, no
+  policies, no grants — and rejected. An array cannot carry the composite
+  foreign key [Cross-user integrity](#cross-user-integrity-composite-foreign-keys)
+  makes the rule for every other reference in this schema: nothing would stop
+  one user's array naming another user's account id, and a deleted account's
+  id would dangle in the array forever with no cascade to sweep it.
+- **A `show_on_dashboard boolean` column on `accounts`.** No FK problem, and
+  cascades and archives for free. Rejected on blast radius rather than
+  correctness: a column on `accounts` is a field on `domain/types.ts`
+  `Account`, constructed in nineteen files including the seed, the golden
+  fixtures, and the `save_account` RPC's signature — and it would put a field
+  the projection engine must ignore onto the type the engine consumes. A
+  dashboard preference is not worth that ripple.
+- **A join table, keyed `(user_id, account_id)`.** Chosen. It matches the
+  established pattern in this file exactly, self-cleans via the composite
+  FK's `on delete cascade` when an account is deleted, and touches nothing in
+  `domain/`.
+
+**Why hidden rather than shown:** the set stored is the one an account is
+*absent* from by default. An account created on another screen is not in this
+table, so it appears on the chart — visible unless a user explicitly hid it,
+never invisible until someone remembers to show it.
 
 ### The timezone override has no writer, on purpose
 
@@ -504,6 +555,8 @@ The table `domain/*` code should consult when wiring a store to this schema:
 | `RunwayData.safetyCushion` | `user_settings.cushion_cents` | |
 | `RunwayData.timeZone` | `user_settings.time_zone` | an override, not the effective zone. `app/composables/useTimeZone.ts` resolves `override ?? device ?? UTC` |
 | `RunwayData.monthlyDiscretionarySpend` | `user_settings.monthly_discretionary_cents` | carried across unconverted; the engine divides it by the length of each month — see `domain/discretionary.ts` |
+| `useRunwayData().defaultHorizonDays` | `user_settings.default_horizon_days` | a *stored preference*, not a field on `RunwayData` — the projection engine takes the window as a parameter and does not know a "default" exists |
+| `useRunwayData().hiddenAccountIds` | `dashboard_hidden_accounts.account_id` | presence in the table means hidden; `RunwayData` carries no field for it either, for the same reason — see [A hidden set, not a visible one](#a-hidden-set-not-a-visible-one) |
 | `Occurrence.date` / `.amount` | *derived* | `coalesce(actual_*, projected_*)` |
 | `OccurrenceOverride` scope `once` | `actual_*` + `is_overridden = true` | |
 | `OccurrenceOverride` scope `future` | **a rule split**, not an occurrence write | |

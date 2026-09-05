@@ -24,21 +24,29 @@ import DayDetailEditor from '@/components/dashboard/DayDetailEditor.vue'
 import LowestBalanceCard from '@/components/dashboard/LowestBalanceCard.vue'
 import UpcomingCard from '@/components/dashboard/UpcomingCard.vue'
 import UpdateBalancesEditor from '@/components/dashboard/UpdateBalancesEditor.vue'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useChartDensity } from '@/composables/useChartDensity'
 import { useIsDesktop } from '@/composables/useIsDesktop'
 import { useRunwayData } from '@/composables/useRunwayData'
 import { useToday } from '@/composables/useToday'
-import { accountColorVar } from '@/lib/account-colors'
+import {
+  endingBalances,
+  legendEntries,
+  nextHiddenAccounts,
+  visibleAccountIds,
+} from '@/lib/account-selection'
 import { ARROW_LINK } from '@/lib/arrow-link'
-import type { ChartSeries, LegendEntry } from '@/lib/burndown'
+import type { LegendEntry } from '@/lib/burndown'
+import { chartLines } from '@/lib/burndown'
 import type { BalanceReading } from '~~/domain/accounts'
 import { balanceReadings } from '~~/domain/accounts'
 import type { IsoDate } from '~~/domain/dates'
 import { addDays, compareDates, daysBetween } from '~~/domain/dates'
 import type { OccurrenceOverride } from '~~/domain/overrides'
 import { withOverride } from '~~/domain/overrides'
-import type { DayPoint, Occurrence } from '~~/domain/projection'
+import type { Occurrence } from '~~/domain/projection'
 import { evaluate, project } from '~~/domain/projection'
 
 useHead({ title: 'Home - Runway' })
@@ -46,18 +54,34 @@ useHead({ title: 'Home - Runway' })
 /** The design's look-back: two weeks of already-happened balance, always. */
 const LOOKBACK_DAYS = 14
 
-/** How long the export holds the skeleton before swapping in the chart. */
-const LOAD_DELAY_MS = 550
-
-const { data, accounts, accountsById, safetyCushion, isEmpty, saveBalances } = useRunwayData()
+const {
+  data,
+  accounts,
+  accountsById,
+  safetyCushion,
+  isEmpty,
+  isLoading,
+  loadError,
+  refresh,
+  saveBalances,
+  defaultHorizonDays,
+  hiddenAccountIds,
+  setAccountHidden,
+  setDefaultHorizonDays,
+} = useRunwayData()
 const today = useToday()
 const isDesktop = useIsDesktop()
 
-const horizonDays = ref(30)
-// Persisted in the browser for signed-out visitors, which is everyone today.
+// Read from useRunwayData() rather than held as a ref: the horizon is a
+// stored preference (user_settings.default_horizon_days), so the page has
+// nothing of its own to track. The write side is the ToggleGroup's
+// `@update:horizon-days` binding below, straight through to `setDefaultHorizonDays`.
+const horizonDays = computed(() => defaultHorizonDays.value)
+// Device-local by decision, not because sign-in never landed — see
+// useChartDensity's own comment and docs/design/dashboard/spec.md. Whether it
+// should follow a signed-in user to a second device is deferred to #72.
 const density = useChartDensity()
 const densityOpen = ref(false)
-const loading = ref(true)
 
 const savedOverrides = ref<OccurrenceOverride[]>([])
 const whatIfOverrides = ref<OccurrenceOverride[]>([])
@@ -66,23 +90,17 @@ const whatIf = ref(false)
 const editorOpen = ref(false)
 const activeDate = ref<IsoDate | null>(null)
 
-// Held as the *deselected* set rather than the selected one so an account added
-// on another screen appears on the chart instead of silently missing from it.
-const deselected = ref<string[]>([])
+// Held as the *hidden* set rather than the shown one so an account added on
+// another screen appears on the chart instead of silently missing from it —
+// now `useRunwayData().hiddenAccountIds`, stored in
+// `public.dashboard_hidden_accounts` under the user's own session rather than
+// held only in this page's memory.
+const selectedAccountIds = computed(() => visibleAccountIds(accounts.value, hiddenAccountIds.value))
 
-const selectedAccountIds = computed(() =>
-  accounts.value.filter((account) => !deselected.value.includes(account.id)).map((a) => a.id),
-)
-
-let loadTimer: ReturnType<typeof setTimeout> | undefined
-
-onMounted(() => {
-  loadTimer = setTimeout(() => {
-    loading.value = false
-  }, LOAD_DELAY_MS)
-})
-
-onBeforeUnmount(() => clearTimeout(loadTimer))
+// Empty is a legitimate data state ("no accounts yet"); a failed load leaves
+// `accounts` empty too, and the two must never be confused — see the template,
+// where the error case is checked first.
+const showEmpty = computed(() => !isLoading.value && isEmpty.value)
 
 const windowStart = computed(() => addDays(today.value, -LOOKBACK_DAYS))
 const windowEnd = computed(() => addDays(today.value, horizonDays.value))
@@ -149,24 +167,14 @@ const legendProjection = computed(() =>
 /** Index of today in the series — the origin for ticks, the rule, and the verdict. */
 const todayIndex = computed(() => daysBetween(windowStart.value, today.value))
 
-/** The combined line only exists once there are two lines to combine. */
-const combined = computed<readonly DayPoint[] | null>(() =>
-  selectedAccountIds.value.length > 1 ? projection.value.combined : null,
-)
-
-const series = computed<ChartSeries[]>(() =>
-  projection.value.byAccount.flatMap((entry) => {
-    const account = accountsById.value.get(entry.accountId)
-    if (!account) return []
-    return [
-      {
-        id: account.id,
-        name: account.name,
-        stroke: accountColorVar(account.color),
-        points: entry.points,
-      },
-    ]
-  }),
+/**
+ * The series-count rule — one line per resolved account, plus a combined line
+ * only once two or more of those actually draw — lives in `chartLines`, not
+ * here: it is a data-shaping rule, not view state, and is unit-tested on its
+ * own in `app/lib/burndown.test.ts`.
+ */
+const lines = computed(() =>
+  chartLines(projection.value.byAccount, projection.value.combined, accountsById.value),
 )
 
 // The projection is already narrowed to the selected accounts, so its combined
@@ -192,32 +200,29 @@ const upcoming = computed(() =>
   ),
 )
 
+// The legend figure is the balance at the *end* of the window, not today's —
+// read from `summary.ending`, which `project()` already found in the same
+// pass that built the series, never by indexing a series' last point.
 const legend = computed<LegendEntry[]>(() =>
-  accounts.value.map((account) => {
-    const points = legendProjection.value.byAccount.find(
-      (entry) => entry.accountId === account.id,
-    )?.points
-    return {
-      accountId: account.id,
-      name: account.name,
-      color: account.color,
-      // The legend figure is the balance at the *end* of the window, not today's.
-      endingBalance: points?.[points.length - 1]?.balance ?? account.balance,
-      checked: !deselected.value.includes(account.id),
-      disabled: selectedAccountIds.value.length === 1 && selectedAccountIds.value[0] === account.id,
-    }
-  }),
+  legendEntries(
+    accounts.value,
+    endingBalances(legendProjection.value.byAccount),
+    hiddenAccountIds.value,
+  ),
 )
 
 function setAccountChecked(accountId: string, checked: boolean): void {
-  if (checked) {
-    deselected.value = deselected.value.filter((id) => id !== accountId)
-    return
-  }
-  // Guarded here as well as in the legend's `disabled`: an empty chart has
-  // nothing to say, and the design's silent rejection was the worse answer.
-  if (selectedAccountIds.value.length <= 1) return
-  deselected.value = [...deselected.value, accountId]
+  // `nextHiddenAccounts` is the tested rule — including the guard that
+  // refuses to hide the last visible account, matching the legend's own
+  // `disabled` — so this function does not compute the next set itself.
+  const next = nextHiddenAccounts(
+    hiddenAccountIds.value,
+    selectedAccountIds.value,
+    accountId,
+    checked,
+  )
+  if (next === null) return
+  void setAccountHidden(accountId, !checked)
 }
 
 const activeOccurrences = computed<readonly Occurrence[]>(() =>
@@ -228,11 +233,11 @@ const activeOccurrences = computed<readonly Occurrence[]>(() =>
 const activeBalances = computed(() => {
   if (!activeDate.value) return []
   const index = daysBetween(windowStart.value, activeDate.value)
-  const rows = series.value.flatMap((entry) => {
+  const rows = lines.value.series.flatMap((entry) => {
     const point = entry.points[index]
     return point ? [{ key: entry.id, name: entry.name, balance: point.balance }] : []
   })
-  const combinedPoint = combined.value?.[index]
+  const combinedPoint = lines.value.combined?.[index]
   if (combinedPoint)
     rows.push({ key: 'combined', name: 'Combined', balance: combinedPoint.balance })
   return rows
@@ -267,7 +272,18 @@ function saveOverride(override: OccurrenceOverride): void {
   <AppPage width="wide">
     <h1 class="sr-only">Dashboard</h1>
 
-    <Card v-if="isEmpty" class="gap-2">
+    <Card v-if="loadError" class="gap-2">
+      <Alert variant="destructive" class="m-4 w-auto">
+        <AlertTitle>{{ loadError }}</AlertTitle>
+        <AlertDescription>
+          <Button type="button" variant="outline" size="sm" class="mt-2" @click="refresh">
+            Try again
+          </Button>
+        </AlertDescription>
+      </Alert>
+    </Card>
+
+    <Card v-else-if="showEmpty" class="gap-2">
       <div class="px-4 lg:px-6">
         <h2 class="text-base font-medium">Nothing to forecast yet</h2>
         <p class="mt-1 text-sm text-muted-foreground">
@@ -287,8 +303,8 @@ function saveOverride(override: OccurrenceOverride): void {
       <div class="grid gap-3.5 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-5">
       <BalanceForecastCard
         :days="projection.days"
-        :series="series"
-        :combined="combined"
+        :series="lines.series"
+        :combined="lines.combined"
         :occurrences-by-day="occurrencesByDay"
         :legend="legend"
         :readings="readings"
@@ -300,10 +316,10 @@ function saveOverride(override: OccurrenceOverride): void {
         :horizon-days="horizonDays"
         :density="density"
         :density-open="densityOpen"
-        :loading="loading"
+        :loading="isLoading"
         :what-if="whatIf"
         :desktop="isDesktop"
-        @update:horizon-days="(value) => (horizonDays = value)"
+        @update:horizon-days="(value) => void setDefaultHorizonDays(value)"
         @update:density="(value) => (density = value)"
         @update:density-open="(value) => (densityOpen = value)"
         @update:account-checked="setAccountChecked"
