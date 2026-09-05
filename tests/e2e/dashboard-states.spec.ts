@@ -82,6 +82,10 @@ function legendRow(page: import('@playwright/test').Page, name: string) {
  *
  * `toHaveText` prints the *received* string on failure, and on this screen
  * that string is a balance — the same defect as `negative-balances.spec.ts:157`.
+ *
+ * That applies to the *expected* value being harmless too. Asserting the badge
+ * says "Covered" still prints what it actually said, and in the short band the
+ * badge says "Short by $500". The element is what decides, not the literal.
  * A literal inside a *selector* is a different matter and stays as it is: it is
  * a constant already committed to this file, and a failure prints the selector
  * rather than anything read back from the running app.
@@ -105,7 +109,7 @@ test.describe('the verdict bands', () => {
     await gotoHydrated(page, '/')
 
     const card = lowestBalanceCard(page)
-    await expect(card.locator('[data-slot="badge"]')).toHaveText('Covered')
+    await expectTextToBe(card.locator('[data-slot="badge"]'), 'Covered')
 
     const headline = card.locator('span.font-mono').first()
     await expectTextToBe(headline, '$2,000')
@@ -133,7 +137,7 @@ test.describe('the verdict bands', () => {
     await gotoHydrated(page, '/')
 
     const card = lowestBalanceCard(page)
-    await expect(card.locator('[data-slot="badge"]')).toHaveText('Tight')
+    await expectTextToBe(card.locator('[data-slot="badge"]'), 'Tight')
     await expect(card.locator('[data-slot="alert"]')).toHaveCount(0)
 
     const headline = card.locator('span.font-mono').first()
@@ -169,7 +173,7 @@ test.describe('the account selector', () => {
 
     const card = lowestBalanceCard(page)
     const badge = card.locator('[data-slot="badge"]')
-    await expect(badge).toHaveText('Covered')
+    await expectTextToBe(badge, 'Covered')
 
     const combinedCheckbox = legendCheckbox(page, 'E2E Selector Combined')
     await clickUntil(combinedCheckbox, card.getByText('Short by $500', { exact: true }))
@@ -191,7 +195,7 @@ test.describe('the account selector', () => {
     ).toBeVisible()
 
     await clickUntil(combinedCheckbox, card.getByText('Covered', { exact: true }))
-    await expect(badge).toHaveText('Covered')
+    await expectTextToBe(badge, 'Covered')
   })
 
   test("the last visible account's checkbox is disabled, not just rejected on click", async ({
