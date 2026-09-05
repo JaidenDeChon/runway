@@ -75,7 +75,9 @@ const isDesktop = useIsDesktop()
 // nothing of its own to track. The write side is the ToggleGroup's
 // `@update:horizon-days` binding below, straight through to `setDefaultHorizonDays`.
 const horizonDays = computed(() => defaultHorizonDays.value)
-// Persisted in the browser for signed-out visitors, which is everyone today.
+// Device-local by decision, not because sign-in never landed — see
+// useChartDensity's own comment and docs/design/dashboard/spec.md. Whether it
+// should follow a signed-in user to a second device is deferred to #72.
 const density = useChartDensity()
 const densityOpen = ref(false)
 const loading = ref(true)
