@@ -57,6 +57,18 @@ interface DomainTableProbe {
   /** A column + sentinel value for the "A cannot update B's row" probe. */
   readonly updateColumn: string
   readonly updateValue: string | number
+  /**
+   * How to render the read-back value and the sentinel so they are comparable.
+   *
+   * `String()` is right for text and integers and wrong for anything the
+   * driver hydrates into an object. `postgres.js` returns `timestamptz` as a
+   * `Date`, so `String(row.value)` is a local-time human string while
+   * `String(updateValue)` is an ISO literal — never equal, whatever the policy
+   * did, which makes the assertion unfalsifiable rather than merely lenient.
+   * Two lines of this file already warn about the same coercion trap for
+   * bigints.
+   */
+  readonly renderValue?: (value: unknown) => string
 }
 
 async function removeProbes(): Promise<void> {
@@ -222,9 +234,12 @@ const descriptors: DomainTableProbe[] = [
       user_id: USER_B.id,
       account_id: contextB.account1Id,
     }),
-    // No non-key column to clobber but created_at.
+    // No non-key column to clobber but created_at, which is a timestamptz —
+    // so this probe must say how to compare one. Without renderValue the
+    // assertion below passes even when the policy is wide open.
     updateColumn: 'created_at',
     updateValue: '2020-01-01T00:00:00Z',
+    renderValue: (value) => new Date(value as string | Date).toISOString(),
   },
 ]
 
@@ -305,7 +320,8 @@ describe.skipIf(LOCAL_STACK === null)('domain table isolation', () => {
             from public.${sql(probe.table)}
             where ${sql(probe.pk)} = ${probe.probeIdForB()}
           `
-          expect(String(row?.value)).not.toBe(String(probe.updateValue))
+          const render = probe.renderValue ?? String
+          expect(render(row?.value)).not.toBe(render(probe.updateValue))
         } finally {
           await sql.end()
         }
@@ -354,7 +370,8 @@ describe.skipIf(LOCAL_STACK === null)('domain table isolation', () => {
           // Compared as strings on purpose: bigint columns come back from
           // postgres.js as strings, so `'999999' !== 999999` would make this
           // assertion pass regardless of what the policy did.
-          expect(String(row?.value)).not.toBe(String(probe.updateValue))
+          const render = probe.renderValue ?? String
+          expect(render(row?.value)).not.toBe(render(probe.updateValue))
         })
       })
 
