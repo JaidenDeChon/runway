@@ -250,3 +250,110 @@ test.describe('the forecast horizon', () => {
       .toBe(true)
   })
 })
+
+test.describe('the burndown chart', () => {
+  test('renders one segment pair per line, and a combined line only with two accounts', async ({
+    authenticatedPage: page,
+  }) => {
+    await gotoHydrated(page, '/')
+
+    await expect(page.getByRole('img', { name: /Balance forecast/ })).toBeVisible()
+
+    // User A's seeded household has two accounts (Checking, Savings), both
+    // selected by default: one line each plus the combined line, three drawn
+    // lines in total, each split into a past segment and a future one.
+    await expect(page.locator('svg [data-segment="past"]')).toHaveCount(3)
+    await expect(page.locator('svg [data-segment="future"]')).toHaveCount(3)
+
+    const savings = page.getByRole('checkbox', { name: /Show Savings on the chart/ })
+    // The same swallowed-click concern clickUntil exists for, adapted to a
+    // count rather than a visibility change: retry the click until the
+    // segment count actually reflects one fewer drawn line.
+    await expect(async () => {
+      if ((await page.locator('svg [data-segment="past"]').count()) === 1) return
+      await savings.click({ timeout: 2_000 })
+      await expect(page.locator('svg [data-segment="past"]')).toHaveCount(1, { timeout: 1_000 })
+    }).toPass({ timeout: 20_000 })
+
+    await expect(page.locator('svg [data-segment="future"]')).toHaveCount(1)
+    await expect(page.getByText('Combined', { exact: true })).toHaveCount(0)
+  })
+
+  test('draws history solid and the forecast dashed', async ({ authenticatedPage: page }) => {
+    await gotoHydrated(page, '/')
+
+    const chart = page.getByRole('img', { name: /Balance forecast/ })
+    await expect(chart).toBeVisible()
+
+    await expect(page.locator('svg [data-segment="past"]').first()).not.toHaveAttribute(
+      'stroke-dasharray',
+      /./,
+    )
+    await expect(page.locator('svg [data-segment="future"]').first()).toHaveAttribute(
+      'stroke-dasharray',
+      /\d/,
+    )
+
+    // The accessible half of the same claim: computed as a boolean here, never
+    // asserted with toHaveAttribute against a pattern, because a failure would
+    // print the whole aria-label — which carries a balance — into the CI log.
+    // dashboard.spec.ts's own horizon test and recurring-items.spec.ts both
+    // already use this boolean-poll idiom.
+    await expect
+      .poll(async () => {
+        const label = (await chart.getAttribute('aria-label')) ?? ''
+        return label.includes('drawn as a dashed line')
+      })
+      .toBe(true)
+  })
+
+  // Regression: the annotation overlay used to be `absolute inset-0` inside a
+  // wrapper that also holds the x-tick row, so its box was taller than the
+  // chart and every percentage-positioned label was pushed down by the
+  // difference. That is not a cosmetic drift — it silently cancelled the
+  // 14-unit offsets that keep the lowest-point label off the line it
+  // annotates, putting the label back through the line. The invariant those
+  // offsets depend on is simply that the two boxes are the same box.
+  test('positions its annotation layer over exactly the chart, not the tick row', async ({
+    authenticatedPage: page,
+  }) => {
+    await gotoHydrated(page, '/')
+
+    const chart = page.getByRole('img', { name: /Balance forecast/ })
+    await expect(chart).toBeVisible()
+
+    const svgBox = await chart.boundingBox()
+    const overlayBox = await page.locator('[data-chart-annotations]').boundingBox()
+    expect(svgBox).not.toBeNull()
+    expect(overlayBox).not.toBeNull()
+
+    // Sub-pixel tolerance only: these are meant to be the same rectangle.
+    expect(Math.abs(overlayBox!.y - svgBox!.y)).toBeLessThan(1)
+    expect(Math.abs(overlayBox!.height - svgBox!.height)).toBeLessThan(1)
+    expect(Math.abs(overlayBox!.width - svgBox!.width)).toBeLessThan(1)
+  })
+})
+
+test.describe('opening a day from the chart', () => {
+  test('a day click opens the day editor', async ({ authenticatedPage: page }) => {
+    await gotoHydrated(page, '/')
+
+    // An interior day, so its hit band is full width rather than clipped at
+    // the plot edge.
+    const rect = page.locator('svg rect[data-day]').nth(20)
+    await clickUntil(rect, page.getByRole('dialog', { name: 'Day detail' }))
+    await expect(page.getByRole('dialog', { name: 'Day detail' })).toBeVisible()
+  })
+
+  test('the same day is reachable without a pointer', async ({ authenticatedPage: page }) => {
+    await gotoHydrated(page, '/')
+
+    // AC63-6's regression guard: focusing the chart lands on today (see
+    // BurndownChart.vue's onFocus), so Enter alone — no click, no arrow keys —
+    // must open the same editor.
+    const chart = page.getByRole('img', { name: /Balance forecast/ })
+    await chart.focus()
+    await chart.press('Enter')
+    await expect(page.getByRole('dialog', { name: 'Day detail' })).toBeVisible()
+  })
+})
