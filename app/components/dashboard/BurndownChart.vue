@@ -27,14 +27,15 @@ import type { ChartDensity, ChartSeries } from '@/lib/burndown'
 import {
   containsZero,
   DESKTOP_LAYOUT,
-  dashArrayFor,
-  dayBand,
+  dayBands,
+  futureDashFor,
   gridLineYs,
-  linePath,
+  labelFlipsLeft,
   MOBILE_LAYOUT,
   percentOf,
   scaleX,
   scaleY,
+  splitSeriesPath,
   tickIndices,
   tickStepForHorizon,
   valueRange,
@@ -91,18 +92,64 @@ const todayX = computed(() => scaleX(props.todayIndex, count.value, layout.value
 
 const gridLines = computed(() => gridLineYs(layout.value))
 
-const seriesPaths = computed(() =>
-  props.series.map((entry, index) => ({
-    id: entry.id,
-    stroke: entry.stroke,
-    dash: dashArrayFor(index, props.density),
-    d: linePath(entry.points, range.value, count.value, layout.value),
-  })),
-)
+interface DrawnLine {
+  readonly key: string
+  /** Always a `var(--chart-N)` reference, never a literal colour. */
+  readonly stroke: string
+  readonly width: number
+  readonly dash: string
+  readonly past: string
+  readonly future: string
+}
 
-const combinedPath = computed(() =>
-  props.combined ? linePath(props.combined, range.value, count.value, layout.value) : '',
-)
+/**
+ * Every line the chart draws, in paint order: accounts first, combined last,
+ * so the heavier combined line stays on top — unchanged from before the
+ * split. Combined is dash index `0` (the simplest, most even pattern, for the
+ * primary line); an account's dash index shifts by one once a combined line
+ * exists, so the two never share a pattern.
+ */
+const drawnLines = computed<DrawnLine[]>(() => {
+  const lines: DrawnLine[] = props.series.map((entry, index) => {
+    const dashIndex = index + (props.combined ? 1 : 0)
+    const split = splitSeriesPath(
+      entry.points,
+      range.value,
+      count.value,
+      layout.value,
+      props.todayIndex,
+    )
+    return {
+      key: entry.id,
+      stroke: entry.stroke,
+      width: props.combined ? props.density.lineWeight * 0.55 : props.density.lineWeight,
+      dash: futureDashFor(dashIndex, props.density),
+      past: split.past,
+      future: split.future,
+    }
+  })
+  if (props.combined) {
+    const split = splitSeriesPath(
+      props.combined,
+      range.value,
+      count.value,
+      layout.value,
+      props.todayIndex,
+    )
+    lines.push({
+      key: 'combined',
+      stroke: 'var(--chart-1)',
+      width: props.density.lineWeight,
+      dash: futureDashFor(0, props.density),
+      past: split.past,
+      future: split.future,
+    })
+  }
+  return lines
+})
+
+/** Every day's hit band, computed once per layout change rather than twice per day per render. */
+const bands = computed(() => dayBands(count.value, layout.value))
 
 interface Marker {
   readonly key: string
@@ -155,6 +202,9 @@ const lowestMarker = computed(() => {
     cy: scaleY(props.lowest.balance, range.value, layout.value),
   }
 })
+
+/** Past 60% of the width the label would run off the card, so it flips to the marker's left. */
+const lowestFlipped = computed(() => labelFlipsLeft(lowestIndex.value, count.value, layout.value))
 
 const ticks = computed(() =>
   tickIndices(count.value, tickStepForHorizon(props.horizonDays), props.todayIndex).map(
@@ -236,18 +286,25 @@ const announcement = computed(() => {
   return events ? `${day}. ${balances}. Due: ${events}.` : `${day}. ${balances}.`
 })
 
+const todayDate = computed<IsoDate | null>(() => props.days[props.todayIndex] ?? null)
+
 const summary = computed(() => {
   const first = props.days[0]
   const last = props.days[props.days.length - 1]
   const span = first && last ? `${formatDateShort(first)} to ${formatDateShort(last)}` : ''
-  if (!props.lowest) return `Balance forecast, ${span}.`
+  // Past/future is now a property of the line itself, and a dash pattern says
+  // nothing to a screen reader. State the meaning first, the appearance second.
+  const split = todayDate.value
+    ? ` Recorded through ${formatDateShort(todayDate.value)}; everything after that is projected, drawn as a dashed line.`
+    : ''
+  if (!props.lowest) return `Balance forecast, ${span}.${split}`
   const side = props.status === 'short' ? 'below' : 'above'
   // The zero line is the only thing on screen saying the balance goes
   // negative, and a line is not readable. Said in words for the same reason
   // the low point is.
   const overdrawn = props.lowest.balance < 0 ? ' The balance goes negative in this window.' : ''
   return (
-    `Balance forecast, ${span}. Lowest projected balance ` +
+    `Balance forecast, ${span}.${split} Lowest projected balance ` +
     `${formatMoney(props.lowest.balance)} on ${formatDateShort(props.lowest.date)}, ` +
     `${side} your ${formatMoney(props.cushion)} safety cushion.${overdrawn}`
   )
@@ -365,27 +422,36 @@ function onFocus(): void {
         stroke-width="1.5"
       />
 
-      <path
-        v-for="entry in seriesPaths"
-        :key="entry.id"
-        :d="entry.d"
-        fill="none"
-        :stroke="entry.stroke"
-        :stroke-dasharray="entry.dash"
-        :stroke-width="props.combined ? props.density.lineWeight * 0.55 : props.density.lineWeight"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
-
-      <path
-        v-if="combinedPath"
-        :d="combinedPath"
-        fill="none"
-        class="stroke-chart-1"
-        :stroke-width="props.density.lineWeight"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
+      <!-- Two paths per line rather than one dashed path through the whole
+           series: history is always solid and the forecast always dashed
+           (#63), and a round linecap on a single dashed path would swallow
+           the gaps at the stroke widths this chart supports (Trap B) — butt
+           caps on both segments keep the dashes readable at every density. -->
+      <template v-for="line in drawnLines" :key="line.key">
+        <path
+          v-if="line.past"
+          :d="line.past"
+          fill="none"
+          :stroke="line.stroke"
+          :stroke-width="line.width"
+          stroke-linecap="butt"
+          stroke-linejoin="round"
+          :data-series="line.key"
+          data-segment="past"
+        />
+        <path
+          v-if="line.future"
+          :d="line.future"
+          fill="none"
+          :stroke="line.stroke"
+          :stroke-width="line.width"
+          :stroke-dasharray="line.dash"
+          stroke-linecap="butt"
+          stroke-linejoin="round"
+          :data-series="line.key"
+          data-segment="future"
+        />
+      </template>
 
       <circle
         v-for="marker in markers"
@@ -412,19 +478,32 @@ function onFocus(): void {
       <rect
         v-for="(date, index) in props.days"
         :key="`hit-${date}`"
-        :x="dayBand(index, count, layout).x"
+        :x="bands[index]?.x"
         :y="layout.top"
-        :width="dayBand(index, count, layout).width"
+        :width="bands[index]?.width"
         :height="plotBottom - layout.top"
         fill="transparent"
+        :data-day="date"
         @mouseenter="activeIndex = index"
         @click="emit('selectDay', date)"
       />
     </svg>
 
     <!-- Annotations live in HTML rather than <text>: SVG text scales with the
-         viewBox, which would render it at ~6px on a phone. -->
-    <div class="pointer-events-none absolute inset-0">
+         viewBox, which would render it at ~6px on a phone.
+
+         The box must match the SVG's exactly, not the wrapper's: the wrapper
+         also holds the tick row, so `inset-0` made this overlay taller than
+         the chart and pushed every percentOf() y down by that difference —
+         enough to drop the lowest-point label back onto the line the 14-unit
+         offsets exist to clear. The SVG is `h-auto w-full`, so its height is
+         width x (viewBox height / width); giving the overlay that same aspect
+         ratio reproduces its box exactly. -->
+    <div
+      class="pointer-events-none absolute inset-x-0 top-0"
+      data-chart-annotations
+      :style="{ aspectRatio: `${layout.width} / ${layout.height}` }"
+    >
       <span
         class="absolute -translate-x-1/2 -translate-y-full text-[11px] text-muted-foreground"
         :style="{
@@ -446,16 +525,34 @@ function onFocus(): void {
         >$0</span
       >
 
-      <span
-        v-if="lowestMarker && props.lowest"
-        class="absolute translate-x-3 -translate-y-1/2 whitespace-nowrap text-[11px] text-muted-foreground"
-        :style="{
-          left: `${percentOf(lowestMarker.cx, layout.width)}%`,
-          top: `${percentOf(lowestMarker.cy, layout.height)}%`,
-        }"
-      >
-        Lowest · {{ formatDateShort(props.lowest.date) }}
-      </span>
+      <template v-if="lowestMarker && props.lowest">
+        <!-- Above the marker and below it, not straddling it: a block
+             centered on the marker's own y collided with the line itself
+             whenever the low point sat right before a steep rise (the
+             marker's neighbourhood is exactly where that happens). Matches
+             reference.html's own lowestLabelY1/Y2, which separate the two
+             the same way. -->
+        <MoneyText
+          :amount="props.lowest.balance"
+          size="sm"
+          class="absolute -translate-y-full whitespace-nowrap font-semibold text-destructive"
+          :class="cn(lowestFlipped ? '-ml-3 -translate-x-full text-right' : 'ml-3')"
+          :style="{
+            left: `${percentOf(lowestMarker.cx, layout.width)}%`,
+            top: `${percentOf(lowestMarker.cy - 14, layout.height)}%`,
+          }"
+        />
+        <span
+          class="absolute whitespace-nowrap text-[11px] text-muted-foreground"
+          :class="cn(lowestFlipped ? '-ml-3 -translate-x-full text-right' : 'ml-3')"
+          :style="{
+            left: `${percentOf(lowestMarker.cx, layout.width)}%`,
+            top: `${percentOf(lowestMarker.cy + 14, layout.height)}%`,
+          }"
+        >
+          Lowest · {{ formatDateShort(props.lowest.date) }}
+        </span>
+      </template>
 
       <Popover>
         <PopoverTrigger
@@ -513,7 +610,7 @@ function onFocus(): void {
       <span
         v-for="tick in ticks"
         :key="`tick-${tick.index}`"
-        class="absolute -translate-x-1/2 text-[11px] text-muted-foreground"
+        class="absolute -translate-x-1/2 whitespace-nowrap text-[11px] text-muted-foreground"
         :style="{ left: `${tick.leftPct}%` }"
       >
         {{ formatDateShort(tick.date) }}
