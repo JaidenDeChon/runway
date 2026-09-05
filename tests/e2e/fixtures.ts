@@ -174,6 +174,27 @@ export async function resetEmptyHousehold(): Promise<void> {
 }
 
 /**
+ * Clears user A's persisted chart-account selection, over the admin connection.
+ *
+ * Issue #12 made hiding a chart account a write to `dashboard_hidden_accounts`,
+ * not page-local state. `dashboard.spec.ts`'s "renders one segment pair per
+ * line" test toggles A's Savings checkbox off to prove the segment count
+ * reacts — same as `default_horizon_days` above, that click now durably
+ * changes A's row, and unlike the horizon test this one cannot simply move to
+ * user D: it needs A's two real seeded accounts, not an empty household. So
+ * the fixture resets A's hidden set instead, before and after, the same
+ * belt-and-braces the horizon test gets from running on D.
+ */
+export async function resetUserAChartSelection(): Promise<void> {
+  const sql = adminSql()
+  try {
+    await sql`delete from public.dashboard_hidden_accounts where user_id = ${USER_A.id}`
+  } finally {
+    await sql.end()
+  }
+}
+
+/**
  * Skip locally when there is no stack; refuse to skip where skipping would lie.
  *
  * Without the second half, a CI run in which `supabase start` came up broken

@@ -34,9 +34,24 @@
  * run, and changing the default for every other A-based spec. It runs on
  * `emptyHouseholdPage` (user D) instead, adding one account through the UI
  * first so the dashboard has something to chart.
+ *
+ * The segment-count test below has the same problem from the other side:
+ * issue #12 also made hiding a chart account a write
+ * (`dashboard_hidden_accounts`), but that test needs A's two real seeded
+ * accounts rather than an empty household, so it cannot move to D the way the
+ * horizon test did. It resets A's hidden set with `resetUserAChartSelection`
+ * instead, before and after, so the toggle it exercises does not leak into
+ * every other A-based spec — including its own next run.
  */
 
-import { assertBaseUrlIsLocal, clickUntil, expect, gotoHydrated, test } from './fixtures'
+import {
+  assertBaseUrlIsLocal,
+  clickUntil,
+  expect,
+  gotoHydrated,
+  resetUserAChartSelection,
+  test,
+} from './fixtures'
 
 /** The key `useChartDensity` owns. Named here so a rename fails loudly. */
 const STORAGE_KEY = 'runway.chart-density'
@@ -282,28 +297,37 @@ test.describe('the burndown chart', () => {
   test('renders one segment pair per line, and a combined line only with two accounts', async ({
     authenticatedPage: page,
   }) => {
-    await gotoHydrated(page, '/')
+    // Hiding Savings below is a write to A's `dashboard_hidden_accounts`
+    // (issue #12), not page-local state — reset before, in case a previous
+    // run left it hidden, and after, in a `finally`, so this test's own
+    // toggle never leaks into the next run or into another A-based spec.
+    await resetUserAChartSelection()
+    try {
+      await gotoHydrated(page, '/')
 
-    await expect(page.getByRole('img', { name: /Balance forecast/ })).toBeVisible()
+      await expect(page.getByRole('img', { name: /Balance forecast/ })).toBeVisible()
 
-    // User A's seeded household has two accounts (Checking, Savings), both
-    // selected by default: one line each plus the combined line, three drawn
-    // lines in total, each split into a past segment and a future one.
-    await expect(page.locator('svg [data-segment="past"]')).toHaveCount(3)
-    await expect(page.locator('svg [data-segment="future"]')).toHaveCount(3)
+      // User A's seeded household has two accounts (Checking, Savings), both
+      // selected by default: one line each plus the combined line, three drawn
+      // lines in total, each split into a past segment and a future one.
+      await expect(page.locator('svg [data-segment="past"]')).toHaveCount(3)
+      await expect(page.locator('svg [data-segment="future"]')).toHaveCount(3)
 
-    const savings = page.getByRole('checkbox', { name: /Show Savings on the chart/ })
-    // The same swallowed-click concern clickUntil exists for, adapted to a
-    // count rather than a visibility change: retry the click until the
-    // segment count actually reflects one fewer drawn line.
-    await expect(async () => {
-      if ((await page.locator('svg [data-segment="past"]').count()) === 1) return
-      await savings.click({ timeout: 2_000 })
-      await expect(page.locator('svg [data-segment="past"]')).toHaveCount(1, { timeout: 1_000 })
-    }).toPass({ timeout: 20_000 })
+      const savings = page.getByRole('checkbox', { name: /Show Savings on the chart/ })
+      // The same swallowed-click concern clickUntil exists for, adapted to a
+      // count rather than a visibility change: retry the click until the
+      // segment count actually reflects one fewer drawn line.
+      await expect(async () => {
+        if ((await page.locator('svg [data-segment="past"]').count()) === 1) return
+        await savings.click({ timeout: 2_000 })
+        await expect(page.locator('svg [data-segment="past"]')).toHaveCount(1, { timeout: 1_000 })
+      }).toPass({ timeout: 20_000 })
 
-    await expect(page.locator('svg [data-segment="future"]')).toHaveCount(1)
-    await expect(page.getByText('Combined', { exact: true })).toHaveCount(0)
+      await expect(page.locator('svg [data-segment="future"]')).toHaveCount(1)
+      await expect(page.getByText('Combined', { exact: true })).toHaveCount(0)
+    } finally {
+      await resetUserAChartSelection()
+    }
   })
 
   test('draws history solid and the forecast dashed', async ({ authenticatedPage: page }) => {
