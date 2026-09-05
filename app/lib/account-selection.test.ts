@@ -3,6 +3,7 @@ import { toMinorUnits } from '~~/domain/money'
 import type { AccountSeries } from '~~/domain/projection'
 import type { Account } from '~~/domain/types'
 import {
+  effectiveHidden,
   endingBalances,
   legendEntries,
   nextHiddenAccounts,
@@ -141,5 +142,36 @@ describe('legendEntries', () => {
   it('marks nothing disabled when more than one account is visible', () => {
     const entries = legendEntries([CHECKING, SAVINGS], new Map(), [])
     expect(entries.every((entry) => !entry.disabled)).toBe(true)
+  })
+})
+
+describe('a hidden set that covers every account', () => {
+  // Reachable without any impossible state: hide one account on the dashboard,
+  // then archive the other on /accounts. Archiving is an `archived_on` update
+  // rather than a delete, so nothing cascades the stale row away, and the
+  // click-time guard never sees it because the change happened elsewhere.
+  it('draws every account rather than nothing', () => {
+    expect(visibleAccountIds([CHECKING], ['acct-checking'])).toEqual(['acct-checking'])
+    expect(visibleAccountIds([CHECKING, SAVINGS], ['acct-checking', 'acct-savings'])).toEqual([
+      'acct-checking',
+      'acct-savings',
+    ])
+  })
+
+  it('reports the boxes checked, so the legend agrees with the chart', () => {
+    const entries = legendEntries([CHECKING, SAVINGS], new Map(), ['acct-checking', 'acct-savings'])
+    expect(entries.every((entry) => entry.checked)).toBe(true)
+  })
+
+  it('leaves an ordinary hidden set alone', () => {
+    expect(effectiveHidden([CHECKING, SAVINGS], ['acct-savings'])).toEqual(['acct-savings'])
+    expect(effectiveHidden([CHECKING, SAVINGS], [])).toEqual([])
+  })
+
+  // The zero line is why this matters: an empty selection projects to a flat
+  // zero, so the card headlines $0 and a shortfall for a household holding
+  // real money.
+  it('never yields an empty selection while an account exists', () => {
+    expect(visibleAccountIds([CHECKING], ['acct-checking', 'acct-savings'])).not.toEqual([])
   })
 })

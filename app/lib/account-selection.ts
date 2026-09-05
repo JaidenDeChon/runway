@@ -13,12 +13,41 @@ import type { MinorUnits } from '~~/domain/money'
 import type { AccountSeries } from '~~/domain/projection'
 import type { Account } from '~~/domain/types'
 
+/**
+ * The hidden set as it applies to the accounts that actually exist right now.
+ *
+ * The stored set can outlive the accounts it was written against. Hide one
+ * account here, then archive the other on `/accounts` — that is an
+ * `archived_on` update, not a delete, so nothing cascades — and every
+ * remaining account is hidden. The click-time guard in `nextHiddenAccounts`
+ * cannot see that: the emptying change happened on another screen.
+ *
+ * A hidden set covering everything is not a preference, it is a contradiction:
+ * the user asked for a chart of nothing. Drawing nothing is the worst possible
+ * reading of it, because `project()` over an empty selection returns a zero
+ * line and the card then headlines `$0` and "Short by <cushion>" for a
+ * household that holds real money. So a set that hides everything is treated
+ * as hiding nothing.
+ *
+ * Enforced here, where the set is *read*, rather than at the write path —
+ * the two can drift apart in any number of ways and only the read knows the
+ * account list it is being applied to. It self-heals on the next toggle.
+ */
+export function effectiveHidden(
+  accounts: readonly Account[],
+  hidden: readonly string[],
+): readonly string[] {
+  const anyVisible = accounts.some((account) => !hidden.includes(account.id))
+  return anyVisible ? hidden : []
+}
+
 /** Ids of the accounts whose series is drawn: everything not hidden. */
 export function visibleAccountIds(
   accounts: readonly Account[],
   hidden: readonly string[],
 ): string[] {
-  return accounts.filter((account) => !hidden.includes(account.id)).map((account) => account.id)
+  const applied = effectiveHidden(accounts, hidden)
+  return accounts.filter((account) => !applied.includes(account.id)).map((account) => account.id)
 }
 
 /**
@@ -61,13 +90,16 @@ export function legendEntries(
   ending: ReadonlyMap<string, MinorUnits>,
   hidden: readonly string[],
 ): LegendEntry[] {
+  // The same applied set the chart uses, so the legend cannot show every box
+  // unchecked while every line is drawn.
+  const applied = effectiveHidden(accounts, hidden)
   const visible = visibleAccountIds(accounts, hidden)
   return accounts.map((account) => ({
     accountId: account.id,
     name: account.name,
     color: account.color,
     endingBalance: ending.get(account.id) ?? account.balance,
-    checked: !hidden.includes(account.id),
+    checked: !applied.includes(account.id),
     disabled: visible.length === 1 && visible[0] === account.id,
   }))
 }
