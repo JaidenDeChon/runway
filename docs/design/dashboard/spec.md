@@ -410,6 +410,27 @@ was incomplete, not restrictive.
 
 **Open question 6 (no error state) is now answered** — see the entry below.
 
+### What the dashboard remembers
+
+Issue #12 moved two of this screen's controls from session-only state onto stored preferences, and
+left a third exactly where it was — on purpose, not by neglect:
+
+- **The forecast horizon** (`30d`/`60d`/`90d`) is `user_settings.default_horizon_days`, read and
+  written through `useRunwayData()`. It is user data: the number means the same thing on every
+  device the user signs into, so it belongs to the account rather than the browser.
+- **Which accounts are on the chart** is `public.dashboard_hidden_accounts`, storing the **hidden**
+  set rather than the shown one — the reason is the same one `docs/database/schema.md` gives: an
+  account added on another screen, or another device, must appear on the chart by default instead
+  of silently missing from it because a shown-set forgot to name it.
+- **Chart density** (line weight, dash density, marker size) stays in `localStorage`, unmoved.
+  `CLAUDE.md` draws the line this sits on: the browser's timezone, viewport and colour-scheme
+  preference are device-derived facts, re-derived on each device rather than stored as user data,
+  and density is in that category too — a cosmetic judgment about *this screen on this device*, not
+  a fact about the user's money. Whether that classification should hold — whether a signed-in user
+  would actually expect their density to follow them to a second device — is a live question, not a
+  closed one, and is deferred to a follow-up issue (#72) rather than decided silently in either
+  direction.
+
 ---
 
 ## Open questions

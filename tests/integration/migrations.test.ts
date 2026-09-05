@@ -69,6 +69,7 @@ function migrationsOnDisk(): { readonly versions: string[]; readonly files: stri
  */
 const EXPECTED_TABLES = [
   'accounts',
+  'dashboard_hidden_accounts',
   'occurrences',
   'recurring_rules',
   'rls_fixture_items',
