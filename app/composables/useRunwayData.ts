@@ -1,14 +1,16 @@
 /**
  * The app's single copy of the user's financial data.
  *
- * **Accounts, settings, recurring items, their materialized occurrences and
- * the dashboard's two preferences are Supabase-backed; transfers are not
- * yet.** Issue #7 moved the accounts screen onto real rows, issue #8 moved
- * recurring items the same way, issue #9 added `regenerateOccurrences`,
- * keeping `public.occurrences` reconciled with those rules, and issue #12
- * moved the dashboard's horizon and hidden-account selection off `useState`
- * and onto `user_settings.default_horizon_days` and
- * `public.dashboard_hidden_accounts` — `RunwayData.accounts`,
+ * **Accounts, settings, recurring items, their materialized occurrences, the
+ * dashboard's two preferences and the monthly discretionary figure are
+ * Supabase-backed; transfers are not yet.** Issue #7 moved the accounts
+ * screen onto real rows, issue #8 moved recurring items the same way, issue
+ * #9 added `regenerateOccurrences`, keeping `public.occurrences` reconciled
+ * with those rules, issue #12 moved the dashboard's horizon and
+ * hidden-account selection off `useState` and onto
+ * `user_settings.default_horizon_days` and `public.dashboard_hidden_accounts`,
+ * and issue #13 gave `/accounts` a writer for
+ * `user_settings.monthly_discretionary_cents` — `RunwayData.accounts`,
  * `RunwayData.recurringItems` and the settings that ride along with accounts
  * (`safetyCushion`, `monthlyDiscretionarySpend`, `timeZone`,
  * `staleAfterDays`) come from `public.accounts`, `public.recurring_rules` and
@@ -199,13 +201,15 @@ export function useRunwayData() {
   // watch once, before issue #8 moved them onto the `useAsyncData` above —
   // that fetch re-runs on the same `watch: [authUser]` transition, so the
   // leak this watch exists to close is already closed for them by construction.
-  // Settings this screen reads but has no UI to write yet:
-  // `cushion_cents`, `monthly_discretionary_cents` and `time_zone` ride along
-  // on the one `user_settings` query the discretionary designation already
-  // requires — a plain read, always. Their setters below write into this
-  // session-local overlay instead of the database, exactly the stance
-  // `docs/database/schema.md` already records for `time_zone`: the writer
-  // waits for the settings screen. No screen calls those setters today.
+  // `monthly_discretionary_cents` now has a writer: `setMonthlyDiscretionarySpend`
+  // persists it from the "Everyday spending" card on `/accounts` (issue #13),
+  // using this overlay only to bend the chart optimistically while the write
+  // is in flight. `cushion_cents` and `time_zone` still ride along on the one
+  // `user_settings` query the discretionary designation already requires — a
+  // plain read, always — and their setters below write into this session-local
+  // overlay instead of the database, exactly the stance `docs/database/schema.md`
+  // records for `time_zone`: the writer waits for the settings screen. No
+  // screen calls `setSafetyCushion` or `setTimeZoneOverride` today.
   const settingsOverride = useState<Partial<HouseholdSettings>>(
     'runway-settings-override',
     () => ({}),
@@ -606,10 +610,45 @@ export function useRunwayData() {
     }
   }
 
-  function setMonthlyDiscretionarySpend(amount: MinorUnits): void {
-    settingsOverride.value = {
-      ...settingsOverride.value,
-      monthlyDiscretionarySpend: Math.max(0, Math.round(amount)),
+  /**
+   * Persists the monthly discretionary figure to
+   * `user_settings.monthly_discretionary_cents` under the caller's own
+   * session, the same component-side write path `setDefaultHorizonDays` uses.
+   *
+   * Writes the overlay optimistically so the forecast bends the moment Save is
+   * pressed, then persists with `upsert`, not `update`: a plain `update`
+   * silently affects zero rows for a user whose settings row is missing —
+   * exactly the case `toHouseholdSettings(null)` exists for. No `refresh()`
+   * follows: the overlay already carries the new value into `data`
+   * reactively, and re-running all four household queries would re-render the
+   * chart underneath the user.
+   *
+   * **Unlike `setDefaultHorizonDays`, this throws on a failed write.** The
+   * horizon is a lens: a dropped write leaves the projection correct and only
+   * the control stale, so a reverted toggle is adequate feedback. The monthly
+   * figure is data — a field on `RunwayData` that feeds `project()`'s
+   * arithmetic — so a dropped write means the chart shows a slope the
+   * database does not hold, with nothing saying so. `saveAccount`,
+   * `saveBalances` and `saveRecurringItem` all throw `save-failed` and their
+   * editors render it; this follows those, not the preference writers.
+   */
+  async function setMonthlyDiscretionarySpend(amount: MinorUnits): Promise<void> {
+    if (!Number.isFinite(amount)) throw new Error('save-failed')
+    // The column's own `check (>= 0)` says the same thing; clamping here means
+    // the UI never round-trips a rejection for something it could have
+    // prevented. No upper cap is invented — any JS-safe integer fits `bigint`.
+    const cents = Math.max(0, Math.round(amount))
+    const userId = requireUserId()
+    const previous = settingsOverride.value
+    settingsOverride.value = { ...settingsOverride.value, monthlyDiscretionarySpend: cents }
+    const { error: writeError } = await client
+      .from('user_settings')
+      .upsert({ user_id: userId, monthly_discretionary_cents: cents }, { onConflict: 'user_id' })
+    if (writeError) {
+      // Code only — never a message, never the amount. See CLAUDE.md.
+      console.error('discretionary spend write failed', { code: writeError.code })
+      settingsOverride.value = previous
+      throw new Error('save-failed')
     }
   }
 
@@ -709,6 +748,7 @@ export function useRunwayData() {
     recurringItems,
     transfers,
     safetyCushion,
+    monthlyDiscretionarySpend,
     timeZoneOverride,
     defaultHorizonDays,
     hiddenAccountIds,
