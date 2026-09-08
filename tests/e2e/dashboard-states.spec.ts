@@ -97,6 +97,11 @@ async function expectTextToBe(locator: import('@playwright/test').Locator, expec
   await expect.poll(async () => (await locator.textContent())?.trim() === expected).toBe(true)
 }
 
+/** `LowestBalanceCard`'s meta line — "<date> · <days away>". Date and cadence only; no money. */
+function lowestMeta(page: import('@playwright/test').Page) {
+  return lowestBalanceCard(page).locator('p.mt-1.text-sm.text-muted-foreground')
+}
+
 test.beforeEach(({ baseURL }) => {
   assertBaseUrlIsLocal(baseURL)
 })
@@ -242,6 +247,69 @@ test.describe('the forecast horizon', () => {
     )
     await expect(page.getByText(`14 days back ${MIDDOT} 90 days ahead`)).toBeVisible()
     await expect(page.getByText(/through 90 days/)).toBeVisible()
+  })
+})
+
+test.describe('everyday spending', () => {
+  test('a monthly figure bends the forecast, and zero flattens it again', async ({
+    emptyHouseholdPage: page,
+  }) => {
+    // The first account, so `AccountEditor`'s watcher defaults
+    // `isDiscretionarySource` on — the drain then has somewhere to come from.
+    await addAccount(page, 'E2E Everyday', '2000')
+    await gotoHydrated(page, '/accounts')
+    await expect(page.getByText('Discretionary source')).toBeVisible()
+
+    // Baseline: no drain, so the line is flat and its running minimum is the
+    // earliest qualifying day — `verdictFrom` is today + 1, and the engine's
+    // strict `<` keeps the earliest date on a tie.
+    await gotoHydrated(page, '/')
+    await expect
+      .poll(
+        async () =>
+          (await lowestMeta(page).textContent())?.trim().endsWith(`${MIDDOT} in 1 day`) ?? false,
+      )
+      .toBe(true)
+
+    // Captured, never asserted as a figure: only ever compared to a later
+    // reading of the same element and only ever reported as `false`.
+    const headline = lowestBalanceCard(page).locator('span.font-mono').first()
+    const before = (await headline.textContent())?.trim() ?? ''
+
+    await gotoHydrated(page, '/accounts')
+    await page.locator('#discretionary-monthly').fill('300')
+    await clickUntil(page.locator('#discretionary-save'), page.getByText('Saved.'))
+
+    // A full reload — this asserts the stored row, not the in-memory overlay.
+    // With any positive drain the line falls strictly every day, so its
+    // minimum is uniquely the last day of D's stored 30-day horizon.
+    await gotoHydrated(page, '/')
+    await expect
+      .poll(
+        async () =>
+          (await lowestMeta(page).textContent())?.trim().endsWith(`${MIDDOT} in 30 days`) ?? false,
+      )
+      .toBe(true)
+    await expect
+      .poll(async () => ((await headline.textContent())?.trim() ?? '') !== before)
+      .toBe(true)
+
+    // Zero it: a strict round trip. A drain that is merely smaller, or an
+    // overlay that never cleared, fails both halves.
+    await gotoHydrated(page, '/accounts')
+    await page.locator('#discretionary-monthly').fill('0')
+    await clickUntil(page.locator('#discretionary-save'), page.getByText('Saved.'))
+
+    await gotoHydrated(page, '/')
+    await expect
+      .poll(
+        async () =>
+          (await lowestMeta(page).textContent())?.trim().endsWith(`${MIDDOT} in 1 day`) ?? false,
+      )
+      .toBe(true)
+    await expect
+      .poll(async () => ((await headline.textContent())?.trim() ?? '') === before)
+      .toBe(true)
   })
 })
 

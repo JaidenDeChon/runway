@@ -156,8 +156,13 @@ export async function assertSessionAuthenticates(session: BrowserSession): Promi
  * so the account delete alone is enough to clear everything the E2E suite
  * could have written for D — no explicit `dashboard_hidden_accounts` delete is
  * needed. `user_settings` is reset alongside it in case a test ever sets the
- * discretionary designation, the staleness threshold, or (issue #12) the
- * dashboard's stored horizon.
+ * discretionary designation, the staleness threshold, (issue #12) the
+ * dashboard's stored horizon, or (issue #13) the monthly discretionary
+ * figure. That last one matters beyond tidiness: a crashed "everyday
+ * spending" test would otherwise leave D with a drain, and the exact-figure
+ * verdict tests in `dashboard-states.spec.ts` ("Covered"/"$2,000",
+ * "Tight"/"$700", "Short by $500") would then start failing for a reason that
+ * looks nothing like the cause.
  */
 export async function resetEmptyHousehold(): Promise<void> {
   const sql = adminSql()
@@ -165,7 +170,8 @@ export async function resetEmptyHousehold(): Promise<void> {
     await sql`delete from public.accounts where user_id = ${USER_D.id}`
     await sql`
       update public.user_settings
-      set discretionary_account_id = null, balance_stale_after_days = 14, default_horizon_days = 30
+      set discretionary_account_id = null, balance_stale_after_days = 14, default_horizon_days = 30,
+          monthly_discretionary_cents = 0
       where user_id = ${USER_D.id}
     `
   } finally {
