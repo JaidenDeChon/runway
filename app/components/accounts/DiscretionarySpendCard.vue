@@ -81,11 +81,7 @@ async function onSave(): Promise<void> {
         <div class="flex flex-wrap items-end gap-3">
           <div class="flex min-w-0 flex-1 flex-col gap-2">
             <Label for="discretionary-monthly">Monthly amount</Label>
-            <MoneyInput
-              id="discretionary-monthly"
-              v-model="draft"
-              aria-label="Monthly everyday spending"
-            />
+            <MoneyInput id="discretionary-monthly" v-model="draft" aria-label="Monthly amount" />
           </div>
           <Button id="discretionary-save" type="submit" :disabled="!isDirty || saving">Save</Button>
         </div>
