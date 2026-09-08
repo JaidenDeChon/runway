@@ -66,7 +66,10 @@ describe.skipIf(LOCAL_STACK === null)('monthly discretionary spend', () => {
 
     const { error: writeError } = await b.client
       .from('user_settings')
-      .upsert({ user_id: userId, monthly_discretionary_cents: PROBE_CENTS }, { onConflict: 'user_id' })
+      .upsert(
+        { user_id: userId, monthly_discretionary_cents: PROBE_CENTS },
+        { onConflict: 'user_id' },
+      )
     expect(writeError).toBeNull()
 
     const { data: after, error: reReadError } = await b.client
