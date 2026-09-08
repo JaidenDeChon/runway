@@ -160,9 +160,13 @@ describe('project', () => {
     const result = project(data_, { start: '2026-01-15', end: '2026-04-14' })
     expect(result.days).toHaveLength(90)
 
-    const balanceOn = new Map(result.days.map((d, i) => [d, result.combined[i]!.balance]))
-    expect(balanceOn.get('2026-01-31')! - balanceOn.get('2026-02-28')!).toBe(toMinorUnits(1000))
-    expect(balanceOn.get('2026-02-28')! - balanceOn.get('2026-03-31')!).toBe(toMinorUnits(1000))
+    const balanceOn = new Map(result.days.map((d, i) => [d, result.combined[i]?.balance ?? 0]))
+    const janEnd = balanceOn.get('2026-01-31') ?? 0
+    const febEnd = balanceOn.get('2026-02-28') ?? 0
+    const marEnd = balanceOn.get('2026-03-31') ?? 0
+    // Differences read off the series, not a re-derivation of dailyDiscretionary.
+    expect(janEnd - febEnd).toBe(toMinorUnits(1000)) // all of February, 28 days
+    expect(febEnd - marEnd).toBe(toMinorUnits(1000)) // all of March, 31 days
   })
 
   it('restricts the projection to the requested accounts', () => {
