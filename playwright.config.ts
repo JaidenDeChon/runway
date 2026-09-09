@@ -1,5 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
-import { resolveStack } from './tests/support/stack'
+import {
+  assertLocalUrl,
+  resolveConfiguredAppSupabaseUrl,
+  resolveStack,
+} from './tests/support/stack'
 
 /**
  * The E2E harness.
@@ -51,14 +55,20 @@ import { resolveStack } from './tests/support/stack'
  * exists in `tests/e2e/fixtures.ts`: `reuseExistingServer` is on outside CI, and
  * injection does nothing to a server this config did not start.
  *
- * `globalSetup` below now runs a third guard *before* anything starts or
- * attaches: it resolves the Supabase endpoint this run will actually drive —
- * by probing a server already listening on `baseURL` over plain HTTP, or by
- * resolving what the server it starts will be handed — and puts it through the
- * same `assertLocalUrl` rule. A production-configured run fails there, with the
- * host in the message, before a browser exists. The per-navigation
+ * A third guard now checks where the *app under test* points, in two places
+ * that between them cover both ways this run gets a server. The static half
+ * runs at **config load** — see the `LOCAL_STACK_FOR_SERVER` block below —
+ * because Playwright spawns `webServer` before `globalSetup`, so only module
+ * scope is early enough to refuse before `nuxt preview` boots against whatever
+ * `.env` names. `globalSetup` (`tests/e2e/global-setup.ts`) runs the other
+ * half: it probes a server already listening on `baseURL` over plain HTTP —
+ * the only thing that can read a server this config did not start — and puts
+ * its Supabase URL through the same `assertLocalUrl` rule. A
+ * production-configured run fails at one of the two, with the host in the
+ * message and before a browser exists. The per-navigation
  * `assertAppTargetsLocalStack` stays as defence-in-depth for a server that is
- * re-pointed under a long-lived run. No environment variable disables either.
+ * re-pointed under a long-lived run. No environment variable disables any of
+ * the three.
  *
  * ## Two viewports
  *
@@ -89,6 +99,59 @@ const SERVER_COMMAND = process.env.RUNWAY_E2E_SERVER_COMMAND ?? 'bun run build &
  * somewhere alarming".
  */
 const LOCAL_STACK_FOR_SERVER = resolveStack()
+
+/**
+ * The static half of the third guard, run at config load — which is *before*
+ * `webServer` spawns, and `globalSetup` is not.
+ *
+ * Playwright starts `webServer` before `globalSetup` in this version, so a
+ * `globalSetup`-only check lets `nuxt preview` boot against whatever `.env`
+ * names before the guard reads anything. When this config is the one starting
+ * the server, module scope is the earliest point that can refuse — and it is
+ * synchronous, so no `fetch` is involved and `tests/support/stack.ts` stays
+ * network-free.
+ *
+ * Two cases, mirroring `SERVER_ENV` below:
+ *  - a local stack resolved → `webServer.env` will inject its `apiUrl`, which
+ *    wins over `.env`. Loopback by construction; asserted anyway, the same way
+ *    `resolveStack` asserts `supabase status` — a guard earns its keep on the
+ *    case nobody predicted.
+ *  - nothing resolved → nothing is injected, so the server this config starts
+ *    will read `NUXT_PUBLIC_SUPABASE_URL` from the environment or `.env`.
+ *    Resolve that statically and assert it; `null` (set nowhere) is a hard
+ *    failure, because a server with no Supabase URL cannot render a page.
+ *
+ * Known, accepted false positive: with no stack running, a hosted `.env`, and a
+ * *local-pointed* server someone already started by hand, this now fails at
+ * config load where `globalSetup`'s probe would have waved it through. It costs
+ * nothing real — with no stack `requireStackOrSkip` skips every spec anyway —
+ * and the alternative is booting a production-configured Nitro server. The
+ * reuse path proper still belongs to `globalSetup`: this config cannot know
+ * synchronously whether a server is already listening, and only the probe can
+ * read a server it did not start.
+ */
+if (LOCAL_STACK_FOR_SERVER) {
+  assertLocalUrl(
+    LOCAL_STACK_FOR_SERVER.apiUrl,
+    'its Supabase URL',
+    'the local stack playwright.config.ts injects into the E2E server via webServer.env',
+  )
+} else {
+  const configured = resolveConfiguredAppSupabaseUrl()
+  if (!configured) {
+    throw new Error(
+      'Refusing to run E2E: no local Supabase stack is running and NUXT_PUBLIC_SUPABASE_URL is ' +
+        'set nowhere — not in the environment, not in .env — so the server this run starts ' +
+        'could not render a page to test. Start the stack with `bun run db:start`, or set ' +
+        'NUXT_PUBLIC_SUPABASE_URL to the local stack for this run.',
+    )
+  }
+  assertLocalUrl(
+    configured.url,
+    'its Supabase URL',
+    `the app under test (from ${configured.source})`,
+  )
+}
 
 const SERVER_ENV: Record<string, string> = LOCAL_STACK_FOR_SERVER
   ? {
