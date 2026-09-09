@@ -173,14 +173,30 @@ Supabase-ish endpoints it must never point at the hosted project — not two:
    against.** The Nuxt server reads `NUXT_PUBLIC_SUPABASE_URL` from its own
    environment or `.env`, so a loopback `baseURL` with a hosted `.env` — which
    anyone who has deployed has — used to pass 1 and 2 and still drive a real
-   sign-up into `auth.users` on production. `tests/e2e/global-setup.ts` now
-   resolves this endpoint **before Playwright starts or attaches to anything**:
-   it probes a server already listening on `baseURL` and reads the URL from its
-   server-rendered markup, or, when it will start the server itself, asserts the
-   value that server will be handed. A hosted value fails the run immediately,
-   with the host named and never the key. `assertAppTargetsLocalStack` still
-   re-checks on every navigation, as defence-in-depth for a server re-pointed
-   under a long-lived run.
+   sign-up into `auth.users` on production. Three layers close it now, each
+   load-bearing for a different hazard:
+
+   - **The config-load block in `playwright.config.ts`.** Runs at config
+     evaluation, which is before Playwright's `webServer` spawns. This is the
+     one that stops a production-pointed `nuxt preview` from booting at all: it
+     asserts the local stack's URL when one resolved, otherwise statically
+     resolves `NUXT_PUBLIC_SUPABASE_URL` from the environment or `.env` and
+     asserts that, failing hard when it is set nowhere.
+   - **The probe in `tests/e2e/global-setup.ts`.** Runs after `webServer` has
+     started (in `@playwright/test` 1.56 the `webServer` plugin's setup runs
+     before `globalSetup`), and still before any browser — the issue's
+     Definition of Done. It is the only thing that can read a server *this
+     config did not start*: the `reuseExistingServer` path, on outside CI,
+     where a preview server someone else launched is attached to and
+     `webServer.env` injection does nothing. It fetches `/sign-in` and reads
+     the Supabase URL out of the server-rendered markup.
+   - **`assertAppTargetsLocalStack` in `tests/e2e/fixtures.ts`.**
+     Defence-in-depth for a server re-pointed midway through a long-lived run.
+     It runs from `gotoHydrated`, not from a bare `page.goto` — a few specs
+     navigate with `page.goto` directly and do not get it — which is why it is
+     the backstop and not the primary check.
+
+   Every hosted value fails the run with the host named and never the key.
 
 None of the three can be turned off by an environment variable — a hosted
 endpoint fails the run, it does not get a way to opt back in.

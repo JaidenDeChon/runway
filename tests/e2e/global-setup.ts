@@ -1,5 +1,5 @@
 /**
- * The E2E pre-flight guard — the third endpoint, checked before anything starts.
+ * The E2E pre-flight guard — the third endpoint, checked before any browser.
  *
  * `tests/support/stack.ts` proves the connection *this process* opens is
  * loopback, and `assertBaseUrlIsLocal` proves the `baseURL` the *browser* is
@@ -10,36 +10,48 @@
  * sign-up into `auth.users` on production, with every other guard in the repo
  * green — issue #57.
  *
- * `assertAppTargetsLocalStack` in `tests/e2e/fixtures.ts` already closes that
- * from inside the browser, and it stays as defence-in-depth for a server that
- * changes its target under a long-lived run. But it only fires after a build, a
- * server boot, a browser launch and a hydrated navigation, and not at all for a
- * bare `page.goto`. This runs first, before Playwright starts or attaches to
- * anything, so a production-configured run fails immediately with the host in
- * the message and never reaches a browser.
+ * This file is the *second* of the two layers that close that. The first is the
+ * config-load block in `playwright.config.ts`, which runs before `webServer`
+ * spawns and is the only thing early enough to stop a production-pointed
+ * `nuxt preview` from booting at all. This file runs *after* `webServer` has
+ * started (see the ordering note at the foot of this comment), so a server is
+ * normally already up by the time it runs — and it handles the case the
+ * config-load block structurally cannot: a server this config did not start,
+ * which only an HTTP probe can read. It still runs before any browser launches,
+ * which is the issue's Definition of Done.
+ *
+ * `assertAppTargetsLocalStack` in `tests/e2e/fixtures.ts` is the third layer:
+ * defence-in-depth for a server re-pointed under a long-lived run. It fires on
+ * every `gotoHydrated`, not on a bare `page.goto` — three specs use `page.goto`
+ * directly and skip it — which is exactly why it is not the load-bearing check.
  *
  * It answers the same question two ways, because there are two ways an E2E run
  * gets a server:
  *
- *  - A server is already listening on the base URL. `reuseExistingServer` is on
- *    outside CI, so Playwright will attach to it and `webServer.env` injection
- *    does nothing. The server itself is then the authoritative answer: probe it
- *    over plain HTTP and read the Supabase URL it inlined into its own SSR
- *    markup. If the probe cannot get a clean answer, fail closed — a guard that
- *    cannot read its subject must not pass, and guessing here is the exact
- *    failure mode this issue is about.
- *  - Nothing is listening. Playwright will start the server, so resolve what it
- *    will be handed: the local stack `playwright.config.ts` injects via
- *    `webServer.env` when one is up, otherwise the `NUXT_PUBLIC_SUPABASE_URL`
- *    the server would read from the environment or `.env`.
+ *  - A server is already listening on the base URL — either one `webServer`
+ *    just started, or, with `reuseExistingServer` on outside CI, one somebody
+ *    else started that `webServer.env` injection cannot touch. The server
+ *    itself is the authoritative answer: probe it over plain HTTP and read the
+ *    Supabase URL it inlined into its own SSR markup. If the probe cannot get a
+ *    clean answer, fail closed — a guard that cannot read its subject must not
+ *    pass, and guessing here is the exact failure mode this issue is about.
+ *  - Nothing is listening — `webServer` is disabled, or the ordering changed
+ *    and this now runs first. Resolve what a server this config starts would be
+ *    handed: the local stack `playwright.config.ts` injects via `webServer.env`
+ *    when one is up, otherwise the `NUXT_PUBLIC_SUPABASE_URL` the server would
+ *    read from the environment or `.env`. In the current arrangement this
+ *    branch is unreachable (see step 3), and kept as correct defence for when
+ *    it is not.
  *
  * No environment variable turns any of this off. The one network call in the
  * whole guard is the probe below; the rule and the resolution are pure pieces
  * from `tests/support/stack.ts`.
  *
- * On Playwright's `globalSetup`-vs-`webServer` ordering: it has moved between
- * versions and this file does not depend on it. Both a not-yet-started server
- * and an already-running one are handled, so whichever runs first is fine.
+ * Ordering, observed for `@playwright/test` 1.56.0: `webServer` is registered
+ * as a plugin and its setup task runs *before* `config.globalSetups`, so by the
+ * time this function is called the server has already spawned. This file does
+ * not depend on that — both a running server and no server are handled — so it
+ * stays correct if the ordering moves again.
  */
 
 import type { FullConfig } from '@playwright/test'
@@ -129,11 +141,20 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     return
   }
 
-  // 3. No server yet. Resolve what the one Playwright starts will receive.
+  // 3. No server answered the probe. In the current arrangement this is
+  //    unreachable: `webServer` spawns before this runs (see the ordering note
+  //    in the file header), so something is always listening by now. It is kept,
+  //    not deleted, as correct defence for two futures — `webServer` disabled,
+  //    or the plugin ordering changed so this runs first — and a reader should
+  //    not have to re-derive that it is dead-for-now on purpose.
+  //
+  //    It resolves what a server this config starts would receive:
   //    `playwright.config.ts` injects `resolveStack().apiUrl` via `webServer.env`,
   //    which wins over `.env` — loopback by construction, asserted anyway for the
   //    same reason `resolveStack` asserts `supabase status`: the value of a guard
-  //    is that it holds for the case nobody predicted.
+  //    is that it holds for the case nobody predicted. (`playwright.config.ts`
+  //    also makes this same static check at config load, which is what actually
+  //    fires today.)
   const stack = resolveStack()
   if (stack) {
     assertLocalUrl(
