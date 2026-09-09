@@ -158,6 +158,33 @@ Traces, screenshots and video are kept **on failure only** and uploaded as CI
 artifacts. They contain rendered page content, which for this app means
 balances, so they are never echoed into the log and never committed.
 
+### It asserts three endpoints are local, not two
+
+An E2E run drives real writes through a real browser, and there are three
+Supabase-ish endpoints it must never point at the hosted project — not two:
+
+1. **The endpoint the _test process_ connects to.** `assertLocalOnly` in
+   `tests/support/stack.ts`, covering `supabase status` and the `RUNWAY_RLS_*`
+   variables alike — the same guard the integration suite is held to.
+2. **The `baseURL` the _browser_ is pointed at.** `assertBaseUrlIsLocal` in
+   `tests/e2e/fixtures.ts`, so `RUNWAY_E2E_BASE_URL` cannot aim the run at a
+   deployed environment.
+3. **The Supabase endpoint the _application under test_ is configured
+   against.** The Nuxt server reads `NUXT_PUBLIC_SUPABASE_URL` from its own
+   environment or `.env`, so a loopback `baseURL` with a hosted `.env` — which
+   anyone who has deployed has — used to pass 1 and 2 and still drive a real
+   sign-up into `auth.users` on production. `tests/e2e/global-setup.ts` now
+   resolves this endpoint **before Playwright starts or attaches to anything**:
+   it probes a server already listening on `baseURL` and reads the URL from its
+   server-rendered markup, or, when it will start the server itself, asserts the
+   value that server will be handed. A hosted value fails the run immediately,
+   with the host named and never the key. `assertAppTargetsLocalStack` still
+   re-checks on every navigation, as defence-in-depth for a server re-pointed
+   under a long-lived run.
+
+None of the three can be turned off by an environment variable — a hosted
+endpoint fails the run, it does not get a way to opt back in.
+
 ### The authenticated-session fixture, and the empty household beside it
 
 The fixture signs in against the local GoTrue as a seed user and installs the
