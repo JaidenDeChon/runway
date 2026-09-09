@@ -3,6 +3,7 @@ import { Landmark, Plus } from '@lucide/vue'
 import AppPage from '@/components/AppPage.vue'
 import AccountEditor from '@/components/accounts/AccountEditor.vue'
 import AccountRow from '@/components/accounts/AccountRow.vue'
+import DiscretionarySpendCard from '@/components/accounts/DiscretionarySpendCard.vue'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -128,6 +129,12 @@ function openAdd(): void {
         <AccountRow :account="account" @select="openEdit(account)" />
       </div>
     </Card>
+
+    <!-- The monthly figure whose daily drain comes out of the account tagged
+         "Discretionary source" in the rows above. Hidden until there is at
+         least one account: a spending figure with nothing to drain is noise,
+         and the accounts card already carries the empty-state copy. -->
+    <DiscretionarySpendCard v-if="!showSkeleton && !loadError && accounts.length > 0" />
 
     <!-- Inert by design: not focusable, not clickable, and kept out of the
          tab order entirely rather than merely dimmed. -->

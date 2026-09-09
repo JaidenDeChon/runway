@@ -136,6 +136,39 @@ describe('project', () => {
     expect(other?.points.every((point) => point.balance === toMinorUnits(500))).toBe(true)
   })
 
+  it('drains each month its own figure across a 90-day window spanning February and a 31-day month', () => {
+    // 17 (Jan 15–31) + 28 (Feb) + 31 (Mar) + 14 (Apr 1–14) = 90 days, spanning
+    // a 28-day February between two 31-day months. The assertions read whole-
+    // month drops straight off the combined series — they do not re-derive
+    // `dailyDiscretionary` — so they lock in that every calendar month costs
+    // exactly the stated $1,000 regardless of its length. A flat
+    // `monthly * 12 / 365` rate would drop about $920 across February and about
+    // $1,019 across March, and both assertions would fail. This is the
+    // regression lock on issue #4 / PR #35's deliberate month-length division;
+    // anyone "fixing" the engine to a flat rate must see it go red.
+    const data_ = data({
+      accounts: [
+        account({
+          id: 'a',
+          balance: toMinorUnits(10_000),
+          balanceAsOf: '2026-01-15',
+          isDiscretionarySource: true,
+        }),
+      ],
+      monthlyDiscretionarySpend: toMinorUnits(1000),
+    })
+    const result = project(data_, { start: '2026-01-15', end: '2026-04-14' })
+    expect(result.days).toHaveLength(90)
+
+    const balanceOn = new Map(result.days.map((d, i) => [d, result.combined[i]?.balance ?? 0]))
+    const janEnd = balanceOn.get('2026-01-31') ?? 0
+    const febEnd = balanceOn.get('2026-02-28') ?? 0
+    const marEnd = balanceOn.get('2026-03-31') ?? 0
+    // Differences read off the series, not a re-derivation of dailyDiscretionary.
+    expect(janEnd - febEnd).toBe(toMinorUnits(1000)) // all of February, 28 days
+    expect(febEnd - marEnd).toBe(toMinorUnits(1000)) // all of March, 31 days
+  })
+
   it('restricts the projection to the requested accounts', () => {
     const result = project(
       data({ accounts: [account({ id: 'a' }), account({ id: 'b', balance: toMinorUnits(7) })] }),
