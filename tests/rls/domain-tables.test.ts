@@ -35,6 +35,7 @@ interface ProbeContext {
   readonly ruleId: string
   readonly occurrenceId: string
   readonly transferId: string
+  readonly readingId: string
 }
 
 interface DomainTableProbe {
@@ -43,6 +44,7 @@ interface DomainTableProbe {
     | 'recurring_rules'
     | 'occurrences'
     | 'transfers'
+    | 'balance_readings'
     | 'user_settings'
     | 'dashboard_hidden_accounts'
   // 'account_id' for dashboard_hidden_accounts, whose primary key is the
@@ -124,6 +126,13 @@ async function buildProbeChain(
   `
   if (!transfer) throw new Error(`could not create probe transfer for ${label}`)
 
+  const [reading] = await sql<{ id: string }[]>`
+    insert into public.balance_readings (user_id, account_id, balance_cents, as_of)
+    values (${user.id}, ${account1.id}, 9000, '2026-08-14')
+    returning id
+  `
+  if (!reading) throw new Error(`could not create probe balance reading for ${label}`)
+
   await sql`
     insert into public.dashboard_hidden_accounts (user_id, account_id)
     values (${user.id}, ${account1.id})
@@ -136,6 +145,7 @@ async function buildProbeChain(
     ruleId: rule.id,
     occurrenceId: occurrence.id,
     transferId: transfer.id,
+    readingId: reading.id,
   }
 }
 
@@ -209,6 +219,22 @@ const descriptors: DomainTableProbe[] = [
       occurs_on: '2026-08-01',
     }),
     updateColumn: 'amount_cents',
+    updateValue: 999_999,
+  },
+  {
+    table: 'balance_readings',
+    pk: 'id',
+    probeIdForB: () => contextB.readingId,
+    plantPayload: () => ({
+      user_id: USER_B.id,
+      account_id: contextB.account1Id,
+      balance_cents: 100,
+      // Distinct from the probe reading's own 2026-08-14, so this planted row
+      // cannot collide with `balance_readings_unique_reading` and confound
+      // which constraint actually rejected the insert.
+      as_of: '2026-08-13',
+    }),
+    updateColumn: 'balance_cents',
     updateValue: 999_999,
   },
   {
@@ -433,6 +459,24 @@ describe.skipIf(LOCAL_STACK === null)('domain table isolation', () => {
           sql`
             insert into public.occurrences (user_id, account_id, rule_id, projected_date, projected_amount_cents)
             values (${USER_A.id}, ${contextA.account1Id}, ${contextB.ruleId}, '2099-12-15', -100)
+          `,
+        ).rejects.toThrow(/foreign key/i)
+      } finally {
+        await sql.end()
+      }
+    })
+
+    // 2026-08-13 rather than the probe reading's own 2026-08-14: on a date
+    // already on file the unique (user_id, account_id, as_of) constraint would
+    // raise before the FK is ever checked, so the test would assert on the
+    // wrong constraint.
+    it('rejects a balance_readings row whose account belongs to another user', async () => {
+      const sql = adminSql()
+      try {
+        await expect(
+          sql`
+            insert into public.balance_readings (user_id, account_id, balance_cents, as_of)
+            values (${USER_A.id}, ${contextB.account1Id}, 100, '2026-08-13')
           `,
         ).rejects.toThrow(/foreign key/i)
       } finally {
