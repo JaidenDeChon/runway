@@ -51,6 +51,15 @@ import { resolveStack } from './tests/support/stack'
  * exists in `tests/e2e/fixtures.ts`: `reuseExistingServer` is on outside CI, and
  * injection does nothing to a server this config did not start.
  *
+ * `globalSetup` below now runs a third guard *before* anything starts or
+ * attaches: it resolves the Supabase endpoint this run will actually drive —
+ * by probing a server already listening on `baseURL` over plain HTTP, or by
+ * resolving what the server it starts will be handed — and puts it through the
+ * same `assertLocalUrl` rule. A production-configured run fails there, with the
+ * host in the message, before a browser exists. The per-navigation
+ * `assertAppTargetsLocalStack` stays as defence-in-depth for a server that is
+ * re-pointed under a long-lived run. No environment variable disables either.
+ *
  * ## Two viewports
  *
  * `CLAUDE.md` says mobile-first, built at 375px and adapted upward. A harness
@@ -91,6 +100,11 @@ const SERVER_ENV: Record<string, string> = LOCAL_STACK_FOR_SERVER
 export default defineConfig({
   testDir: './tests/e2e',
   testMatch: '**/*.spec.ts',
+
+  // The third local-only guard — where the app under test points — runs here,
+  // before the server is started or reused and before any browser launches.
+  // See the note on where the app points, above.
+  globalSetup: './tests/e2e/global-setup.ts',
 
   // A CI run must never quietly narrow itself to whatever somebody was
   // debugging.
