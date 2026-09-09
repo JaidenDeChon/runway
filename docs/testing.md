@@ -158,6 +158,49 @@ Traces, screenshots and video are kept **on failure only** and uploaded as CI
 artifacts. They contain rendered page content, which for this app means
 balances, so they are never echoed into the log and never committed.
 
+### It asserts three endpoints are local, not two
+
+An E2E run drives real writes through a real browser, and there are three
+Supabase-ish endpoints it must never point at the hosted project — not two:
+
+1. **The endpoint the _test process_ connects to.** `assertLocalOnly` in
+   `tests/support/stack.ts`, covering `supabase status` and the `RUNWAY_RLS_*`
+   variables alike — the same guard the integration suite is held to.
+2. **The `baseURL` the _browser_ is pointed at.** `assertBaseUrlIsLocal` in
+   `tests/e2e/fixtures.ts`, so `RUNWAY_E2E_BASE_URL` cannot aim the run at a
+   deployed environment.
+3. **The Supabase endpoint the _application under test_ is configured
+   against.** The Nuxt server reads `NUXT_PUBLIC_SUPABASE_URL` from its own
+   environment or `.env`, so a loopback `baseURL` with a hosted `.env` — which
+   anyone who has deployed has — used to pass 1 and 2 and still drive a real
+   sign-up into `auth.users` on production. Three layers close it now, each
+   load-bearing for a different hazard:
+
+   - **The config-load block in `playwright.config.ts`.** Runs at config
+     evaluation, which is before Playwright's `webServer` spawns. This is the
+     one that stops a production-pointed `nuxt preview` from booting at all: it
+     asserts the local stack's URL when one resolved, otherwise statically
+     resolves `NUXT_PUBLIC_SUPABASE_URL` from the environment or `.env` and
+     asserts that, failing hard when it is set nowhere.
+   - **The probe in `tests/e2e/global-setup.ts`.** Runs after `webServer` has
+     started (in `@playwright/test` 1.56 the `webServer` plugin's setup runs
+     before `globalSetup`), and still before any browser — the issue's
+     Definition of Done. It is the only thing that can read a server *this
+     config did not start*: the `reuseExistingServer` path, on outside CI,
+     where a preview server someone else launched is attached to and
+     `webServer.env` injection does nothing. It fetches `/sign-in` and reads
+     the Supabase URL out of the server-rendered markup.
+   - **`assertAppTargetsLocalStack` in `tests/e2e/fixtures.ts`.**
+     Defence-in-depth for a server re-pointed midway through a long-lived run.
+     It runs from `gotoHydrated`, not from a bare `page.goto` — a few specs
+     navigate with `page.goto` directly and do not get it — which is why it is
+     the backstop and not the primary check.
+
+   Every hosted value fails the run with the host named and never the key.
+
+None of the three can be turned off by an environment variable — a hosted
+endpoint fails the run, it does not get a way to opt back in.
+
 ### The authenticated-session fixture, and the empty household beside it
 
 The fixture signs in against the local GoTrue as a seed user and installs the

@@ -25,6 +25,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 
 export interface LocalStack {
   readonly apiUrl: string
@@ -213,4 +214,108 @@ export function publishStackToEnvironment(stack: LocalStack): void {
   process.env.RUNWAY_RLS_ANON_KEY = stack.anonKey
   process.env.RUNWAY_RLS_SERVICE_ROLE_KEY = stack.serviceRoleKey
   if (stack.jwtSecret) process.env.RUNWAY_RLS_JWT_SECRET = stack.jwtSecret
+}
+
+/**
+ * ── Where the *application under test* points ────────────────────────────────
+ *
+ * `assertLocalOnly` above guards the connection *this process* opens;
+ * `tests/e2e/fixtures.ts`'s `assertBaseUrlIsLocal` guards the URL the *browser*
+ * is aimed at. Neither says anything about where the Nuxt server the browser is
+ * driving sends its own writes — that server reads `NUXT_PUBLIC_SUPABASE_URL`
+ * from its own environment (`shared/supabase/config.ts`), so a developer whose
+ * `.env` names their hosted project could get an E2E run driving a real sign-up
+ * straight into `auth.users` on production, with every other guard in this repo
+ * green. That is issue #57.
+ *
+ * `assertAppTargetsLocalStack` in `tests/e2e/fixtures.ts` already closes it from
+ * inside the browser — but only after a build, a server boot, a browser launch
+ * and a hydrated navigation, and not at all for a bare `page.goto` that skips
+ * `gotoHydrated`. `tests/e2e/global-setup.ts` applies the same `assertLocalUrl`
+ * rule *before* Playwright starts anything, and these are the pure pieces it
+ * composes: no network, no clock, synchronous, testable with a string and
+ * nothing else. The one network call it needs — probing a server that is
+ * already listening — stays in `global-setup.ts`, not here.
+ */
+
+/**
+ * Reads a single `KEY=VALUE` out of dotenv file *contents*.
+ *
+ * A string in, so it is testable with no filesystem. It mirrors the slice of
+ * dotenv semantics that matters here and no more: an `export ` prefix, `#`
+ * comment lines, surrounding single or double quotes, surrounding whitespace,
+ * and last-assignment-wins on a duplicated key. Returns `null` when the key is
+ * absent; a bare `KEY=` returns `''`, which callers treat as "not configured"
+ * exactly as a shell would.
+ */
+export function parseDotenvValue(contents: string, key: string): string | null {
+  let value: string | null = null
+  for (const rawLine of contents.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+    const body = line.startsWith('export ') ? line.slice(7).trimStart() : line
+    const eq = body.indexOf('=')
+    if (eq === -1) continue
+    if (body.slice(0, eq).trim() !== key) continue
+    let raw = body.slice(eq + 1).trim()
+    if (
+      raw.length >= 2 &&
+      ((raw[0] === '"' && raw.at(-1) === '"') || (raw[0] === "'" && raw.at(-1) === "'"))
+    ) {
+      raw = raw.slice(1, -1)
+    }
+    // Last assignment wins, matching dotenv — keep going rather than returning.
+    value = raw
+  }
+  return value
+}
+
+/**
+ * Pulls `config.public.supabase.url` out of a Nuxt SSR HTML response.
+ *
+ * Nuxt inlines runtime config into the document as
+ * `window.__NUXT__.config={public:{supabase:{url:"…",anonKey:"…"}},…}`. The
+ * anon key sits directly beside the URL in that literal, so this captures the
+ * URL group and *only* the URL group: a caller must never end up with the
+ * surrounding text in hand. Returns `null` when the shape is not found — Nuxt
+ * changed how it inlines config, or the response is not a Nuxt document — and
+ * callers fail closed rather than guess.
+ */
+export function extractAppSupabaseUrl(html: string): string | null {
+  const match = html.match(/supabase\s*:\s*\{[^}]*?\burl\s*:\s*(["'])((?:(?!\1)[\s\S])*)\1/)
+  return match?.[2] ?? null
+}
+
+/**
+ * The `NUXT_PUBLIC_SUPABASE_URL` a Nuxt server started under this repo's config
+ * would actually use, resolved with Nuxt's own precedence:
+ *
+ *  1. an already-set process variable — Nuxt's dotenv loading does not
+ *     overwrite what the environment already provides;
+ *  2. otherwise the value in the repo's `.env`;
+ *  3. otherwise nothing.
+ *
+ * `source` names which of those it came from, so a failure points at the thing
+ * to change. An empty value from either source counts as "not set": an app
+ * handed an empty URL fails to configure at boot (`shared/supabase/config.ts`),
+ * so there is nothing to guard and `null` is the honest answer.
+ *
+ * `.env` is read relative to this module, and its absence is tolerated — a
+ * checkout with no `.env` at all resolves to `null`, not to a crash.
+ */
+export function resolveConfiguredAppSupabaseUrl(): { url: string; source: string } | null {
+  const fromEnv = process.env.NUXT_PUBLIC_SUPABASE_URL?.trim()
+  if (fromEnv) return { url: fromEnv, source: 'the environment' }
+
+  let contents: string
+  try {
+    contents = readFileSync(new URL('../../.env', import.meta.url), 'utf8')
+  } catch {
+    return null
+  }
+
+  const fromDotenv = parseDotenvValue(contents, 'NUXT_PUBLIC_SUPABASE_URL')?.trim()
+  if (fromDotenv) return { url: fromDotenv, source: '.env' }
+
+  return null
 }

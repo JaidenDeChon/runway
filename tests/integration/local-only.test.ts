@@ -16,11 +16,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   assertLocalOnly,
   assertLocalUrl,
+  extractAppSupabaseUrl,
   hostOf,
   isHostedSupabaseHost,
   isLoopbackHost,
   NonLocalStackError,
+  parseDotenvValue,
   resetStackCache,
+  resolveConfiguredAppSupabaseUrl,
   resolveStack,
 } from '../support/stack'
 
@@ -129,6 +132,148 @@ describe('the guard applied to the app under test', () => {
     })()
     expect(fromSingle).not.toBeNull()
     expect(fromPair).toBe(fromSingle)
+  })
+})
+
+/**
+ * The pre-flight half of that same guard.
+ *
+ * `assertAppTargetsLocalStack` in `tests/e2e/fixtures.ts` only fires after a
+ * build, a server boot, a browser launch and a hydrated navigation, and not at
+ * all when `reuseExistingServer` attaches Playwright to a server this config
+ * did not start. `tests/e2e/global-setup.ts` runs the rule before any of that,
+ * against either a server already listening (probed over plain HTTP) or the
+ * value the server this run starts will be handed. These are the pure pieces it
+ * composes; the probe's one network call is tested in the E2E suite, not here.
+ */
+describe('the guard applied before Playwright starts', () => {
+  const LABEL = 'the app under test'
+
+  /**
+   * The exact shape Established Facts §4 of issue #57 captured from a running
+   * server: the anon key sits directly beside the URL in the inlined literal.
+   */
+  const SSR_HTML =
+    '<!DOCTYPE html><html><body><div id="__nuxt"></div><script>' +
+    'window.__NUXT__={};window.__NUXT__.config={public:{supabase:{' +
+    'url:"https://examplerefxyz.supabase.co",anonKey:"dummy-anon-key-do-not-return-me"' +
+    '}},app:{baseURL:"/",buildId:"ad60a7a7-ab86-4e0f-9d3f-000000000000"}};' +
+    '</script></body></html>'
+
+  it('extractAppSupabaseUrl reads the configured URL from a realistic SSR document', () => {
+    expect(extractAppSupabaseUrl(SSR_HTML)).toBe('https://examplerefxyz.supabase.co')
+  })
+
+  it('extractAppSupabaseUrl returns the URL and never the anon key beside it', () => {
+    const extracted = extractAppSupabaseUrl(SSR_HTML)
+    expect(extracted).toBe('https://examplerefxyz.supabase.co')
+    expect(extracted).not.toContain('dummy-anon-key-do-not-return-me')
+  })
+
+  it('extractAppSupabaseUrl reads a loopback URL from the same shape', () => {
+    const local = SSR_HTML.replace('https://examplerefxyz.supabase.co', 'http://127.0.0.1:54321')
+    expect(extractAppSupabaseUrl(local)).toBe('http://127.0.0.1:54321')
+  })
+
+  it('extractAppSupabaseUrl returns null when there is no config, so the caller fails closed', () => {
+    expect(
+      extractAppSupabaseUrl('<!DOCTYPE html><html><body>nothing here</body></html>'),
+    ).toBeNull()
+  })
+
+  it('extractAppSupabaseUrl returns null for a config with no supabase block, so the caller fails closed', () => {
+    const noSupabase = '<script>window.__NUXT__.config={public:{},app:{baseURL:"/"}};</script>'
+    expect(extractAppSupabaseUrl(noSupabase)).toBeNull()
+  })
+
+  it('parseDotenvValue reads a plain assignment', () => {
+    expect(
+      parseDotenvValue(
+        'NUXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321\n',
+        'NUXT_PUBLIC_SUPABASE_URL',
+      ),
+    ).toBe('http://127.0.0.1:54321')
+  })
+
+  it('parseDotenvValue strips surrounding single and double quotes', () => {
+    expect(parseDotenvValue('KEY="http://127.0.0.1:54321"', 'KEY')).toBe('http://127.0.0.1:54321')
+    expect(parseDotenvValue("KEY='http://127.0.0.1:54321'", 'KEY')).toBe('http://127.0.0.1:54321')
+  })
+
+  it('parseDotenvValue handles an export prefix and trailing whitespace', () => {
+    expect(parseDotenvValue('export KEY=   http://127.0.0.1:54321   \n', 'KEY')).toBe(
+      'http://127.0.0.1:54321',
+    )
+  })
+
+  it('parseDotenvValue ignores a commented-out assignment', () => {
+    expect(parseDotenvValue('# KEY=https://hosted.supabase.co\nOTHER=1\n', 'KEY')).toBeNull()
+  })
+
+  it('parseDotenvValue returns null for an absent key', () => {
+    expect(parseDotenvValue('OTHER=1\nMORE=2\n', 'KEY')).toBeNull()
+  })
+
+  it('parseDotenvValue takes the last assignment when a key is duplicated', () => {
+    expect(
+      parseDotenvValue('KEY=https://hosted.supabase.co\nKEY=http://127.0.0.1:54321\n', 'KEY'),
+    ).toBe('http://127.0.0.1:54321')
+  })
+
+  it('resolveConfiguredAppSupabaseUrl prefers the process environment over .env', () => {
+    const KEY = 'NUXT_PUBLIC_SUPABASE_URL'
+    const original = process.env[KEY]
+    try {
+      process.env[KEY] = 'http://127.0.0.1:54321'
+      expect(resolveConfiguredAppSupabaseUrl()).toEqual({
+        url: 'http://127.0.0.1:54321',
+        source: 'the environment',
+      })
+    } finally {
+      if (original === undefined) delete process.env[KEY]
+      else process.env[KEY] = original
+    }
+  })
+
+  it('feeds a hosted value from the environment to assertLocalUrl, which names the host and not the key', () => {
+    const KEY = 'NUXT_PUBLIC_SUPABASE_URL'
+    const original = process.env[KEY]
+    try {
+      process.env[KEY] = 'https://ceepsoecqhjekiqawjgr.supabase.co'
+      const resolved = resolveConfiguredAppSupabaseUrl()
+      expect(resolved?.url).toBe('https://ceepsoecqhjekiqawjgr.supabase.co')
+      try {
+        assertLocalUrl(resolved?.url ?? '', 'its Supabase URL', LABEL)
+        expect.unreachable('expected a NonLocalStackError')
+      } catch (error) {
+        expect(error).toBeInstanceOf(NonLocalStackError)
+        const message = (error as Error).message
+        expect(message).toContain('ceepsoecqhjekiqawjgr.supabase.co')
+        // No key, ever — the fixture's anon key text must not appear.
+        expect(message).not.toContain('anon')
+      }
+    } finally {
+      if (original === undefined) delete process.env[KEY]
+      else process.env[KEY] = original
+    }
+  })
+
+  it('rejects a hosted value parsed straight out of .env contents, naming the host', () => {
+    // `export ` prefix and surrounding quotes both stripped, so the value
+    // reaches `assertLocalUrl` as a parseable URL and fails on the host rather
+    // than on being unreadable — a quote left attached would make this a
+    // weaker "unparseable" rejection.
+    const hosted = parseDotenvValue(
+      'export NUXT_PUBLIC_SUPABASE_URL="https://ceepsoecqhjekiqawjgr.supabase.co"\n',
+      'NUXT_PUBLIC_SUPABASE_URL',
+    )
+    expect(hosted).toBe('https://ceepsoecqhjekiqawjgr.supabase.co')
+    expect(() => assertLocalUrl(hosted ?? '', 'its Supabase URL', LABEL)).toThrow(
+      NonLocalStackError,
+    )
+    expect(() => assertLocalUrl(hosted ?? '', 'its Supabase URL', LABEL)).toThrow(
+      /ceepsoecqhjekiqawjgr\.supabase\.co/,
+    )
   })
 })
 
