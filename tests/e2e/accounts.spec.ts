@@ -166,6 +166,12 @@ test.describe('creating and managing an account', () => {
     // reading to a stale day instead of recording what it holds now.
     await clickUntil(row, dialog)
     await page.locator('#account-balance').fill('550')
+
+    // The field itself moves, rather than the save quietly disagreeing with
+    // what the field shows. Asserted as "no longer the past day" rather than
+    // "equals today" so the assertion carries no timezone risk of its own.
+    await expect(page.locator('#account-as-of')).not.toHaveValue(pastIso)
+
     await clickUntil(
       dialog.getByRole('button', { name: 'Save changes' }),
       row.filter({
@@ -205,18 +211,32 @@ test.describe('creating and managing an account', () => {
     await clickUntil(dialog.getByRole('button', { name: 'Add account' }), row)
     await expect(row).toContainText(`Balance as of ${pastFormatted}`)
 
-    // Reopen, correct the balance, and reaffirm "As of" by refilling it with
-    // the exact day already shown — touching the field, not changing its value.
+    // Reopen, correct the balance — which moves the field to today — and
+    // reaffirm "As of" by refilling it with the exact day already shown:
+    // touching the field, not changing its value.
     await clickUntil(row, dialog)
     await page.locator('#account-balance').fill('550')
+    await expect(page.locator('#account-as-of')).not.toHaveValue(pastIso)
     await page.locator('#account-as-of').fill(pastIso)
+    await expect(page.locator('#account-as-of')).toHaveValue(pastIso)
+
+    // The balance moves once more, *after* the day was typed. This is the
+    // half that needs the editor to remember the field was touched rather
+    // than compare its value: the day must now stay put, where the first
+    // balance edit moved it. Without that memory this snaps back to today and
+    // correcting a specific day is unreachable again — and an assertion that
+    // stops before this step passes against an editor that never consults
+    // the flag at all.
+    await page.locator('#account-balance').fill('575')
+    await expect(page.locator('#account-as-of')).toHaveValue(pastIso)
+
     await clickUntil(
       dialog.getByRole('button', { name: 'Save changes' }),
-      row.filter({ hasText: '$550' }),
+      row.filter({ hasText: '$575' }),
     )
 
     // The correction landed on the day it was for, not on today.
-    await expect(row).toContainText('$550')
+    await expect(row).toContainText('$575')
     await expect(row).toContainText(`Balance as of ${pastFormatted}`)
   })
 

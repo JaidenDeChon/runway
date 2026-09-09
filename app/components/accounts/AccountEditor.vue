@@ -101,7 +101,7 @@ watch(
 )
 
 /**
- * What "As of" to actually save.
+ * Typing a new balance moves the "As of" field to today, on screen.
  *
  * Editing the balance without touching "As of" must not silently redate the
  * account's *current* reading to whatever day it already carried — a day can
@@ -109,27 +109,28 @@ watch(
  * would redefine what the account held back then rather than record what it
  * holds now, and the correction would never even reach
  * `docs/database/schema.md`'s `balance_readings` history: nothing else moved
- * for that day to be superseded from. So a changed balance whose date field
- * was never touched saves against today instead. Touching "As of" at all —
- * even retyping the day already shown — always wins; correcting a specific
- * past (or current) reading is still what the field is for, and is exactly
- * what that retype looks like.
+ * for that day to be superseded from.
+ *
+ * What is saved is therefore always plain `form.balanceAsOf` — the field the
+ * user is looking at. The alternative, leaving the field reading the old day
+ * and quietly saving today, makes a populated and editable control lie about
+ * what it will do; `docs/design/accounts/spec.md` is explicit that a row is
+ * the pair "balance + as-of date". Moving the field shows the mechanism
+ * rather than hiding it behind explanatory text.
+ *
+ * Touching "As of" at all — even retyping the day already shown — always
+ * wins, and keeps winning through later balance edits: that is what
+ * `asOfTouched` is for. Undoing the balance edit puts the original day back,
+ * so a form returned to its seeded state saves what it was seeded with.
  */
-const balanceAsOfToSave = computed(() => {
-  if (!props.account || asOfTouched.value) return form.balanceAsOf
-  const balanceChanged = form.balance !== seededBalance.value
-  return balanceChanged ? today.value : form.balanceAsOf
-})
-
-/**
- * Surfaces the substitution above rather than letting it happen silently
- * behind a date field that still reads the old day — a visible, editable
- * control whose value is quietly overridden is a trap, not a convenience.
- */
-const balanceAsOfHint = computed(() => {
-  if (balanceAsOfToSave.value === form.balanceAsOf) return null
-  return `Saved as of ${formatDateLong(balanceAsOfToSave.value)}. To record it for ${formatDateLong(form.balanceAsOf)} instead, edit the "As of" field.`
-})
+watch(
+  () => form.balance,
+  (balance) => {
+    const account = props.account
+    if (!account || asOfTouched.value) return
+    form.balanceAsOf = balance === seededBalance.value ? account.balanceAsOf : today.value
+  },
+)
 
 const isValid = computed(() => form.name.trim().length > 0)
 
@@ -159,7 +160,7 @@ async function onSave(): Promise<void> {
       ...(props.account ? { id: props.account.id } : {}),
       name: form.name.trim(),
       balance: form.balance,
-      balanceAsOf: balanceAsOfToSave.value,
+      balanceAsOf: form.balanceAsOf,
       color: form.color,
       isDiscretionarySource: form.isDiscretionarySource,
     })
@@ -236,8 +237,6 @@ async function onRestore(): Promise<void> {
             />
           </div>
         </div>
-
-        <p v-if="balanceAsOfHint" class="text-xs text-muted-foreground">{{ balanceAsOfHint }}</p>
 
         <div class="flex items-start gap-3">
           <Checkbox
