@@ -258,13 +258,21 @@ describe('the guard applied before Playwright starts', () => {
     }
   })
 
-  it('rejects a hosted value parsed straight out of .env contents', () => {
+  it('rejects a hosted value parsed straight out of .env contents, naming the host', () => {
+    // `export ` prefix and surrounding quotes both stripped, so the value
+    // reaches `assertLocalUrl` as a parseable URL and fails on the host rather
+    // than on being unreadable — a quote left attached would make this a
+    // weaker "unparseable" rejection.
     const hosted = parseDotenvValue(
       'export NUXT_PUBLIC_SUPABASE_URL="https://ceepsoecqhjekiqawjgr.supabase.co"\n',
       'NUXT_PUBLIC_SUPABASE_URL',
     )
+    expect(hosted).toBe('https://ceepsoecqhjekiqawjgr.supabase.co')
     expect(() => assertLocalUrl(hosted ?? '', 'its Supabase URL', LABEL)).toThrow(
       NonLocalStackError,
+    )
+    expect(() => assertLocalUrl(hosted ?? '', 'its Supabase URL', LABEL)).toThrow(
+      /ceepsoecqhjekiqawjgr\.supabase\.co/,
     )
   })
 })
