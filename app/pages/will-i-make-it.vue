@@ -5,8 +5,11 @@
  * A pure function of (target, cushion, projection): every keystroke or
  * selection re-evaluates immediately, with no submit step. All arithmetic —
  * the balance series, the low point, the margin — comes from
- * `domain/projection`; this page only holds the three inputs (mode, target,
- * cushion) and hands the engine's output to the two cards.
+ * `domain/projection`; this page only holds the cushion draft and hands the
+ * engine's output to the two cards. The target (mode, bill, date) is not
+ * page state at all — `useShortfallTarget` computes it straight from the
+ * route's query params, which is the single source of truth for it (issue
+ * #14's Decision 2).
  */
 import { watchDebounced } from '@vueuse/core'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
@@ -15,10 +18,9 @@ import AskCard from '@/components/shortfall/AskCard.vue'
 import VerdictCard from '@/components/shortfall/VerdictCard.vue'
 import { Card } from '@/components/ui/card'
 import { useRunwayData } from '@/composables/useRunwayData'
+import { useShortfallTarget } from '@/composables/useShortfallTarget'
 import { useToday } from '@/composables/useToday'
 import { ARROW_LINK } from '@/lib/arrow-link'
-import type { IsoDate } from '~~/domain/dates'
-import { addDays } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
 import { canAnswerShortfall, shortfallThrough, upcomingBills } from '~~/domain/projection'
 
@@ -66,26 +68,10 @@ const gap = computed(() => {
 
 // Bill mode has nothing to point at with no upcoming bills — spec.md's Open
 // Question 7 leaves this state undecided ("no copy exists for it") and names
-// this as the likely resolution. Set once, from whatever `bills` resolves to
-// at mount: nothing on this page changes the recurring-item list out from
-// under itself while it stays mounted, so there is no live household event to
-// react to afterward.
-const mode = ref<'bill' | 'date'>(bills.value.length > 0 ? 'bill' : 'date')
-
-const selectedBillId = ref<string | null>(null)
-// Preselects the first bill once the (today-dependent) list resolves, and
-// re-anchors only if the current selection falls out of the list — switching
-// tabs and back must restore the same row, not silently reset it.
-watch(
-  bills,
-  (list) => {
-    if (selectedBillId.value && list.some((bill) => bill.itemId === selectedBillId.value)) return
-    selectedBillId.value = list[0]?.itemId ?? null
-  },
-  { immediate: true },
-)
-
-const selectedDate = ref<IsoDate>(addDays(today.value, 14))
+// this as the likely resolution; `resolveMode` (app/lib/shortfall-target.ts)
+// falls back to date mode whenever there are no bills, whatever the URL asks
+// for.
+const target = useShortfallTarget(bills, today)
 
 // The cushion the user is editing. Seeded from the stored one and re-synced
 // whenever it changes, so the two can differ only for the few hundred
@@ -116,24 +102,18 @@ watchDebounced(cushion, () => void commitCushion(), { debounce: 400 })
 // commit is a named function and not an inline closure.
 onBeforeUnmount(() => void commitCushion())
 
-const targetDate = computed<IsoDate>(() => {
-  if (mode.value === 'date') return selectedDate.value
-  const bill = bills.value.find((candidate) => candidate.itemId === selectedBillId.value)
-  return bill?.date ?? selectedDate.value
-})
-
 // One engine call answers the whole screen. The shortfall is measured against
 // the running minimum over `[today, target]` inclusive, not the closing balance
 // — a window can end comfortably up and still dip below the cushion in the
 // middle, and that dip is the thing this page exists to catch.
-// `answer.through` rather than `targetDate` reaches the card below: a target in
-// the past is raised to today by the engine, and labelling the answer with the
-// date that was asked for would caption a verdict about today with a day that
-// has already been and gone.
+// `answer.through` rather than `target.through` reaches the card below: a
+// target in the past is raised to today by the engine, and labelling the
+// answer with the date that was asked for would caption a verdict about today
+// with a day that has already been and gone.
 const answer = computed(() =>
   shortfallThrough(data.value, {
     today: today.value,
-    through: targetDate.value,
+    through: target.through.value,
     cushion: cushion.value,
   }),
 )
@@ -160,16 +140,16 @@ const answer = computed(() =>
 
     <template v-else>
       <AskCard
-        :mode="mode"
-        :selected-bill-id="selectedBillId"
-        :selected-date="selectedDate"
+        :mode="target.mode.value"
+        :selected-bill-id="target.billId.value"
+        :selected-date="target.date.value"
         :cushion="cushion"
         :cushion-error="cushionError"
         :bills="bills"
         :today="today"
-        @update:mode="mode = $event"
-        @update:selected-bill-id="selectedBillId = $event"
-        @update:selected-date="selectedDate = $event"
+        @update:mode="target.setMode($event)"
+        @update:selected-bill-id="target.setBillId($event)"
+        @update:selected-date="target.setDate($event)"
         @update:cushion="cushion = $event"
       />
       <VerdictCard
