@@ -135,8 +135,8 @@ function onDateInput(value: string | number): void {
 
       <Separator />
 
-      <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0 flex-1">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex-1">
           <Label for="shortfall-cushion">Safety cushion</Label>
           <p class="mt-1 text-xs text-muted-foreground lg:whitespace-nowrap">
             The lowest balance you're comfortable letting it reach.
