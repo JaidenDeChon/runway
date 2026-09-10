@@ -206,6 +206,11 @@ amortized flat across the year, and the remainder is distributed so a month cost
 exactly what the user said a month costs. See `domain/discretionary.ts` for why
 the flat form was wrong in the one direction that matters.
 
+**Every `DayPoint` carries the same end-of-day semantics**, for the same reason:
+the low point is named on the day the money actually moved, not the day before.
+A renderer must step on that day rather than interpolate a diagonal into it — see
+`linePath` in `app/lib/burndown.ts`.
+
 **One walk, not two.** `project` produces the series, the running minimum and
 the closing balance in the same pass. `evaluate` takes that summary rather than
 a list of points precisely so that it *cannot* re-scan. If you find yourself

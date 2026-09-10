@@ -228,9 +228,15 @@ function round(value: number): number {
  * index: a slice that did not start at day 0 was drawn from the left edge of
  * the plot. A caller drawing a whole series omits it.
  *
- * Straight segments, not a curve: between two events the balance genuinely does
- * not move, and a smoothed line would invent balances the engine never
- * projected — on this screen that is a lie about money.
+ * A step, not a diagonal, and the step is where the correctness lives.
+ * `DayPoint.balance` is the balance at the *end* of its date — the money has
+ * already landed — so a diagonal from yesterday's point to today's draws the
+ * change across yesterday and parks the event at the end of the slope, which
+ * reads as the balance rising *before* the paycheck. Each day is therefore
+ * drawn as a horizontal run at yesterday's balance up to today's x, then the
+ * change on today's own x: flat before the event, moving on the event's date,
+ * flat after. Nothing between two days is invented, which a smoothed curve or a
+ * diagonal both do — on this screen that is a lie about money.
  */
 export function linePath(
   points: readonly DayPoint[],
@@ -239,14 +245,24 @@ export function linePath(
   layout: ChartLayout,
   startIndex = 0,
 ): string {
-  if (points.length === 0) return ''
-  return points
-    .map((point, index) => {
-      const x = round(scaleX(startIndex + index, count, layout))
-      const y = round(scaleY(point.balance, range, layout))
-      return `${index === 0 ? 'M' : 'L'}${x} ${y}`
-    })
-    .join(' ')
+  const commands: string[] = []
+  let previousY: number | null = null
+  for (const [index, point] of points.entries()) {
+    const x = round(scaleX(startIndex + index, count, layout))
+    const y = round(scaleY(point.balance, range, layout))
+    if (previousY === null) {
+      commands.push(`M${x} ${y}`)
+    } else {
+      // The day's flat run, still at yesterday's balance...
+      commands.push(`L${x} ${previousY}`)
+      // ...then the change itself, on the day it lands. Skipped when the
+      // balance did not move, so a flat stretch is one command per day rather
+      // than two identical points.
+      if (y !== previousY) commands.push(`L${x} ${y}`)
+    }
+    previousY = y
+  }
+  return commands.join(' ')
 }
 
 /** Two paths through one series, split at `todayIndex` so history and forecast can be drawn differently. */

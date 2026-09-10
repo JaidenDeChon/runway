@@ -44,6 +44,13 @@ export interface Occurrence {
   readonly isPredicted: boolean
 }
 
+/**
+ * `balance` is the balance at the *end* of `date` — the same end-of-day rule
+ * `balanceAsOf` follows, and everything that lands on `date` is already
+ * included. A renderer must therefore hold the previous day's value up to
+ * this day's x and only move on it; drawing a diagonal into this point puts
+ * the change a day early. See `linePath` in `app/lib/burndown.ts`.
+ */
 export interface DayPoint {
   readonly date: IsoDate
   readonly balance: MinorUnits

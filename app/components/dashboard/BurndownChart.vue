@@ -160,7 +160,12 @@ interface Marker {
   readonly filled: boolean
 }
 
-/** Markers sit only on days something actually lands, which is what makes them readable. */
+/**
+ * Markers sit only on days something actually lands, which is what makes them
+ * readable. A marker sits at the end of that day's step — `points[index].balance`,
+ * the post-event balance — the same figure the tooltip names for that day, so
+ * marker and tooltip can never disagree (see `linePath` in `app/lib/burndown.ts`).
+ */
 const markers = computed<Marker[]>(() => {
   const result: Marker[] = []
   for (const [index, date] of props.days.entries()) {
@@ -426,7 +431,10 @@ function onFocus(): void {
            series: history is always solid and the forecast always dashed
            (#63), and a round linecap on a single dashed path would swallow
            the gaps at the stroke widths this chart supports (Trap B) — butt
-           caps on both segments keep the dashes readable at every density. -->
+           caps on both segments keep the dashes readable at every density.
+           Each half is a step path (see `linePath`), so the seam at
+           `todayIndex` is the shared vertex at the top/bottom of today's own
+           riser, not a point mid-diagonal. -->
       <template v-for="line in drawnLines" :key="line.key">
         <path
           v-if="line.past"

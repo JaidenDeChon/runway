@@ -36,6 +36,18 @@ const points = (...balances: number[]): DayPoint[] =>
     balance: toMinorUnits(balance),
   }))
 
+/** Parses an SVG path's `M`/`L` command list into the coordinates it visits. */
+const parsePathPoints = (path: string): Array<{ x: number; y: number }> => {
+  const tokens = path.split(' ')
+  const result: Array<{ x: number; y: number }> = []
+  for (let i = 0; i < tokens.length; i += 2) {
+    const x = Number(tokens[i]?.replace(/^[ML]/, '') ?? '')
+    const y = Number(tokens[i + 1] ?? '')
+    result.push({ x, y })
+  }
+  return result
+}
+
 describe('containsZero', () => {
   it('is true only when the forecast actually crosses from having money to owing it', () => {
     expect(containsZero({ min: toMinorUnits(-500), max: toMinorUnits(200) })).toBe(true)
@@ -105,9 +117,9 @@ describe('scaleY', () => {
 })
 
 describe('linePath', () => {
-  it('emits one move and then a line per day', () => {
+  it("holds yesterday's balance to today's x, then steps on today", () => {
     const path = linePath(points(0, 100), { min: 0, max: toMinorUnits(100) }, 2, layout)
-    expect(path).toBe('M10 90 L90 10')
+    expect(path).toBe('M10 90 L90 90 L90 10')
   })
 
   it('is empty for an empty series', () => {
@@ -121,10 +133,58 @@ describe('linePath', () => {
     const sliced = linePath(points(0, 100, 50), range, 6, layout, 3)
     expect(sliced).toBe(
       `M${scaleX(3, 6, layout)} ${scaleY(0, range, layout)} ` +
+        `L${scaleX(4, 6, layout)} ${scaleY(0, range, layout)} ` +
         `L${scaleX(4, 6, layout)} ${scaleY(toMinorUnits(100), range, layout)} ` +
+        `L${scaleX(5, 6, layout)} ${scaleY(toMinorUnits(100), range, layout)} ` +
         `L${scaleX(5, 6, layout)} ${scaleY(toMinorUnits(50), range, layout)}`,
     )
     expect(sliced).not.toContain(`M${layout.left}`)
+  })
+
+  it('stays flat until the day the money lands', () => {
+    // Regression for the reported bug: the balance must not appear to rise or
+    // fall before the event that causes it. The change from 100 to 200 lands
+    // on day index 3, so the riser must sit at day 3's x, not day 2's.
+    const range = { min: 0, max: toMinorUnits(200) }
+    const series = points(100, 100, 100, 200)
+    const path = linePath(series, range, 4, layout)
+    const roundedX = (index: number) => Math.round(scaleX(index, 4, layout) * 100) / 100
+    const y100 = scaleY(toMinorUnits(100), range, layout)
+    const y200 = scaleY(toMinorUnits(200), range, layout)
+    expect(path).toBe(
+      `M${roundedX(0)} ${y100} ` +
+        `L${roundedX(1)} ${y100} ` +
+        `L${roundedX(2)} ${y100} ` +
+        `L${roundedX(3)} ${y100} ` +
+        `L${roundedX(3)} ${y200}`,
+    )
+  })
+
+  it('draws no diagonal segment — a balance never drifts between days', () => {
+    const range = { min: 0, max: toMinorUnits(100) }
+    const series = points(10, 40, 25, 90, 5)
+    const parsed = parsePathPoints(linePath(series, range, 5, layout))
+    const allAxisAligned = parsed.every((point, index) => {
+      if (index === 0) return true
+      const previous = parsed[index - 1]
+      return previous !== undefined && (previous.x === point.x || previous.y === point.y)
+    })
+    expect(allAxisAligned).toBe(true)
+  })
+
+  it("puts every riser on its own day's x", () => {
+    const range = { min: 0, max: toMinorUnits(100) }
+    const series = points(10, 40, 25, 90, 5)
+    const parsed = parsePathPoints(linePath(series, range, 5, layout))
+    const riserXs = parsed.slice(1).flatMap((point, index) => {
+      const previous = parsed[index]
+      return previous !== undefined && previous.x === point.x ? [point.x] : []
+    })
+    const changedDayXs = series.flatMap((point, index) => {
+      if (index === 0) return []
+      return point.balance !== series[index - 1]?.balance ? [scaleX(index, 5, layout)] : []
+    })
+    expect(riserXs).toEqual(changedDayXs)
   })
 })
 
@@ -169,6 +229,16 @@ describe('splitSeriesPath', () => {
 
   it('is empty for an empty series', () => {
     expect(splitSeriesPath([], range, 0, layout, 0)).toEqual({ past: '', future: '' })
+  })
+
+  it("keeps the day's riser in the past half and the next day's in the future half", () => {
+    const series = points(10, 20, 30, 40, 50)
+    const { past, future } = splitSeriesPath(series, range, 5, layout, 2)
+    const y30 = scaleY(toMinorUnits(30), range, layout)
+    const x2 = scaleX(2, 5, layout)
+    const x3 = scaleX(3, 5, layout)
+    expect(past.endsWith(`L${x2} ${y30}`)).toBe(true)
+    expect(future.startsWith(`M${x2} ${y30} L${x3} ${y30}`)).toBe(true)
   })
 })
 

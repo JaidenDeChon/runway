@@ -410,6 +410,20 @@ was incomplete, not restrictive.
 
 **Open question 6 (no error state) is now answered** — see the entry below.
 
+### The line steps on the day money moves
+
+The line no longer draws a diagonal between two days' points. Each `DayPoint`'s balance is true as
+of the *end* of its date, so a diagonal from yesterday's point to today's drew the change across
+yesterday and left the event marker sitting at the end of the slope — read literally, the balance
+appeared to rise before the paycheck landed, or fall before the bill did. The line now holds flat at
+yesterday's balance right up to today's x, then steps to today's balance on today's own x: flat
+before the event, moving on the event's date, flat after. `linePath` in `app/lib/burndown.ts` is the
+only place this changed; the engine, `evaluate`, and every projected figure are unaffected.
+
+One visible consequence: the daily discretionary drain, previously drawn as a smooth decline, now
+reads as a fine staircase — one step per day — because that is what the underlying arithmetic always
+was. This is a departure from `reference.html`'s own interpolated rendering, not an oversight.
+
 ### What the dashboard remembers
 
 Issue #12 moved two of this screen's controls from session-only state onto stored preferences, and
