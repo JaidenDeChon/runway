@@ -61,20 +61,23 @@ export function useShortfallTarget(
   // browser-history entry and the back button stops leaving the page.
   // `Router.replace` resolves rather than rejects on a redundant navigation,
   // so `void` is safe here and no `.catch` is required.
+  //
+  // Unlike `setBillId`/`setDate` below, this does **not** spread
+  // `...route.query`: it writes exactly `mode` plus the effective value for
+  // the mode being switched to (bill when there is one, on otherwise), and
+  // nothing else. A stale `bill=` left over from before a switch to date
+  // mode (or vice versa) can never be shown or acted on — mode alone decides
+  // which key is "the" selection — so carrying it forward would only leave
+  // dead weight in a copied link, which is exactly what the exact-key-set
+  // E2E assertion (`tests/e2e/shortfall.spec.ts`) exists to catch.
   function setMode(next: ShortfallMode): void {
-    void router.replace({
-      query: {
-        ...route.query,
-        [SHORTFALL_QUERY.mode]: next,
-        // Writes the effective value for the mode being switched to as well,
-        // so a copied URL always reproduces exactly what is on screen — a
-        // bare `?mode=bill` with no `bill=` would otherwise silently mean
-        // "whichever bill resolves first", which may not be today's.
-        ...(next === 'bill'
-          ? { [SHORTFALL_QUERY.bill]: billId.value ?? undefined }
-          : { [SHORTFALL_QUERY.on]: date.value }),
-      },
-    })
+    const query: Record<string, string> = { [SHORTFALL_QUERY.mode]: next }
+    if (next === 'bill') {
+      if (billId.value) query[SHORTFALL_QUERY.bill] = billId.value
+    } else {
+      query[SHORTFALL_QUERY.on] = date.value
+    }
+    void router.replace({ query })
   }
 
   function setBillId(id: string): void {
