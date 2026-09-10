@@ -24,6 +24,7 @@ import { ARROW_LINK } from '@/lib/arrow-link'
 import type { MinorUnits } from '~~/domain/money'
 import {
   canAnswerShortfall,
+  laterTargetsMatter,
   shortfallOutlook,
   shortfallThrough,
   upcomingBills,
@@ -125,12 +126,18 @@ const answer = computed(() =>
 
 // A second, target-independent projection over the whole selectable horizon —
 // deliberately not derived from `answer` above. It answers a different
-// question ("can any target the user picks move this verdict, and does the
-// cushion break somewhere in the horizon even if it doesn't here") from the
-// one `answer` asks about a single target. See `shortfallOutlook`.
+// question ("does the cushion break somewhere in the horizon even if it
+// doesn't here") from the one `answer` asks about a single target. See
+// `shortfallOutlook`.
 const outlook = computed(() =>
   shortfallOutlook(data.value, { today: today.value, cushion: cushion.value }),
 )
+
+// Whether anything past the *currently selected* target could still change
+// the verdict — target-relative, unlike `outlook` above. See
+// `laterTargetsMatter`'s doc comment for why the naive narrowest-vs-widest
+// comparison this replaced was wrong.
+const outlookMatters = computed(() => laterTargetsMatter(answer.value, outlook.value))
 </script>
 
 <template>
@@ -172,7 +179,7 @@ const outlook = computed(() =>
         :target-date="answer.through"
         :cushion="cushion"
         :today="today"
-        :target-sensitive="outlook.isTargetSensitive"
+        :later-targets-matter="outlookMatters"
         :first-breach="outlook.firstBreach"
       />
     </template>

@@ -430,40 +430,32 @@ export interface ShortfallOutlook {
   readonly horizonLowest: LowestPoint | null
   /** First day in the horizon the combined balance sits below the cushion, or `null`. */
   readonly firstBreach: IsoDate | null
-  /** Whether any selectable target can move the verdict at all. */
-  readonly isTargetSensitive: boolean
 }
 
 /**
- * Whether the shortfall screen's target picker can change the verdict at all,
- * and what the user would see if they widened it as far as it goes.
+ * What the user would see if they widened the shortfall screen's target as
+ * far as it goes.
  *
  * `shortfallThrough`'s answer is the running minimum over `[today, through]`,
  * and a running minimum is monotonically non-increasing as the window widens —
  * it can only fall or hold as `through` moves later, never rise. For a
  * household whose low point lands early and the balance climbs afterward, that
- * means *every* selectable target contains the same trough: clicking between
- * bills or dates changes the caption and nothing else. That is not a bug in
- * the screen, but a user who sees the number refuse to move has no way to tell
- * "this answer is genuinely target-independent" apart from "this control is
- * broken" — and a household that is Covered through its target can still have
- * its cushion break shortly after it, which the target-scoped answer alone
- * never reveals.
+ * means every selectable target *past* that low point contains the same
+ * trough: clicking between bills or dates changes the caption and nothing
+ * else. That is not a bug in the screen, but a user who sees the number
+ * refuse to move has no way to tell "this answer is genuinely settled" apart
+ * from "this control is broken" — and a household that is Covered through its
+ * target can still have its cushion break shortly after it, which the
+ * target-scoped answer alone never reveals. `laterTargetsMatter` answers the
+ * first; `firstBreach` here answers the second.
  *
- * Both are answered from one extra projection rather than two, and without
- * re-deriving any minimum `project` did not already find:
- *
- * - The **narrowest** window any target can produce is `today + 1` day
- *   (`TARGET_MIN_OFFSET_DAYS`; bill targets are always ≥ today + 1 too). Its
- *   low point is the best case for the verdict moving.
- * - The **widest** window is the full horizon. Because the minimum is
- *   monotone, comparing the narrowest window's low against the widest
- *   window's low answers "can any target the user picks change this answer?"
- *   in one comparison — if they agree, nothing between them can differ either.
- * - `firstBreach` is the one scan this function performs, and it is
- *   information `project` does not compute: not a minimum, but the first day
- *   the combined line crosses below the cushion, which the running-minimum
- *   summary alone cannot name.
+ * One extra projection covers both, and without re-deriving any minimum
+ * `project` did not already find: `horizonLowest` is the low across the whole
+ * selectable horizon, read straight from that projection's summary.
+ * `firstBreach` is the one scan this function performs, and it is information
+ * `project` does not compute: not a minimum, but the first day the combined
+ * line crosses below the cushion, which the running-minimum summary alone
+ * cannot name.
  *
  * This is a product decision about honesty, not a rendering one — the same
  * reason `canAnswerShortfall` lives here rather than in the screen — which is
@@ -485,21 +477,33 @@ export function shortfallOutlook(
   // so nothing `project` already computed can answer it.
   const firstBreach = full.combined.find((point) => point.balance < question.cushion)?.date ?? null
 
-  // The narrowest window any target can produce: `TARGET_MIN_OFFSET_DAYS` in
-  // app/lib/shortfall-target.ts is 1, and bill targets are always ≥ today + 1.
-  // Hardcoded rather than imported — the engine cannot import from `app/`.
-  const nearest = project(data, {
-    start: question.today,
-    end: addDays(question.today, 1),
-    verdictFrom: question.today,
-  })
+  return { horizonEnd, horizonLowest, firstBreach }
+}
 
-  return {
-    horizonEnd,
-    horizonLowest,
-    firstBreach,
-    isTargetSensitive: nearest.combinedSummary.lowest?.balance !== horizonLowest?.balance,
-  }
+/**
+ * Whether any target later than this answer's could change the verdict.
+ *
+ * The running minimum is monotone in the target, so once the answer's low
+ * point equals the low across the whole horizon there is nothing further out
+ * left to find — every later target returns the identical verdict. That is
+ * the difference between "the picker is broken" and "the picker has nothing
+ * more to tell you", which the screen otherwise has no way to say.
+ *
+ * Deliberately target-*relative*, not target-*absolute*: an earlier version
+ * of this compared the narrowest selectable window (`today` to `today + 1`)
+ * against the horizon, which is too literal — a daily discretionary drain
+ * nudges that one-day low down by a dollar or two before income lands, so it
+ * disagreed with the horizon even for a household whose real trough sits at
+ * the very first selectable target. Comparing *this answer's* low against the
+ * horizon's asks the question the screen actually needs answered: is there
+ * anything past what the user is looking at right now?
+ *
+ * No extra projection — it compares two figures both engine calls already
+ * produced. Two nulls compare equal, which is the right reading: no low point
+ * in either window is "nothing more to find" too.
+ */
+export function laterTargetsMatter(answer: ShortfallAnswer, outlook: ShortfallOutlook): boolean {
+  return answer.lowest?.balance !== outlook.horizonLowest?.balance
 }
 
 export interface ShortfallQuestion {

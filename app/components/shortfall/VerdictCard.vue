@@ -24,8 +24,8 @@ const props = defineProps<{
   targetDate: IsoDate
   cushion: MinorUnits
   today: IsoDate
-  /** Whether any selectable target could move the verdict at all — `shortfallOutlook`. */
-  targetSensitive: boolean
+  /** Whether a later target could still change the verdict — `laterTargetsMatter`. */
+  laterTargetsMatter: boolean
   /** First day in the outlook horizon the cushion breaks, or `null` — `shortfallOutlook`. */
   firstBreach: IsoDate | null
 }>()
@@ -47,17 +47,25 @@ const lowestLabel = computed(() => {
 
 /**
  * A second, target-independent fact about honesty, not the verdict itself —
- * see `shortfallOutlook`. Invented copy, no design artifact behind it; raised
- * in `docs/design/shortfall/spec.md`'s States section per CLAUDE.md.
+ * see `shortfallOutlook` and `laterTargetsMatter`. Invented copy, no design
+ * artifact behind it; raised in `docs/design/shortfall/spec.md`'s States
+ * section per CLAUDE.md.
  *
- * The two branches are mutually exclusive by construction: if the answer is
- * target-insensitive, the narrowest and widest windows' low points are equal,
- * so a covered target implies nothing in the horizon ever breaches either —
- * no explicit guard needed between them.
+ * Three branches, ordered by specificity rather than mutually exclusive by
+ * construction — each condition below can be true at the same time as the
+ * next one, so the first match wins:
+ *
+ * 1. Already short today: no target can do anything but reproduce that, and
+ *    naming it directly is more useful than letting the picker look inert.
+ * 2. Nothing later than the current target can move the verdict either way.
+ * 3. Covered right now, but the cushion breaks somewhere further out.
  */
 const outlookNote = computed(() => {
-  if (!props.targetSensitive) {
-    return "Picking a different bill or date won't change this — your low point comes before all of them."
+  if (props.firstBreach === props.today) {
+    return 'You are below your cushion today, so every target starts short.'
+  }
+  if (!props.laterTargetsMatter) {
+    return "Picking a later bill or date won't change this — your low point falls inside this window."
   }
   if (props.verdict.isCovered && props.firstBreach) {
     return `Look further out, though: your cushion breaks on ${formatDateShort(props.firstBreach)}.`

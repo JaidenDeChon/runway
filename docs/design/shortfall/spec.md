@@ -114,12 +114,13 @@ Captured with the `.dark` class forced onto `<html>`/`<body>`, because the expor
 No loading, empty, or error state exists in the export. All three are gaps — see Open questions.
 
 ### Outlook note (invented — not in the export)
-Because the verdict is the running minimum over `[today, target]`, it is monotone in the target: widening the window can only lower or hold the low point, never raise it. For a household whose low point lands early and the balance only climbs afterward, every selectable bill or date contains that same trough, and the verdict never moves — only the "…through {date}" caption does. The export never surfaces this (it always seeds a declining household), so there is no screenshot and no copy for it. Two invented lines, rendered under the existing sub-line inside the same `aria-live` region, flagged here per CLAUDE.md rather than resolved silently — the same way `will-i-make-it.vue`'s gap-state copy is flagged in its own comments:
+Because the verdict is the running minimum over `[today, target]`, it is monotone in the target: widening the window can only lower or hold the low point, never raise it. For a household whose low point lands early and the balance only climbs afterward, every selectable bill or date past that low point contains the same trough, and the verdict never moves — only the "…through {date}" caption does. The export never surfaces this (it always seeds a declining household), so there is no screenshot and no copy for it. Three invented lines, rendered under the existing sub-line inside the same `aria-live` region, flagged here per CLAUDE.md rather than resolved silently — the same way `will-i-make-it.vue`'s gap-state copy is flagged in its own comments. Ordered by specificity, first match wins, rather than mutually exclusive:
 
-- **Target-insensitive** (any target picked contains the same trough): *"Picking a different bill or date won't change this — your low point comes before all of them."*
+- **Already short today** (the cushion breaks on today itself, so no target can produce anything but Short): *"You are below your cushion today, so every target starts short."*
+- **Nothing later matters** (no target later than the one currently selected could change the verdict): *"Picking a later bill or date won't change this — your low point falls inside this window."*
 - **Covered here, breaks later** (the target-scoped verdict is Covered, but the cushion breaks somewhere further out in the 180-day horizon): *"Look further out, though: your cushion breaks on {date}."*
 
-These two are mutually exclusive by construction — a target-insensitive household's narrowest and widest windows share one low point, so a Covered verdict there implies no breach anywhere in the horizon either.
+The second line is deliberately target-*relative*, not a blanket "nothing anywhere can move this": it compares the currently selected target's own low point against the low across the full horizon (`laterTargetsMatter` in `domain/projection.ts`), so it can fire even when an earlier target on the same household would have shown a different verdict — what matters is only whether picking something *later* than what's on screen right now would.
 
 ---
 

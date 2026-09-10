@@ -26,7 +26,8 @@ without infrastructure, and it is enforced rather than promised
 | `project(data, window)` | the whole picture: per-account and combined series, each with its low point and closing balance, plus the occurrences that moved them (archived accounts are excluded, even if named in `accountIds`) |
 | `evaluate(summary, cushion)` | covered / tight / short, the margin, and the shortfall |
 | `shortfallThrough(data, question)` | "will I make it to this date?" and, if not, by how much |
-| `shortfallOutlook(data, question)` | whether any selectable target could change the verdict at all, and the first day the cushion breaks across the whole horizon — see the worked example below |
+| `shortfallOutlook(data, question)` | the low point and the first cushion breach across the whole selectable horizon — see the worked example below |
+| `laterTargetsMatter(answer, outlook)` | whether any target later than the one just answered could still change the verdict |
 | `occurrencesIn(data, window)` | the individual events in a window, expanded from the rules |
 | `nextOccurrenceOnOrAfter(item, from, withinDays?)` | the first date on or after `from` a rule occurs, or `null` once it has ended (`domain/cadence.ts`) — what a list screen shows as "next", never the stored anchor |
 | `upcomingBills(data, today)` | the next occurrence of each bill ahead, for the shortfall screen's picker |
@@ -134,47 +135,68 @@ approximately right is a shortfall figure that is wrong.
 `shortfallThrough`'s answer is the running minimum over `[today, through]`,
 and a running minimum can only fall or hold as the window widens, never rise.
 For a household whose low point lands early and the balance climbs
-afterward, *every* selectable target contains that same trough — the next
-bill, a date six months out, it makes no difference. `shortfallOutlook` is
-what lets a caller tell "this answer genuinely can't move" apart from "the
-control is broken", and what surfaces a cushion that breaks *after* a target
-the household is otherwise Covered through.
+afterward, *every* selectable target past that low point contains the same
+trough — the next bill, a date six months out, it makes no difference.
+`shortfallOutlook` finds the low point and the first cushion breach across
+the whole selectable horizon; `laterTargetsMatter` is what turns that into "is
+there anything left for a later target to find", so a caller can tell "this
+answer genuinely can't move" apart from "the control is broken" — and can
+surface a cushion that breaks *after* a target the household is otherwise
+Covered through.
 
 ```ts
-import { shortfallOutlook } from '~~/domain/projection'
+import { laterTargetsMatter, shortfallOutlook, shortfallThrough } from '~~/domain/projection'
 
 const outlook = shortfallOutlook(climbing, {
   today: '2026-08-15',
   cushion: 60_000,   // $600
 })
 
-outlook.horizonEnd        // '2027-02-11' — 180 days out
-outlook.horizonLowest     // { date: '2026-08-16', balance: 40_000 }
-outlook.firstBreach       // null — the cushion never actually breaks
-outlook.isTargetSensitive // false
+outlook.horizonEnd    // '2027-02-11' — 180 days out
+outlook.horizonLowest // { date: '2026-08-16', balance: 40_000 }
+outlook.firstBreach   // null — the cushion never actually breaks
+
+const answer = shortfallThrough(climbing, { today: '2026-08-15', through: '2026-08-20', cushion: 60_000 })
+answer.lowest // { date: '2026-08-16', balance: 40_000 } — same day, same balance
+
+laterTargetsMatter(answer, outlook) // false
 ```
 
 `climbing`'s balance dips once, the day after today, and only ever recovers
-from there. It compares the narrowest window any target can produce (`today`
-to `today + 1`) against the widest one (the full horizon); because the
-running minimum is monotone, agreement between those two means nothing
-selectable in between can disagree either.
+from there, so a target picked days later still lands on that same trough.
+`laterTargetsMatter` compares *this answer's* low point against the whole
+horizon's, not some fixed narrow window against the horizon — an earlier
+version of this compared the narrowest selectable window (`today` to
+`today + 1`) against the horizon instead, and it was wrong: a daily
+discretionary drain nudges that one-day low down a little further each day
+before the next paycheck lands, so it disagreed with the horizon even for a
+household whose real trough the *actual* target already fully contained. The
+question worth asking is "is there anything past what the user is looking at
+right now", which is answer-relative, not "does the narrowest possible window
+agree with the widest one".
 
 A household that digs deeper every cycle tells the opposite story:
 
 ```ts
-outlook.horizonLowest     // { date: '2027-01-20', balance: -180_000 }
-outlook.firstBreach       // '2026-11-02'
-outlook.isTargetSensitive // true
+outlook.horizonLowest // { date: '2027-01-20', balance: -180_000 }
+outlook.firstBreach   // '2026-11-02'
+
+const soon = shortfallThrough(digging, { today: '2026-08-15', through: '2026-08-25', cushion: 60_000 })
+soon.lowest // { date: '2026-08-20', balance: 150_000 } — nowhere near the horizon low yet
+
+laterTargetsMatter(soon, outlook) // true
 ```
 
 `firstBreach` answers something `horizonLowest` cannot: the *first* day the
 running balance drops under the cushion, not the worst one — the figure that
 matters when a target-scoped answer is Covered but the household is not clear
-of trouble for the rest of the horizon. It is the one place this function
+of trouble for the rest of the horizon. It is the one place `shortfallOutlook`
 scans a series rather than reading a summary `project` already produced,
 because "the first day below a line" is not a minimum, and nothing else in
-the engine had a reason to compute it.
+the engine had a reason to compute it. `laterTargetsMatter` itself runs no
+projection at all — it compares two figures `shortfallThrough` and
+`shortfallOutlook` already produced, and treats two `null` low points (nothing
+ahead in either window) as agreeing too.
 
 ## Rules worth knowing before you change anything
 
