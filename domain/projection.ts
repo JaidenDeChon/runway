@@ -23,6 +23,14 @@ export const TIGHT_THRESHOLD: MinorUnits = 25_000
 /** How far ahead the shortfall screen looks for selectable bills. */
 export const UPCOMING_BILL_HORIZON_DAYS = 120
 
+/**
+ * How far forward the outlook looks. Mirrors the shortfall screen's furthest
+ * selectable target (`TARGET_MAX_OFFSET_DAYS` in app/lib/shortfall-target.ts)
+ * — the engine cannot import from `app/`, so the two are kept in step by a
+ * test rather than a shared constant.
+ */
+export const SHORTFALL_OUTLOOK_HORIZON_DAYS = 180
+
 export interface Occurrence {
   /** Stable within one projection; composed of the item id and the date. */
   readonly id: string
@@ -414,6 +422,84 @@ export function canAnswerShortfall(data: RunwayData): boolean {
   return (
     data.monthlyDiscretionarySpend > 0 && accounts.some((account) => account.isDiscretionarySource)
   )
+}
+
+export interface ShortfallOutlook {
+  readonly horizonEnd: IsoDate
+  /** The low point across the whole selectable horizon. */
+  readonly horizonLowest: LowestPoint | null
+  /** First day in the horizon the combined balance sits below the cushion, or `null`. */
+  readonly firstBreach: IsoDate | null
+  /** Whether any selectable target can move the verdict at all. */
+  readonly isTargetSensitive: boolean
+}
+
+/**
+ * Whether the shortfall screen's target picker can change the verdict at all,
+ * and what the user would see if they widened it as far as it goes.
+ *
+ * `shortfallThrough`'s answer is the running minimum over `[today, through]`,
+ * and a running minimum is monotonically non-increasing as the window widens —
+ * it can only fall or hold as `through` moves later, never rise. For a
+ * household whose low point lands early and the balance climbs afterward, that
+ * means *every* selectable target contains the same trough: clicking between
+ * bills or dates changes the caption and nothing else. That is not a bug in
+ * the screen, but a user who sees the number refuse to move has no way to tell
+ * "this answer is genuinely target-independent" apart from "this control is
+ * broken" — and a household that is Covered through its target can still have
+ * its cushion break shortly after it, which the target-scoped answer alone
+ * never reveals.
+ *
+ * Both are answered from one extra projection rather than two, and without
+ * re-deriving any minimum `project` did not already find:
+ *
+ * - The **narrowest** window any target can produce is `today + 1` day
+ *   (`TARGET_MIN_OFFSET_DAYS`; bill targets are always ≥ today + 1 too). Its
+ *   low point is the best case for the verdict moving.
+ * - The **widest** window is the full horizon. Because the minimum is
+ *   monotone, comparing the narrowest window's low against the widest
+ *   window's low answers "can any target the user picks change this answer?"
+ *   in one comparison — if they agree, nothing between them can differ either.
+ * - `firstBreach` is the one scan this function performs, and it is
+ *   information `project` does not compute: not a minimum, but the first day
+ *   the combined line crosses below the cushion, which the running-minimum
+ *   summary alone cannot name.
+ *
+ * This is a product decision about honesty, not a rendering one — the same
+ * reason `canAnswerShortfall` lives here rather than in the screen — which is
+ * why the two sit together.
+ */
+export function shortfallOutlook(
+  data: RunwayData,
+  question: { today: IsoDate; cushion: MinorUnits; horizonDays?: number },
+): ShortfallOutlook {
+  const horizonEnd = addDays(question.today, question.horizonDays ?? SHORTFALL_OUTLOOK_HORIZON_DAYS)
+  const full = project(data, {
+    start: question.today,
+    end: horizonEnd,
+    verdictFrom: question.today,
+  })
+  const horizonLowest = full.combinedSummary.lowest
+
+  // The one permitted scan: the first day below the cushion is not a minimum,
+  // so nothing `project` already computed can answer it.
+  const firstBreach = full.combined.find((point) => point.balance < question.cushion)?.date ?? null
+
+  // The narrowest window any target can produce: `TARGET_MIN_OFFSET_DAYS` in
+  // app/lib/shortfall-target.ts is 1, and bill targets are always ≥ today + 1.
+  // Hardcoded rather than imported — the engine cannot import from `app/`.
+  const nearest = project(data, {
+    start: question.today,
+    end: addDays(question.today, 1),
+    verdictFrom: question.today,
+  })
+
+  return {
+    horizonEnd,
+    horizonLowest,
+    firstBreach,
+    isTargetSensitive: nearest.combinedSummary.lowest?.balance !== horizonLowest?.balance,
+  }
 }
 
 export interface ShortfallQuestion {

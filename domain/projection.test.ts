@@ -7,6 +7,7 @@ import {
   evaluate,
   occurrencesIn,
   project,
+  shortfallOutlook,
   shortfallThrough,
   signedAmount,
   TIGHT_THRESHOLD,
@@ -662,5 +663,134 @@ describe('shortfallThrough', () => {
     expect(answer.status).toBe('covered')
     expect(answer.shortfall).toBe(0)
     expect(answer.endingBalance).toBe(toMinorUnits(1000))
+  })
+
+  it('states the headroom from the low point, not from the healthier endpoint', () => {
+    const answer = shortfallThrough(dipping, {
+      today: SEED_TODAY,
+      through: '2026-08-30',
+      cushion: toMinorUnits(100),
+    })
+    // The $2,700 endpoint would say $2,600 of headroom; the real spare, at the
+    // $200 low point, is $100.
+    expect(answer.isCovered).toBe(true)
+    expect(answer.margin).toBe(toMinorUnits(100))
+    expect(answer.endingBalance).toBe(toMinorUnits(2700))
+  })
+
+  it('moves the verdict with the cushion and never the projection', () => {
+    const question = (cushion: ReturnType<typeof toMinorUnits>) => ({
+      today: SEED_TODAY,
+      through: '2026-08-30',
+      cushion,
+    })
+    const covered = shortfallThrough(dipping, question(0))
+    const onTheLine = shortfallThrough(dipping, question(toMinorUnits(200)))
+    const short = shortfallThrough(dipping, question(toMinorUnits(600)))
+
+    // The projection itself never moves: same low point, same ending balance.
+    for (const answer of [covered, onTheLine, short]) {
+      expect(answer.lowest).toEqual({ date: '2026-08-18', balance: toMinorUnits(200) })
+      expect(answer.endingBalance).toBe(toMinorUnits(2700))
+    }
+
+    expect(covered.isCovered).toBe(true)
+    expect(covered.margin).toBe(toMinorUnits(200))
+
+    expect(onTheLine.isCovered).toBe(true)
+    expect(onTheLine.margin).toBe(0)
+
+    expect(short.isCovered).toBe(false)
+    expect(short.shortfall).toBe(toMinorUnits(400))
+  })
+})
+
+describe('shortfallOutlook', () => {
+  /** A one-off event: a monthly rule whose window is a single day. */
+  const onceOn = (date: string, over: Partial<RecurringItem>): RecurringItem =>
+    item({ nextOccurrence: date, startsOn: date, endsOn: date, ...over })
+
+  it('reports the FIRST day below the cushion, not the lowest day', () => {
+    // Dips to $500 on the 20th (a breach against a $550 cushion), recovers to
+    // $600 on the 25th, then dips further to $400 on Sep 5 — the series' true
+    // low point, and a different date from the first breach on purpose.
+    const dataset = data({
+      accounts: [account({ balance: toMinorUnits(1000) })],
+      recurringItems: [
+        onceOn('2026-08-20', { id: 'bill1', name: 'Bill1', amount: toMinorUnits(500) }),
+        onceOn('2026-08-25', {
+          id: 'pay',
+          name: 'Pay',
+          kind: 'income',
+          amount: toMinorUnits(100),
+        }),
+        onceOn('2026-09-05', { id: 'bill2', name: 'Bill2', amount: toMinorUnits(200) }),
+      ],
+    })
+    const outlook = shortfallOutlook(dataset, { today: SEED_TODAY, cushion: toMinorUnits(550) })
+
+    expect(outlook.firstBreach).toBe('2026-08-20')
+    expect(outlook.horizonLowest).toEqual({ date: '2026-09-05', balance: toMinorUnits(400) })
+    // The point of the test: these two dates disagree, so a regression that
+    // reports the low point's date instead of the first breach fails loudly.
+    expect(outlook.firstBreach).not.toBe(outlook.horizonLowest?.date)
+  })
+
+  it('is null when the cushion always holds', () => {
+    const outlook = shortfallOutlook(data(), { today: SEED_TODAY, cushion: 0 })
+    expect(outlook.firstBreach).toBeNull()
+  })
+
+  it('is target-insensitive when the trough lands at today + 1 and never recovers', () => {
+    // The only event is tomorrow's bill; nothing after it ever raises the
+    // balance again, so the narrowest and widest windows share the same low.
+    const dataset = data({
+      accounts: [account({ balance: toMinorUnits(1000) })],
+      recurringItems: [
+        onceOn(addDays(SEED_TODAY, 1), { id: 'bill', name: 'Bill', amount: toMinorUnits(300) }),
+      ],
+    })
+    const outlook = shortfallOutlook(dataset, { today: SEED_TODAY, cushion: 0 })
+    expect(outlook.isTargetSensitive).toBe(false)
+  })
+
+  it('is target-sensitive for a household that digs deeper every cycle', () => {
+    // A monthly bill with no offsetting income: each occurrence lowers the
+    // running minimum further, so the widest window's low is well below the
+    // narrowest window's — nothing has landed by today + 1 yet.
+    const dataset = data({
+      accounts: [account({ balance: toMinorUnits(1000) })],
+      recurringItems: [
+        item({
+          id: 'bill',
+          kind: 'bill',
+          amount: toMinorUnits(100),
+          cadence: 'monthly',
+          nextOccurrence: addDays(SEED_TODAY, 10),
+        }),
+      ],
+    })
+    const outlook = shortfallOutlook(dataset, { today: SEED_TODAY, cushion: 0 })
+    expect(outlook.isTargetSensitive).toBe(true)
+  })
+
+  it('does not report a breach past the horizon', () => {
+    const dataset = data({
+      accounts: [account({ balance: toMinorUnits(1000) })],
+      recurringItems: [
+        onceOn(addDays(SEED_TODAY, 40), { id: 'bill', name: 'Bill', amount: toMinorUnits(200) }),
+      ],
+    })
+    const cushion = toMinorUnits(900)
+
+    // A 30-day horizon ends before the bill on day 40 ever lands.
+    const narrow = shortfallOutlook(dataset, { today: SEED_TODAY, cushion, horizonDays: 30 })
+    expect(narrow.firstBreach).toBeNull()
+    expect(narrow.horizonEnd).toBe(addDays(SEED_TODAY, 30))
+
+    // Sanity: the same breach is reported once the horizon reaches it, so the
+    // null above is the horizon working, not the breach failing to fire.
+    const wide = shortfallOutlook(dataset, { today: SEED_TODAY, cushion, horizonDays: 45 })
+    expect(wide.firstBreach).toBe(addDays(SEED_TODAY, 40))
   })
 })

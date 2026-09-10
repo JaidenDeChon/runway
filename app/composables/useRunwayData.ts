@@ -2,15 +2,17 @@
  * The app's single copy of the user's financial data.
  *
  * **Accounts, settings, recurring items, their materialized occurrences, the
- * dashboard's two preferences and the monthly discretionary figure are
- * Supabase-backed; transfers are not yet.** Issue #7 moved the accounts
- * screen onto real rows, issue #8 moved recurring items the same way, issue
- * #9 added `regenerateOccurrences`, keeping `public.occurrences` reconciled
- * with those rules, issue #12 moved the dashboard's horizon and
+ * dashboard's two preferences, the monthly discretionary figure and the
+ * safety cushion are Supabase-backed; transfers are not yet.** Issue #7 moved
+ * the accounts screen onto real rows, issue #8 moved recurring items the same
+ * way, issue #9 added `regenerateOccurrences`, keeping `public.occurrences`
+ * reconciled with those rules, issue #12 moved the dashboard's horizon and
  * hidden-account selection off `useState` and onto
  * `user_settings.default_horizon_days` and `public.dashboard_hidden_accounts`,
- * and issue #13 gave `/accounts` a writer for
- * `user_settings.monthly_discretionary_cents` — `RunwayData.accounts`,
+ * issue #13 gave `/accounts` a writer for
+ * `user_settings.monthly_discretionary_cents`, and issue #14 gave
+ * `/will-i-make-it` a writer for `user_settings.cushion_cents` —
+ * `RunwayData.accounts`,
  * `RunwayData.recurringItems` and the settings that ride along with accounts
  * (`safetyCushion`, `monthlyDiscretionarySpend`, `timeZone`,
  * `staleAfterDays`) come from `public.accounts`, `public.recurring_rules` and
@@ -204,12 +206,16 @@ export function useRunwayData() {
   // `monthly_discretionary_cents` now has a writer: `setMonthlyDiscretionarySpend`
   // persists it from the "Everyday spending" card on `/accounts` (issue #13),
   // using this overlay only to bend the chart optimistically while the write
-  // is in flight. `cushion_cents` and `time_zone` still ride along on the one
-  // `user_settings` query the discretionary designation already requires — a
-  // plain read, always — and their setters below write into this session-local
-  // overlay instead of the database, exactly the stance `docs/database/schema.md`
-  // records for `time_zone`: the writer waits for the settings screen. No
-  // screen calls `setSafetyCushion` or `setTimeZoneOverride` today.
+  // is in flight. `cushion_cents` now has one too: `setSafetyCushion` persists
+  // it from `/will-i-make-it` (issue #14), the same way — the overlay is what
+  // bends the shortfall verdict (and, through this same computed, the
+  // dashboard's cushion line) the instant the user types, while that write is
+  // in flight. `time_zone` still rides along on the one `user_settings` query
+  // the discretionary designation already requires — a plain read, always —
+  // and its setter below writes into this session-local overlay instead of
+  // the database, exactly the stance `docs/database/schema.md` records for
+  // it: the writer waits for the settings screen. No screen calls
+  // `setTimeZoneOverride` today.
   const settingsOverride = useState<Partial<HouseholdSettings>>(
     'runway-settings-override',
     () => ({}),
@@ -595,10 +601,54 @@ export function useRunwayData() {
     return saved
   }
 
-  function setSafetyCushion(cushion: MinorUnits): void {
-    settingsOverride.value = {
-      ...settingsOverride.value,
-      safetyCushion: Math.max(0, Math.round(cushion)),
+  /**
+   * Persists the safety cushion to `user_settings.cushion_cents` under the
+   * caller's own session, from `/will-i-make-it` (issue #14) — the same
+   * component-side write path `setMonthlyDiscretionarySpend` uses, and for
+   * the same reason: this is the one stored cushion, shared with the
+   * dashboard's chart through the `safetyCushion` computed above, not a
+   * screen-local figure that could disagree with it.
+   *
+   * Writes the overlay optimistically so the verdict bends the moment the
+   * user types, then persists with `upsert`, not `update`: a plain `update`
+   * silently affects zero rows for a user whose settings row is missing —
+   * exactly the case `toHouseholdSettings(null)` exists for. No `refresh()`
+   * follows: the overlay already carries the new value into `data`
+   * reactively, and re-running all four household queries would re-render
+   * the dashboard chart underneath the user.
+   *
+   * **Throws on a failed write, like `setMonthlyDiscretionarySpend` and
+   * unlike `setDefaultHorizonDays`.** The cushion is a field on `RunwayData`
+   * and the input `evaluate()` and `shortfallThrough()` measure the verdict
+   * against; a dropped write would leave the user reading an answer their
+   * account does not hold.
+   *
+   * **A failed write only rolls back its own optimistic value.** `/will-i-
+   * make-it` debounces commits behind a 400ms pause rather than a button, so
+   * two calls can be in flight at once — an earlier one failing after a
+   * later one has already landed its own optimistic write (or its own
+   * successful response) must not stomp that newer value back to the older
+   * snapshot; that is exactly "the screen shows a value the account does not
+   * hold" (PR #79 review finding #3). Checking that this call's own optimistic
+   * cushion is still current before restoring `previous` closes it without
+   * dropping either write or needing an in-flight guard at the caller.
+   */
+  async function setSafetyCushion(cushion: MinorUnits): Promise<void> {
+    if (!Number.isFinite(cushion)) throw new Error('save-failed')
+    const cents = Math.max(0, Math.round(cushion))
+    const userId = requireUserId()
+    const previous = settingsOverride.value
+    settingsOverride.value = { ...settingsOverride.value, safetyCushion: cents }
+    const { error: writeError } = await client
+      .from('user_settings')
+      .upsert({ user_id: userId, cushion_cents: cents }, { onConflict: 'user_id' })
+    if (writeError) {
+      // Code only — never a message, never the amount. See CLAUDE.md.
+      console.error('safety cushion write failed', { code: writeError.code })
+      if (settingsOverride.value.safetyCushion === cents) {
+        settingsOverride.value = previous
+      }
+      throw new Error('save-failed')
     }
   }
 

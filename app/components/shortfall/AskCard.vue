@@ -29,6 +29,7 @@ const props = defineProps<{
   selectedBillId: string | null
   selectedDate: IsoDate
   cushion: MinorUnits
+  cushionError?: string | null
   bills: readonly UpcomingBill[]
   today: IsoDate
 }>()
@@ -134,11 +135,14 @@ function onDateInput(value: string | number): void {
 
       <Separator />
 
-      <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0 flex-1">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex-1">
           <Label for="shortfall-cushion">Safety cushion</Label>
           <p class="mt-1 text-xs text-muted-foreground lg:whitespace-nowrap">
             The lowest balance you're comfortable letting it reach.
+          </p>
+          <p class="mt-1 text-xs text-muted-foreground">
+            Saved to your account. Your dashboard uses the same cushion.
           </p>
         </div>
         <MoneyInput
@@ -149,6 +153,9 @@ function onDateInput(value: string | number): void {
           @update:model-value="(value) => emit('update:cushion', value)"
         />
       </div>
+      <p v-if="props.cushionError" role="alert" class="text-sm text-destructive">
+        {{ props.cushionError }}
+      </p>
     </CardContent>
   </Card>
 </template>

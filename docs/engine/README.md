@@ -26,6 +26,7 @@ without infrastructure, and it is enforced rather than promised
 | `project(data, window)` | the whole picture: per-account and combined series, each with its low point and closing balance, plus the occurrences that moved them (archived accounts are excluded, even if named in `accountIds`) |
 | `evaluate(summary, cushion)` | covered / tight / short, the margin, and the shortfall |
 | `shortfallThrough(data, question)` | "will I make it to this date?" and, if not, by how much |
+| `shortfallOutlook(data, question)` | whether any selectable target could change the verdict at all, and the first day the cushion breaks across the whole horizon — see the worked example below |
 | `occurrencesIn(data, window)` | the individual events in a window, expanded from the rules |
 | `nextOccurrenceOnOrAfter(item, from, withinDays?)` | the first date on or after `from` a rule occurs, or `null` once it has ended (`domain/cadence.ts`) — what a list screen shows as "next", never the stored anchor |
 | `upcomingBills(data, today)` | the next occurrence of each bill ahead, for the shortfall screen's picker |
@@ -127,6 +128,53 @@ endpoint would answer "yes, you make it" to someone who does not.
 Spending exactly `answer.shortfall` puts the low point precisely *on* the
 cushion. There is a test that checks that, because a shortfall figure that is
 approximately right is a shortfall figure that is wrong.
+
+## Worked example: is the target even doing anything?
+
+`shortfallThrough`'s answer is the running minimum over `[today, through]`,
+and a running minimum can only fall or hold as the window widens, never rise.
+For a household whose low point lands early and the balance climbs
+afterward, *every* selectable target contains that same trough — the next
+bill, a date six months out, it makes no difference. `shortfallOutlook` is
+what lets a caller tell "this answer genuinely can't move" apart from "the
+control is broken", and what surfaces a cushion that breaks *after* a target
+the household is otherwise Covered through.
+
+```ts
+import { shortfallOutlook } from '~~/domain/projection'
+
+const outlook = shortfallOutlook(climbing, {
+  today: '2026-08-15',
+  cushion: 60_000,   // $600
+})
+
+outlook.horizonEnd        // '2027-02-11' — 180 days out
+outlook.horizonLowest     // { date: '2026-08-16', balance: 40_000 }
+outlook.firstBreach       // null — the cushion never actually breaks
+outlook.isTargetSensitive // false
+```
+
+`climbing`'s balance dips once, the day after today, and only ever recovers
+from there. It compares the narrowest window any target can produce (`today`
+to `today + 1`) against the widest one (the full horizon); because the
+running minimum is monotone, agreement between those two means nothing
+selectable in between can disagree either.
+
+A household that digs deeper every cycle tells the opposite story:
+
+```ts
+outlook.horizonLowest     // { date: '2027-01-20', balance: -180_000 }
+outlook.firstBreach       // '2026-11-02'
+outlook.isTargetSensitive // true
+```
+
+`firstBreach` answers something `horizonLowest` cannot: the *first* day the
+running balance drops under the cushion, not the worst one — the figure that
+matters when a target-scoped answer is Covered but the household is not clear
+of trouble for the rest of the horizon. It is the one place this function
+scans a series rather than reading a summary `project` already produced,
+because "the first day below a line" is not a minimum, and nothing else in
+the engine had a reason to compute it.
 
 ## Rules worth knowing before you change anything
 

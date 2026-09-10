@@ -113,6 +113,14 @@ Captured with the `.dark` class forced onto `<html>`/`<body>`, because the expor
 
 No loading, empty, or error state exists in the export. All three are gaps — see Open questions.
 
+### Outlook note (invented — not in the export)
+Because the verdict is the running minimum over `[today, target]`, it is monotone in the target: widening the window can only lower or hold the low point, never raise it. For a household whose low point lands early and the balance only climbs afterward, every selectable bill or date contains that same trough, and the verdict never moves — only the "…through {date}" caption does. The export never surfaces this (it always seeds a declining household), so there is no screenshot and no copy for it. Two invented lines, rendered under the existing sub-line inside the same `aria-live` region, flagged here per CLAUDE.md rather than resolved silently — the same way `will-i-make-it.vue`'s gap-state copy is flagged in its own comments:
+
+- **Target-insensitive** (any target picked contains the same trough): *"Picking a different bill or date won't change this — your low point comes before all of them."*
+- **Covered here, breaks later** (the target-scoped verdict is Covered, but the cushion breaks somewhere further out in the 180-day horizon): *"Look further out, though: your cushion breaks on {date}."*
+
+These two are mutually exclusive by construction — a target-insensitive household's narrowest and widest windows share one low point, so a Covered verdict there implies no breach anywhere in the horizon either.
+
 ---
 
 ## Interactions

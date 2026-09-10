@@ -119,13 +119,13 @@ test.describe('once there is a bill', () => {
     await gotoHydrated(page, '/will-i-make-it')
     await expect(page.getByRole('heading', { name: 'Not enough to go on yet' })).toBeVisible()
 
-    // Followed rather than `goto`-ed, and returned from with `goBack()`, for a
-    // reason that is not stylistic: recurring items are still session-local
-    // `useState` (issue #8 owns moving them onto Supabase), so a full page
-    // load would drop the item this test is about to add and the gate would
-    // correctly close again. Both hops here are client-side route changes —
-    // which is also exactly the path the empty state's own call to action
-    // invites a user down.
+    // Followed rather than `goto`-ed, and returned from with `goBack()`,
+    // matching the path the empty state's own call to action invites a user
+    // down: both hops are client-side route changes. Recurring items have
+    // been real `recurring_rules` rows since issue #8, so a full page load
+    // would no longer drop the item this test is about to add — but
+    // `goBack()` is still the more faithful way to retrace the CTA a real
+    // user clicked, so it stays.
     await page.getByRole('link', { name: /Add a recurring item/ }).click()
     await expect(page).toHaveURL(/\/recurring-items/)
 
