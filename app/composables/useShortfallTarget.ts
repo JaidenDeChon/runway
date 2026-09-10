@@ -8,6 +8,7 @@
  * and writes three query params.
  */
 import { type ComputedRef, computed, type Ref } from 'vue'
+import type { LocationQueryRaw } from 'vue-router'
 import {
   parseBillId,
   parseMode,
@@ -62,19 +63,20 @@ export function useShortfallTarget(
   // `Router.replace` resolves rather than rejects on a redundant navigation,
   // so `void` is safe here and no `.catch` is required.
   //
-  // Unlike `setBillId`/`setDate` below, this does **not** spread
-  // `...route.query`: it writes exactly `mode` plus the effective value for
-  // the mode being switched to (bill when there is one, on otherwise), and
-  // nothing else. A stale `bill=` left over from before a switch to date
-  // mode (or vice versa) can never be shown or acted on — mode alone decides
-  // which key is "the" selection — so carrying it forward would only leave
-  // dead weight in a copied link, which is exactly what the exact-key-set
-  // E2E assertion (`tests/e2e/shortfall.spec.ts`) exists to catch.
+  // Spreads `...route.query`, like `setBillId`/`setDate` below: switching
+  // modes must not drop the other mode's key, or a bill selection made
+  // before a trip through date mode silently reverts to the first bill on
+  // the way back — exactly what `docs/design/shortfall/spec.md:120` ("Mode
+  // state is independent: switching back restores the previously selected
+  // bill, and the date keeps its value") requires. Only fills in the target
+  // mode's key when it is not already present, so a first-ever switch still
+  // gets a concrete value rather than relying on the resolver's default.
   function setMode(next: ShortfallMode): void {
-    const query: Record<string, string> = { [SHORTFALL_QUERY.mode]: next }
-    if (next === 'bill') {
-      if (billId.value) query[SHORTFALL_QUERY.bill] = billId.value
-    } else {
+    const query: LocationQueryRaw = { ...route.query, [SHORTFALL_QUERY.mode]: next }
+    if (next === 'bill' && !query[SHORTFALL_QUERY.bill] && billId.value) {
+      query[SHORTFALL_QUERY.bill] = billId.value
+    }
+    if (next === 'date' && !query[SHORTFALL_QUERY.on]) {
       query[SHORTFALL_QUERY.on] = date.value
     }
     void router.replace({ query })

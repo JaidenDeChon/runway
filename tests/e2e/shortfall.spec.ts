@@ -163,25 +163,68 @@ test('the cushion survives a full reload', async ({ emptyHouseholdPage: page }) 
   await expectTextToBe(verdictHeadline(page), 'You need $500 more.')
 })
 
-test('carries the target in the URL, and carries nothing else', async ({
+test('carries the target in the URL, and a mode round-trip restores rather than resets it', async ({
   emptyHouseholdPage: page,
 }) => {
   await buildHousehold(page)
   await gotoHydrated(page, '/will-i-make-it')
 
-  await page.getByRole('tab', { name: 'Pick a date' }).click()
-  await expect.poll(() => new URL(page.url()).searchParams.get('mode')).toBe('date')
+  const billTab = page.getByRole('tab', { name: 'Upcoming bill' })
+  const dateTab = page.getByRole('tab', { name: 'Pick a date' })
 
-  await page.getByRole('tab', { name: 'Upcoming bill' }).click()
+  await expect(page.getByRole('radio', { name: /E2E Rent/ })).toBeChecked()
+  // Bill mode has nothing in the URL yet — nothing has written it there.
+  // `mode`/`billId` resolve from an empty query on first load; only a tab
+  // click or a selection round-trips through the router.
+  expect(new URL(page.url()).searchParams.get('bill')).toBeNull()
+
+  await dateTab.click()
+  await expect.poll(() => new URL(page.url()).searchParams.get('mode')).toBe('date')
+  const defaultDate = await page.locator('#shortfall-date').inputValue()
+
+  // Regression guard for issue #14's spec.md:120 ("switching back restores
+  // the previously selected bill, and the date keeps its value"): `setMode`
+  // used to write only `mode` plus the destination mode's own key, dropping
+  // the other one. Switching back to bill mode here must not drop the `on`
+  // this date tab just wrote — the first place the old code lost it.
+  await billTab.click()
   await expect.poll(() => new URL(page.url()).searchParams.get('mode')).toBe('bill')
+  const billId = new URL(page.url()).searchParams.get('bill')
+  expect(billId).not.toBeNull()
+  expect(new URL(page.url()).searchParams.get('on')).toBe(defaultDate)
+  await expect(page.getByRole('radio', { name: /E2E Rent/ })).toBeChecked()
+
+  // Now type a date distinct from the tab switch's own default, so a reset
+  // back to that default is distinguishable from a real restore. UTC
+  // arithmetic on the ISO string, not a domain import — this file stays
+  // free of its own date math per the file comment.
+  await dateTab.click()
+  const picked = new Date(`${defaultDate}T00:00:00Z`)
+  picked.setUTCDate(picked.getUTCDate() + 5)
+  const customDate = picked.toISOString().slice(0, 10)
+  await page.locator('#shortfall-date').fill(customDate)
+  await expect.poll(() => new URL(page.url()).searchParams.get('on')).toBe(customDate)
+
+  // Second round trip, the other direction: bill mode must not drop the
+  // freshly typed date either, and must still restore the same bill.
+  await billTab.click()
+  await expect.poll(() => new URL(page.url()).searchParams.get('mode')).toBe('bill')
+  expect(new URL(page.url()).searchParams.get('bill')).toBe(billId)
+  expect(new URL(page.url()).searchParams.get('on')).toBe(customDate)
+  await expect(page.getByRole('radio', { name: /E2E Rent/ })).toBeChecked()
+
+  await dateTab.click()
+  await expect.poll(() => new URL(page.url()).searchParams.get('mode')).toBe('date')
+  expect(new URL(page.url()).searchParams.get('on')).toBe(customDate)
+  await expect(page.locator('#shortfall-date')).toHaveValue(customDate)
 
   const url = new URL(page.url())
   expect(url.pathname).toBe('/will-i-make-it')
-  // The exact key-set assertion is the guard that matters: it fails the day
-  // anybody adds a `cushion=` or an amount to this URL. A uuid in a failure
-  // message is an id, which CLAUDE.md permits; a balance is not.
-  expect([...url.searchParams.keys()].sort()).toEqual(['bill', 'mode'])
-  expect(url.searchParams.get('mode')).toBe('bill')
+  // Carrying both modes' keys at once is the deliberate cost of restoring
+  // rather than resetting; nothing beyond the three owned keys ever appears,
+  // and in particular no amount does. A uuid or a calendar day in a failure
+  // message is fine per CLAUDE.md; a balance is not.
+  expect([...url.searchParams.keys()].sort()).toEqual(['bill', 'mode', 'on'])
   expect(url.search).not.toContain('$')
 })
 
