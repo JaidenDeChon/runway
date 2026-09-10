@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, daysBetween } from './dates'
 import { toMinorUnits } from './money'
+import type { ShortfallAnswer, ShortfallOutlook } from './projection'
 import {
   canAnswerShortfall,
   classifyMargin,
   evaluate,
+  laterTargetsMatter,
   occurrencesIn,
   project,
   shortfallOutlook,
@@ -741,39 +743,6 @@ describe('shortfallOutlook', () => {
     expect(outlook.firstBreach).toBeNull()
   })
 
-  it('is target-insensitive when the trough lands at today + 1 and never recovers', () => {
-    // The only event is tomorrow's bill; nothing after it ever raises the
-    // balance again, so the narrowest and widest windows share the same low.
-    const dataset = data({
-      accounts: [account({ balance: toMinorUnits(1000) })],
-      recurringItems: [
-        onceOn(addDays(SEED_TODAY, 1), { id: 'bill', name: 'Bill', amount: toMinorUnits(300) }),
-      ],
-    })
-    const outlook = shortfallOutlook(dataset, { today: SEED_TODAY, cushion: 0 })
-    expect(outlook.isTargetSensitive).toBe(false)
-  })
-
-  it('is target-sensitive for a household that digs deeper every cycle', () => {
-    // A monthly bill with no offsetting income: each occurrence lowers the
-    // running minimum further, so the widest window's low is well below the
-    // narrowest window's — nothing has landed by today + 1 yet.
-    const dataset = data({
-      accounts: [account({ balance: toMinorUnits(1000) })],
-      recurringItems: [
-        item({
-          id: 'bill',
-          kind: 'bill',
-          amount: toMinorUnits(100),
-          cadence: 'monthly',
-          nextOccurrence: addDays(SEED_TODAY, 10),
-        }),
-      ],
-    })
-    const outlook = shortfallOutlook(dataset, { today: SEED_TODAY, cushion: 0 })
-    expect(outlook.isTargetSensitive).toBe(true)
-  })
-
   it('does not report a breach past the horizon', () => {
     const dataset = data({
       accounts: [account({ balance: toMinorUnits(1000) })],
@@ -792,5 +761,89 @@ describe('shortfallOutlook', () => {
     // null above is the horizon working, not the breach failing to fire.
     const wide = shortfallOutlook(dataset, { today: SEED_TODAY, cushion, horizonDays: 45 })
     expect(wide.firstBreach).toBe(addDays(SEED_TODAY, 40))
+  })
+})
+
+describe('laterTargetsMatter', () => {
+  /** A one-off event: a monthly rule whose window is a single day. */
+  const onceOn = (date: string, over: Partial<RecurringItem>): RecurringItem =>
+    item({ nextOccurrence: date, startsOn: date, endsOn: date, ...over })
+
+  // Built directly from the two summary shapes `laterTargetsMatter` actually
+  // reads, the same way `evaluate`'s own tests build a `SeriesSummary` rather
+  // than a whole household — the predicate is pure and never calls `project`,
+  // so nothing here needs to either.
+  const answerWithLow = (balance: number | null): ShortfallAnswer => ({
+    ...evaluate(
+      {
+        lowest: balance === null ? null : { date: '2026-08-20', balance: toMinorUnits(balance) },
+        ending: 0,
+      },
+      0,
+    ),
+    through: '2026-08-20',
+    startingBalance: 0,
+    endingBalance: 0,
+  })
+  const outlookWithLow = (balance: number | null): ShortfallOutlook => ({
+    horizonEnd: '2026-12-01',
+    horizonLowest: balance === null ? null : { date: '2026-11-01', balance: toMinorUnits(balance) },
+    firstBreach: null,
+  })
+
+  it('is true when a trough later than the target is deeper', () => {
+    expect(laterTargetsMatter(answerWithLow(500), outlookWithLow(100))).toBe(true)
+  })
+
+  it('is false when the answer already holds the horizon low', () => {
+    expect(laterTargetsMatter(answerWithLow(500), outlookWithLow(500))).toBe(false)
+  })
+
+  it('is false when neither window has a low point', () => {
+    expect(laterTargetsMatter(answerWithLow(null), outlookWithLow(null))).toBe(false)
+  })
+
+  // Regression lock for the bug the first cut of this feature shipped with:
+  // it compared the narrowest selectable window (today..today+1) against the
+  // horizon, rather than the actual selected target against the horizon. A
+  // household that dips for a few days on daily discretionary spend before
+  // its next paycheck lands, then only climbs, is exactly the shape that
+  // broke it — the one-day window caught only a sliver of the dip, disagreed
+  // with the horizon's full four-day trough, and wrongly reported that later
+  // targets still mattered even for a target that already spanned the whole
+  // dip.
+  it('does not flag a household that bottoms out in its first few days and only climbs after, for a target that already spans the dip', () => {
+    const dataset = data({
+      accounts: [account({ id: 'a', balance: toMinorUnits(1000), isDiscretionarySource: true })],
+      // $310 over 31-day August is exactly $10/day — see the `project`
+      // discretionary test above for why that makes the figures round.
+      monthlyDiscretionarySpend: toMinorUnits(310),
+      recurringItems: [
+        // A single lump deposit, five days out, far larger than any drain
+        // left in the 180-day horizon — the balance only climbs from here,
+        // even though it keeps draining $10/day forever afterward.
+        onceOn(addDays(SEED_TODAY, 5), {
+          id: 'pay',
+          name: 'Pay',
+          kind: 'income',
+          amount: toMinorUnits(5000),
+        }),
+      ],
+    })
+    const cushion = 0
+
+    // A target 14 days out — the screen's own default offset — already
+    // contains the day-4 trough, so its own low point already equals the
+    // horizon's.
+    const target = addDays(SEED_TODAY, 14)
+    const answer = shortfallThrough(dataset, { today: SEED_TODAY, through: target, cushion })
+    const outlook = shortfallOutlook(dataset, { today: SEED_TODAY, cushion })
+
+    expect(answer.lowest).toEqual({ date: addDays(SEED_TODAY, 4), balance: toMinorUnits(960) })
+    expect(outlook.horizonLowest).toEqual({
+      date: addDays(SEED_TODAY, 4),
+      balance: toMinorUnits(960),
+    })
+    expect(laterTargetsMatter(answer, outlook)).toBe(false)
   })
 })
