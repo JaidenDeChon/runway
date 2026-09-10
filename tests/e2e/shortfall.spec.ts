@@ -157,10 +157,22 @@ test('the cushion survives a full reload', async ({ emptyHouseholdPage: page }) 
   // A reload re-fetches from Supabase, so this asserts the stored row and not
   // the in-memory overlay. Asserted on the verdict, not the input's own
   // formatting, so this does not encode `MoneyInput`'s draft rendering.
-  await gotoHydrated(page, '/will-i-make-it')
+  const response = await gotoHydrated(page, '/will-i-make-it')
 
   await expectTextToBe(verdictBadge(page), 'Short')
   await expectTextToBe(verdictHeadline(page), 'You need $500 more.')
+
+  // The two assertions above already pass even when the *server-rendered*
+  // verdict is wrong: hydration reseeds the page from the payload and
+  // repaints over it. Reading the response body — the bytes the server
+  // actually sent, before any client JS ran — is the only way to catch a
+  // page-level ref seeded from the household fetch's not-yet-resolved
+  // default instead of the real cushion. Reduced to booleans, never the raw
+  // body, so a failure never puts a rendered balance in the assertion
+  // message or CI output.
+  const ssr = (await response?.text()) ?? ''
+  expect(/You need \$500 more\./.test(ssr)).toBe(true)
+  expect(/to spare above your cushion/.test(ssr)).toBe(false)
 })
 
 test('carries the target in the URL, and a mode round-trip restores rather than resets it', async ({
