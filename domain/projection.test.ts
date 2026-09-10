@@ -663,4 +663,43 @@ describe('shortfallThrough', () => {
     expect(answer.shortfall).toBe(0)
     expect(answer.endingBalance).toBe(toMinorUnits(1000))
   })
+
+  it('states the headroom from the low point, not from the healthier endpoint', () => {
+    const answer = shortfallThrough(dipping, {
+      today: SEED_TODAY,
+      through: '2026-08-30',
+      cushion: toMinorUnits(100),
+    })
+    // The $2,700 endpoint would say $2,600 of headroom; the real spare, at the
+    // $200 low point, is $100.
+    expect(answer.isCovered).toBe(true)
+    expect(answer.margin).toBe(toMinorUnits(100))
+    expect(answer.endingBalance).toBe(toMinorUnits(2700))
+  })
+
+  it('moves the verdict with the cushion and never the projection', () => {
+    const question = (cushion: ReturnType<typeof toMinorUnits>) => ({
+      today: SEED_TODAY,
+      through: '2026-08-30',
+      cushion,
+    })
+    const covered = shortfallThrough(dipping, question(0))
+    const onTheLine = shortfallThrough(dipping, question(toMinorUnits(200)))
+    const short = shortfallThrough(dipping, question(toMinorUnits(600)))
+
+    // The projection itself never moves: same low point, same ending balance.
+    for (const answer of [covered, onTheLine, short]) {
+      expect(answer.lowest).toEqual({ date: '2026-08-18', balance: toMinorUnits(200) })
+      expect(answer.endingBalance).toBe(toMinorUnits(2700))
+    }
+
+    expect(covered.isCovered).toBe(true)
+    expect(covered.margin).toBe(toMinorUnits(200))
+
+    expect(onTheLine.isCovered).toBe(true)
+    expect(onTheLine.margin).toBe(0)
+
+    expect(short.isCovered).toBe(false)
+    expect(short.shortfall).toBe(toMinorUnits(400))
+  })
 })
