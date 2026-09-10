@@ -8,7 +8,8 @@
  * `domain/projection`; this page only holds the three inputs (mode, target,
  * cushion) and hands the engine's output to the two cards.
  */
-import { computed, ref, watch } from 'vue'
+import { watchDebounced } from '@vueuse/core'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import AppPage from '@/components/AppPage.vue'
 import AskCard from '@/components/shortfall/AskCard.vue'
 import VerdictCard from '@/components/shortfall/VerdictCard.vue'
@@ -23,7 +24,7 @@ import { canAnswerShortfall, shortfallThrough, upcomingBills } from '~~/domain/p
 
 useHead({ title: 'Will I Make It? - Runway' })
 
-const { data, isEmpty } = useRunwayData()
+const { data, isEmpty, safetyCushion, setSafetyCushion } = useRunwayData()
 const today = useToday()
 
 const bills = computed(() => upcomingBills(data.value, today.value))
@@ -85,7 +86,35 @@ watch(
 )
 
 const selectedDate = ref<IsoDate>(addDays(today.value, 14))
-const cushion = ref<MinorUnits>(0)
+
+// The cushion the user is editing. Seeded from the stored one and re-synced
+// whenever it changes, so the two can differ only for the few hundred
+// milliseconds of a keystroke burst — never as two independent settings. This
+// is the same `safetyCushion` the dashboard's chart draws its cushion line
+// from, per issue #14's decision that Runway has one cushion, not two.
+const cushion = ref<MinorUnits>(safetyCushion.value)
+const cushionError = ref<string | null>(null)
+watch(safetyCushion, (next) => {
+  cushion.value = next
+})
+
+async function commitCushion(): Promise<void> {
+  if (cushion.value === safetyCushion.value) return
+  cushionError.value = null
+  try {
+    await setSafetyCushion(cushion.value)
+  } catch {
+    cushionError.value = "Couldn't save that cushion. Check your connection and try again."
+  }
+}
+
+// Debounced so typing "600" is one write rather than three that can land out
+// of order; the verdict itself does not wait, because `answer` below reads
+// `cushion` directly.
+watchDebounced(cushion, () => void commitCushion(), { debounce: 400 })
+// A pending edit must not be lost to a navigation away — which is why the
+// commit is a named function and not an inline closure.
+onBeforeUnmount(() => void commitCushion())
 
 const targetDate = computed<IsoDate>(() => {
   if (mode.value === 'date') return selectedDate.value
@@ -135,6 +164,7 @@ const answer = computed(() =>
         :selected-bill-id="selectedBillId"
         :selected-date="selectedDate"
         :cushion="cushion"
+        :cushion-error="cushionError"
         :bills="bills"
         :today="today"
         @update:mode="mode = $event"
