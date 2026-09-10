@@ -146,7 +146,7 @@ describe.skipIf(LOCAL_STACK === null)('split_recurring_rule', () => {
     await removeFixtures(LABEL)
   })
 
-  it("closes the rule the day before effective_from and opens a successor inheriting the copied fields and the old ends_on", async () => {
+  it('closes the rule the day before effective_from and opens a successor inheriting the copied fields and the old ends_on', async () => {
     const { ruleId } = await seedRentRule()
     const effectiveFrom = '2026-09-01'
     const newAmount = toMinorUnits(1_750)
@@ -341,10 +341,7 @@ describe.skipIf(LOCAL_STACK === null)('split_recurring_rule', () => {
 
   it("rejects a change date past the rule's own ends_on with PT409", async () => {
     const { ruleId } = await seedRentRule()
-    await context.client
-      .from('recurring_rules')
-      .update({ ends_on: '2026-09-30' })
-      .eq('id', ruleId)
+    await context.client.from('recurring_rules').update({ ends_on: '2026-09-30' }).eq('id', ruleId)
 
     const { error } = await context.client.rpc('split_recurring_rule', {
       p_rule_id: ruleId,

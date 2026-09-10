@@ -159,6 +159,8 @@ interface Marker {
   readonly stroke: string
   /** Income days are filled, bill days hollow — the sign, not just the colour. */
   readonly filled: boolean
+  /** True when any occurrence on this day/series has been hand-edited (issue #15). */
+  readonly overridden: boolean
 }
 
 /**
@@ -179,6 +181,7 @@ const markers = computed<Marker[]>(() => {
       const point = entry.points[index]
       if (!point) continue
       const filled = forAccount.some((occurrence) => occurrence.amount > 0)
+      const overridden = forAccount.some((occurrence) => occurrence.isOverridden)
       const previousPoint = index > 0 ? entry.points[index - 1] : undefined
       result.push({
         key: `${entry.id}-${date}`,
@@ -186,11 +189,13 @@ const markers = computed<Marker[]>(() => {
         cy: scaleY(markerBalance(previousPoint, point, filled), range.value, layout.value),
         stroke: entry.stroke,
         filled,
+        overridden,
       })
     }
     const combinedPoint = props.combined?.[index]
     if (combinedPoint) {
       const filled = onDay.some((occurrence) => occurrence.amount > 0)
+      const overridden = onDay.some((occurrence) => occurrence.isOverridden)
       const previousCombined = index > 0 ? props.combined?.[index - 1] : undefined
       result.push({
         key: `combined-${date}`,
@@ -202,6 +207,7 @@ const markers = computed<Marker[]>(() => {
         ),
         stroke: 'var(--chart-1)',
         filled,
+        overridden,
       })
     }
   }
@@ -295,7 +301,10 @@ const announcement = computed(() => {
     .map((row) => `${row.name} ${formatMoney(row.balance)}`)
     .join(', ')
   const events = tooltipOccurrences.value
-    .map((occurrence) => `${occurrence.label} ${formatMoney(occurrence.amount)}`)
+    .map(
+      (occurrence) =>
+        `${occurrence.label} ${formatMoney(occurrence.amount)}${occurrence.isOverridden ? ' (edited)' : ''}`,
+    )
     .join(', ')
   const day = activeLabel.value
   return events ? `${day}. ${balances}. Due: ${events}.` : `${day}. ${balances}.`
@@ -471,16 +480,31 @@ function onFocus(): void {
         />
       </template>
 
-      <circle
-        v-for="marker in markers"
-        :key="marker.key"
-        :cx="marker.cx"
-        :cy="marker.cy"
-        :r="6 * props.density.markerSize"
-        :stroke="marker.stroke"
-        :fill="marker.filled ? marker.stroke : 'var(--background)'"
-        stroke-width="2.5"
-      />
+      <template v-for="marker in markers" :key="marker.key">
+        <circle
+          :cx="marker.cx"
+          :cy="marker.cy"
+          :r="6 * props.density.markerSize"
+          :stroke="marker.stroke"
+          :fill="marker.filled ? marker.stroke : 'var(--background)'"
+          stroke-width="2.5"
+        />
+        <!-- A dashed halo, issue #15's "this one's been edited" telling — the
+             same vocabulary the lowest-point ring below already uses for
+             "this one is special", drawn in the series' own colour (never
+             --chart-5/--chart-warning, both reserved for what-if) so it never
+             reads as a preview. -->
+        <circle
+          v-if="marker.overridden"
+          :cx="marker.cx"
+          :cy="marker.cy"
+          :r="9 * props.density.markerSize"
+          fill="none"
+          :stroke="marker.stroke"
+          stroke-width="1.5"
+          stroke-dasharray="2 2"
+        />
+      </template>
 
       <circle
         v-if="lowestMarker"
@@ -616,7 +640,9 @@ function onFocus(): void {
             :key="occurrence.id"
             class="mt-1 flex items-center gap-2 text-xs"
           >
-            <span class="min-w-0 flex-1 truncate">{{ occurrence.label }}</span>
+            <span class="min-w-0 flex-1 truncate">
+              {{ occurrence.label }}<span v-if="occurrence.isOverridden" class="text-muted-foreground"> (edited)</span>
+            </span>
             <MoneyText :amount="occurrence.amount" signed colored size="sm" />
           </div>
         </template>

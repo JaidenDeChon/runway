@@ -37,7 +37,9 @@ async function occurrenceAt(
 ): Promise<OccurrenceRow | null> {
   const { data, error } = await context.client
     .from('occurrences')
-    .select('id, projected_date, projected_amount_cents, actual_amount_cents, actual_date, status, is_overridden')
+    .select(
+      'id, projected_date, projected_amount_cents, actual_amount_cents, actual_date, status, is_overridden',
+    )
     .eq('rule_id', ruleId)
     .eq('projected_date', date)
     .maybeSingle()

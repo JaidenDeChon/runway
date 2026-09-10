@@ -623,10 +623,7 @@ export function useRunwayData() {
     readonly newDate?: IsoDate
   }): Promise<void> {
     requireUserId()
-    const { error: overrideError } = await client.rpc(
-      'override_occurrence',
-      toOverrideArgs(edit),
-    )
+    const { error: overrideError } = await client.rpc('override_occurrence', toOverrideArgs(edit))
     if (overrideError) throwForRpcError(overrideError.code)
     await refresh()
   }
