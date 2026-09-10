@@ -121,6 +121,26 @@ test('selects a bill and answers with the low point, not the endpoint', async ({
   await expect(verdictCard(page).getByText(/\$900 to spare/)).toBeVisible()
 })
 
+test('covered through the target still warns when the cushion breaks later in the horizon', async ({
+  emptyHouseholdPage: page,
+}) => {
+  // The household's monthly $500 bill keeps landing after the selected
+  // target (one month out, Covered per the test above): by three months out
+  // the running balance is $500, below D's $600 cushion — well inside the
+  // 180-day outlook horizon. `shortfallOutlook` is what notices that a
+  // target-scoped Covered verdict says nothing about the rest of the
+  // horizon; this is its one E2E check. Asserted on the stable phrase alone,
+  // not the breach date, which depends on the run's real calendar month and
+  // would otherwise make this file compute its own date arithmetic.
+  await buildHousehold(page)
+  await gotoHydrated(page, '/will-i-make-it')
+
+  await expectTextToBe(verdictBadge(page), 'Covered')
+  await expect(
+    verdictCard(page).getByText(/Look further out, though: your cushion breaks on/),
+  ).toBeVisible()
+})
+
 test('a bigger cushion flips the same projection to short, and the projection does not move', async ({
   emptyHouseholdPage: page,
 }) => {
