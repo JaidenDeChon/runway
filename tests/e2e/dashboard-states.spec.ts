@@ -30,7 +30,14 @@
  * allowed to make.
  */
 
-import { assertBaseUrlIsLocal, clickUntil, expect, gotoHydrated, test } from './fixtures'
+import {
+  assertBaseUrlIsLocal,
+  clickUntil,
+  expect,
+  expectTextToBe,
+  gotoHydrated,
+  test,
+} from './fixtures'
 
 /** U+00B7, the middot the forecast card's subtitle is built with. */
 const MIDDOT = '·'
@@ -74,27 +81,6 @@ function legendRow(page: import('@playwright/test').Page, name: string) {
   return page
     .locator('div.flex.min-h-11.items-center.gap-2')
     .filter({ has: legendCheckbox(page, name) })
-}
-
-/**
- * Asserts an element's text equals `expected` without ever printing what it
- * actually said.
- *
- * `toHaveText` prints the *received* string on failure, and on this screen
- * that string is a balance — the same defect as `negative-balances.spec.ts:157`.
- *
- * That applies to the *expected* value being harmless too. Asserting the badge
- * says "Covered" still prints what it actually said, and in the short band the
- * badge says "Short by $500". The element is what decides, not the literal.
- * A literal inside a *selector* is a different matter and stays as it is: it is
- * a constant already committed to this file, and a failure prints the selector
- * rather than anything read back from the running app.
- *
- * `expect.poll` also keeps the auto-retry `toHaveText` gave us, which a bare
- * `textContent()` comparison silently drops.
- */
-async function expectTextToBe(locator: import('@playwright/test').Locator, expected: string) {
-  await expect.poll(async () => (await locator.textContent())?.trim() === expected).toBe(true)
 }
 
 /** `LowestBalanceCard`'s meta line — "<date> · <days away>". Date and cadence only; no money. */

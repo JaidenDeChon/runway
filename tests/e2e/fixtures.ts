@@ -157,12 +157,14 @@ export async function assertSessionAuthenticates(session: BrowserSession): Promi
  * could have written for D — no explicit `dashboard_hidden_accounts` delete is
  * needed. `user_settings` is reset alongside it in case a test ever sets the
  * discretionary designation, the staleness threshold, (issue #12) the
- * dashboard's stored horizon, or (issue #13) the monthly discretionary
- * figure. That last one matters beyond tidiness: a crashed "everyday
- * spending" test would otherwise leave D with a drain, and the exact-figure
- * verdict tests in `dashboard-states.spec.ts` ("Covered"/"$2,000",
- * "Tight"/"$700", "Short by $500") would then start failing for a reason that
- * looks nothing like the cause.
+ * dashboard's stored horizon, (issue #13) the monthly discretionary figure,
+ * or (issue #14) the safety cushion. Those last two matter beyond tidiness: a
+ * crashed "everyday spending" test would otherwise leave D with a drain, and
+ * a crashed `/will-i-make-it` test would leave D's cushion at whatever figure
+ * that test typed — either way the exact-figure verdict tests in
+ * `dashboard-states.spec.ts` ("Covered"/"$2,000", "Tight"/"$700", "Short by
+ * $500", all measured against D's seeded $600 cushion) would then start
+ * failing for a reason that looks nothing like the cause.
  */
 export async function resetEmptyHousehold(): Promise<void> {
   const sql = adminSql()
@@ -171,7 +173,7 @@ export async function resetEmptyHousehold(): Promise<void> {
     await sql`
       update public.user_settings
       set discretionary_account_id = null, balance_stale_after_days = 14, default_horizon_days = 30,
-          monthly_discretionary_cents = 0
+          monthly_discretionary_cents = 0, cushion_cents = 60000
       where user_id = ${USER_D.id}
     `
   } finally {
@@ -461,6 +463,30 @@ export async function clickUntil(
     await target.click({ timeout: 2_000 })
     await expect(consequence).toBeVisible({ timeout: 1_000 })
   }).toPass({ timeout: 20_000 })
+}
+
+/**
+ * Asserts an element's text equals `expected` without ever printing what it
+ * actually said.
+ *
+ * `toHaveText` prints the *received* string on failure, and several of these
+ * elements render a balance — the same defect as `negative-balances.spec.ts:157`.
+ *
+ * That applies to the *expected* value being harmless too. Asserting the badge
+ * says "Covered" still prints what it actually said, and in the short band the
+ * badge says "Short by $500". The element is what decides, not the literal.
+ * A literal inside a *selector* is a different matter and stays as it is: it is
+ * a constant already committed to the file, and a failure prints the selector
+ * rather than anything read back from the running app.
+ *
+ * `expect.poll` also keeps the auto-retry `toHaveText` gave us, which a bare
+ * `textContent()` comparison silently drops.
+ */
+export async function expectTextToBe(
+  locator: import('@playwright/test').Locator,
+  expected: string,
+): Promise<void> {
+  await expect.poll(async () => (await locator.textContent())?.trim() === expected).toBe(true)
 }
 
 /**
