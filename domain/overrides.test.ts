@@ -7,6 +7,12 @@ import { evaluate, occurrencesIn, project } from './projection'
 import { createSeedData } from './seed'
 import type { RunwayData } from './types'
 
+/**
+ * `projectedDate`/`projectedAmount` default to whatever `date`/`amount` this
+ * call passes, matching how `occurrencesIn` constructs a fresh, not-yet-
+ * overridden `Occurrence` — the two pairs start identical and only diverge
+ * once an override actually applies.
+ */
 const occurrence = (over: Partial<Occurrence> = {}): Occurrence => ({
   id: 'i@2026-08-20',
   itemId: 'i',
@@ -16,6 +22,9 @@ const occurrence = (over: Partial<Occurrence> = {}): Occurrence => ({
   amount: toMinorUnits(-310),
   isVariable: false,
   isPredicted: false,
+  projectedDate: over.date ?? '2026-08-20',
+  projectedAmount: over.amount ?? toMinorUnits(-310),
+  isOverridden: false,
   ...over,
 })
 
@@ -42,10 +51,12 @@ describe('applyOverrides', () => {
     expect(applied[1]?.amount).toBe(toMinorUnits(-310))
   })
 
-  it('re-keys a retimed occurrence so it cannot collide with its neighbour', () => {
+  it('keeps its id keyed on projectedDate — the natural key half that never moves — even when retimed', () => {
     const applied = applyOverrides([occurrence()], [override({ newDate: '2026-08-25' })])
     expect(applied[0]?.date).toBe('2026-08-25')
-    expect(applied[0]?.id).toBe('i@2026-08-25')
+    expect(applied[0]?.projectedDate).toBe('2026-08-20')
+    expect(applied[0]?.id).toBe('i@2026-08-20')
+    expect(applied[0]?.isOverridden).toBe(true)
   })
 
   it('leaves other items alone', () => {

@@ -319,6 +319,7 @@ export function createShortSeedData(): RunwayData {
     monthlyDiscretionarySpend: toMinorUnits(620),
     safetyCushion: toMinorUnits(250),
     timeZone: null,
+    occurrenceOverrides: [],
   }
 }
 
@@ -331,6 +332,7 @@ export function createSeedData(): RunwayData {
     monthlyDiscretionarySpend: toMinorUnits(1034),
     safetyCushion: toMinorUnits(600),
     timeZone: null,
+    occurrenceOverrides: [],
   }
 }
 
@@ -344,5 +346,6 @@ export function createEmptyData(): RunwayData {
     monthlyDiscretionarySpend: 0,
     safetyCushion: toMinorUnits(600),
     timeZone: null,
+    occurrenceOverrides: [],
   }
 }

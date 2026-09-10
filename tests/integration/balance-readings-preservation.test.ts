@@ -271,6 +271,7 @@ describe.skipIf(LOCAL_STACK === null)(
         monthlyDiscretionarySpend: 0,
         safetyCushion: 0,
         timeZone: null,
+        occurrenceOverrides: [],
       }
 
       const projection = project(data, { start: '2026-06-01', end: '2026-06-12' })

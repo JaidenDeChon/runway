@@ -21,12 +21,22 @@ import type { Occurrence } from './projection'
 /**
  * `once` retimes and re-prices a single event; `future` rewrites the amount on
  * every occurrence of that item from `date` onward.
+ *
+ * **Only `once` has a persisted representation.** A stored edit is
+ * `occurrences.actual_*` plus `is_overridden = true` — a fact about one
+ * materialized row. Persisted apply-to-future is not an override at all: it
+ * is a rule split (`recurring_rules.ends_on` plus a successor at `starts_on`,
+ * docs/database/schema.md § "Rule splitting"), which produces no override row
+ * whatsoever. `'future'` survives here only as the cheap in-memory *preview*
+ * what-if mode (issue #16) uses to show the same shape of change before it is
+ * ever saved. See `StoredOccurrenceOverride` below, which encodes this as a
+ * type rather than leaving it as a comment a caller has to remember.
  */
 export type OverrideScope = 'once' | 'future'
 
 export interface OccurrenceOverride {
   readonly itemId: string
-  /** The occurrence being edited, identified by the day it originally lands on. */
+  /** The occurrence being edited, identified by its projected date — see `Occurrence.projectedDate`. */
   readonly date: IsoDate
   readonly scope: OverrideScope
   /** Signed, matching `Occurrence.amount`: income positive, bills negative. */
@@ -39,19 +49,41 @@ export interface OccurrenceOverride {
   readonly newDate?: IsoDate
 }
 
+/**
+ * A *stored* occurrence override. Scope is `'once'` by construction: there is
+ * no persisted form of `'future'` — apply-to-future closes a rule and opens a
+ * successor (docs/database/schema.md § Rule splitting), which produces no
+ * override row at all. `'future'` exists only as a what-if preview (#16).
+ *
+ * `RunwayData.occurrenceOverrides` is typed to hold exactly these, so a
+ * `'future'` override cannot reach the persisted path even by accident.
+ */
+export type StoredOccurrenceOverride = Omit<OccurrenceOverride, 'scope'> & {
+  readonly scope: 'once'
+}
+
 function applyOne(occurrence: Occurrence, override: OccurrenceOverride): Occurrence {
   if (occurrence.itemId !== override.itemId) return occurrence
 
   if (override.scope === 'future') {
-    if (compareDates(occurrence.date, override.date) < 0) return occurrence
-    return { ...occurrence, amount: override.amount }
+    if (compareDates(occurrence.projectedDate, override.date) < 0) return occurrence
+    return { ...occurrence, amount: override.amount, isOverridden: true }
   }
 
-  if (occurrence.date !== override.date) return occurrence
+  if (occurrence.projectedDate !== override.date) return occurrence
   const date = override.newDate ?? occurrence.date
-  // The id is composed from the item and the date, so a retimed occurrence has
-  // to be re-keyed or two events would share one id.
-  return { ...occurrence, amount: override.amount, date, id: `${occurrence.itemId}@${date}` }
+  // The id is keyed on projectedDate, not date, because projectedDate is what
+  // never moves — it is half of occurrences' natural key
+  // (rule_id, projected_date) and the only stable identifier a write can use.
+  // Keying on the post-override date would make a retimed occurrence
+  // unrecoverable by the identity a caller already has.
+  return {
+    ...occurrence,
+    amount: override.amount,
+    date,
+    isOverridden: true,
+    id: `${occurrence.itemId}@${occurrence.projectedDate}`,
+  }
 }
 
 /**
