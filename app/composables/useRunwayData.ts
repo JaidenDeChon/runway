@@ -622,6 +622,16 @@ export function useRunwayData() {
    * and the input `evaluate()` and `shortfallThrough()` measure the verdict
    * against; a dropped write would leave the user reading an answer their
    * account does not hold.
+   *
+   * **A failed write only rolls back its own optimistic value.** `/will-i-
+   * make-it` debounces commits behind a 400ms pause rather than a button, so
+   * two calls can be in flight at once — an earlier one failing after a
+   * later one has already landed its own optimistic write (or its own
+   * successful response) must not stomp that newer value back to the older
+   * snapshot; that is exactly "the screen shows a value the account does not
+   * hold" (PR #79 review finding #3). Checking that this call's own optimistic
+   * cushion is still current before restoring `previous` closes it without
+   * dropping either write or needing an in-flight guard at the caller.
    */
   async function setSafetyCushion(cushion: MinorUnits): Promise<void> {
     if (!Number.isFinite(cushion)) throw new Error('save-failed')
@@ -635,7 +645,9 @@ export function useRunwayData() {
     if (writeError) {
       // Code only — never a message, never the amount. See CLAUDE.md.
       console.error('safety cushion write failed', { code: writeError.code })
-      settingsOverride.value = previous
+      if (settingsOverride.value.safetyCushion === cents) {
+        settingsOverride.value = previous
+      }
       throw new Error('save-failed')
     }
   }

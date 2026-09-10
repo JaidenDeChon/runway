@@ -175,6 +175,55 @@ test('the cushion survives a full reload', async ({ emptyHouseholdPage: page }) 
   expect(/to spare above your cushion/.test(ssr)).toBe(false)
 })
 
+test('an earlier failed cushion write does not roll back a later successful one', async ({
+  emptyHouseholdPage: page,
+}) => {
+  await buildHousehold(page)
+  await gotoHydrated(page, '/will-i-make-it')
+
+  // Only the write (POST, via `upsert`) is meant to fail — the household's
+  // own reads of `user_settings` share this same REST path and must pass
+  // through untouched, or the page never finishes loading.
+  let firstWriteSeen = false
+  await page.route('**/rest/v1/user_settings*', async (route) => {
+    if (route.request().method() === 'GET' || firstWriteSeen) {
+      await route.continue()
+      return
+    }
+    firstWriteSeen = true
+    // Held back long enough that the second edit's own debounced write can
+    // fire and land first — reproducing PR #79 review finding #3's race: an
+    // earlier commit's failure must not roll back a later commit's success.
+    await new Promise((resolve) => setTimeout(resolve, 800))
+    await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
+  })
+
+  const firstWriteFailed = page.waitForResponse(
+    (response) => response.url().includes('/rest/v1/user_settings') && response.status() === 500,
+  )
+  await page.locator('#shortfall-cushion').fill('2000')
+  // Past the 400ms debounce, so this is a genuinely separate second commit
+  // rather than one keystroke burst coalescing into a single write.
+  await page.waitForTimeout(450)
+  const secondWriteSaved = page.waitForResponse(
+    (response) => response.url().includes('/rest/v1/user_settings') && response.ok(),
+  )
+  await page.locator('#shortfall-cushion').fill('3000')
+  await secondWriteSaved
+
+  // The database was never at risk — B's write independently persisted
+  // 300000 regardless of what A's rollback does to the client's overlay.
+  // The bug this guards is the *on-screen* one: without navigating away,
+  // does the input the user is looking at silently snap back once A's
+  // held-back failure finally lands? A reload would re-fetch from the
+  // database and pass either way, so this waits for A's failure and checks
+  // the still-open page instead.
+  await firstWriteFailed
+  await expect(page.locator('#shortfall-cushion')).toHaveValue('3000')
+  await expectTextToBe(verdictBadge(page), 'Short')
+  await expectTextToBe(verdictHeadline(page), 'You need $1,500 more.')
+})
+
 test('carries the target in the URL, and a mode round-trip restores rather than resets it', async ({
   emptyHouseholdPage: page,
 }) => {
