@@ -64,7 +64,8 @@ export function toRecurringItem(row: SelectedRecurringRuleRow): RecurringItem {
     cadence: row.cadence,
     accountId: row.account_id,
     // Names differ deliberately — see docs/database/schema.md's mapping
-    // table. `anchor_date` is the cadence's phase, not "the next date".
+    // table. `anchor_date` is the rule's first occurrence, not "the next
+    // date" once it has passed — see `nextOccurrenceOnOrAfter`.
     nextOccurrence: row.anchor_date,
     amountSource: row.amount_source,
     depositHistory: [],

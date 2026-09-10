@@ -56,6 +56,25 @@ function isoDaysFromToday(days: number): string {
   return new Date(todayUtcMidnight + days * MS_PER_DAY).toISOString().slice(0, 10)
 }
 
+/**
+ * A day-of-month ≤ 28 at least three days out, so moving it forward one whole
+ * month never has to clamp (no run-in with a short February) and the date is
+ * unambiguously "upcoming" rather than sitting right at today's boundary.
+ */
+function safeBaseDate(): string {
+  for (let days = 3; days < 3 + 60; days++) {
+    const candidate = isoDaysFromToday(days)
+    if (Number(candidate.slice(8, 10)) <= 28) return candidate
+  }
+  throw new Error('could not find a safe base date within 60 days')
+}
+
+/** The same day one month later. Only valid for a `safeBaseDate()` result (day ≤ 28). */
+function isoNextMonthSameDay(iso: string): string {
+  const [year, month, day] = iso.split('-').map(Number) as [number, number, number]
+  return new Date(Date.UTC(year, month, day)).toISOString().slice(0, 10)
+}
+
 test.beforeEach(({ baseURL }) => {
   assertBaseUrlIsLocal(baseURL)
 })
@@ -235,5 +254,41 @@ test.describe('ending a rule', () => {
     // AC5 is explicitly non-destructive: the row stays, editable, after reload.
     await gotoHydrated(page, '/recurring-items')
     await expect(row.getByText('Ended', { exact: false })).toBeVisible()
+  })
+})
+
+test.describe("editing a rule's date", () => {
+  test('moving a monthly item to the next month moves the date the app shows (issue #57 regression)', async ({
+    emptyHouseholdPage: page,
+  }) => {
+    await createAccount(page, 'E2E Move Date Checking', '1000')
+
+    const initialDate = safeBaseDate()
+    const movedDate = isoNextMonthSameDay(initialDate)
+
+    await gotoHydrated(page, '/recurring-items')
+    const dialog = page.getByRole('dialog')
+    await clickUntil(page.getByRole('button', { name: 'Add recurring item' }), dialog)
+    await page.locator('#recurring-name').fill('E2E Move Date Rent')
+    await page.locator('#recurring-amount').fill('50')
+    await page.locator('#recurring-next-occurrence').fill(initialDate)
+    const row = page.getByRole('button', { name: 'Edit E2E Move Date Rent' })
+    await clickUntil(dialog.getByRole('button', { name: 'Add recurring item' }), row)
+    // Text locator only, matching AC5's own idiom — never assert on the whole
+    // row, which also renders the item's amount.
+    await expect(row.getByText(`next ${shortDate(initialDate)}`, { exact: false })).toBeVisible()
+
+    await clickUntil(row, dialog)
+    await dialog.locator('#recurring-next-occurrence').fill(movedDate)
+    await dialog.getByRole('button', { name: 'Save changes' }).click()
+    await expect(dialog).toHaveCount(0)
+
+    // The reported bug: this used to keep showing the old date everywhere.
+    await expect(row.getByText(`next ${shortDate(movedDate)}`, { exact: false })).toBeVisible()
+    await expect(row.getByText(`next ${shortDate(initialDate)}`, { exact: false })).toHaveCount(0)
+
+    // Persists — not just a client-side optimistic update.
+    await gotoHydrated(page, '/recurring-items')
+    await expect(row.getByText(`next ${shortDate(movedDate)}`, { exact: false })).toBeVisible()
   })
 })

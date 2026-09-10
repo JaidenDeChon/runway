@@ -29,9 +29,9 @@ const filter = ref<Filter>('all')
 // Filter is view-local and never touches the store; sort order is recomputed
 // on every change so it stays correct after an edit. Sorted on the true next
 // occurrence — `nextOccurrenceOnOrAfter`, not the stored anchor
-// (`item.nextOccurrence` maps to `anchor_date`, the cadence's phase, which is
-// not a future date once it has passed) — with ended rules (`null`) sorted
-// last rather than dropped: AC5 requires ending to stay visible and
+// (`item.nextOccurrence` maps to `anchor_date`, the rule's first occurrence,
+// which is not a future date once it has passed) — with ended rules (`null`)
+// sorted last rather than dropped: AC5 requires ending to stay visible and
 // non-destructive.
 const rows = computed(() =>
   [...recurringItems.value]

@@ -7,12 +7,12 @@
  * chevron is decoration.
  *
  * `nextDate` is a prop, not read from `item.nextOccurrence` — that field maps
- * to `anchor_date`, the cadence's *phase*, and lies about "next" once the
- * anchor has passed (see `docs/database/schema.md`'s mapping table). The page
- * computes the true next occurrence with `nextOccurrenceOnOrAfter` and passes
- * it down, because a row performs no date arithmetic of its own (CLAUDE.md).
- * `null` means the rule has ended — `endsOn` has passed — and renders
- * "Ended" instead of a date.
+ * to `anchor_date`, the rule's *first* occurrence, and lies about "next" once
+ * the anchor has passed (see `docs/database/schema.md`'s mapping table). The
+ * page computes the true next occurrence with `nextOccurrenceOnOrAfter` and
+ * passes it down, because a row performs no date arithmetic of its own
+ * (CLAUDE.md). `null` means the rule has ended — `endsOn` has passed — and
+ * renders "Ended" instead of a date.
  */
 
 import { ChevronRight } from '@lucide/vue'

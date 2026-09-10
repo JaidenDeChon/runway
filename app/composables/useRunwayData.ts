@@ -135,11 +135,12 @@ export function useRunwayData() {
           client
             .from('recurring_rules')
             .select(RECURRING_RULE_COLUMNS)
-            // `anchor_date` is a phase, not a "next date" (see
-            // app/lib/supabase/recurring-items.ts), so this is not the list's
-            // display order — the page computes and sorts on the true next
-            // occurrence itself. It just needs to be deterministic; id breaks
-            // the tie the same way the accounts query does.
+            // `anchor_date` is the rule's first occurrence, not a "next date"
+            // once it has passed (see app/lib/supabase/recurring-items.ts), so
+            // this is not the list's display order — the page computes and
+            // sorts on the true next occurrence itself. It just needs to be
+            // deterministic; id breaks the tie the same way the accounts
+            // query does.
             .order('anchor_date', { ascending: true })
             .order('id', { ascending: true }),
           client.from('user_settings').select(USER_SETTINGS_COLUMNS).maybeSingle(),

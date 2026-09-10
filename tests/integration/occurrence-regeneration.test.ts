@@ -376,6 +376,28 @@ describe.skipIf(LOCAL_STACK === null)('regenerate_occurrences', () => {
     expect(afterDates).toEqual([...new Set(afterDates)])
   })
 
+  it("editing a rule's anchor date moves its occurrences instead of leaving stale ones behind (issue #57 regression)", async () => {
+    // The reported bug: saving a new date on a recurring item left every
+    // other screen still showing the old one. Regenerating after moving the
+    // anchor forward must remove the rows the old anchor produced and
+    // materialize the new date.
+    const { accountId, ruleId } = await seedRentRule()
+    const window = materializationWindow(TODAY)
+
+    await regenerate(context, [ruleId], window, [baseItem(ruleId, { accountId })])
+    const beforeMove = await occurrencesFor(context, ruleId)
+    expect(beforeMove.some((row) => row.projected_date === '2026-09-20')).toBe(true)
+
+    const moved = baseItem(ruleId, { accountId, nextOccurrence: '2026-10-20' })
+    const result = await regenerate(context, [ruleId], window, [moved])
+    expect(result.deleted).toBeGreaterThan(0)
+
+    const afterMove = await occurrencesFor(context, ruleId)
+    expect(afterMove.some((row) => row.projected_date === '2026-08-20')).toBe(false)
+    expect(afterMove.some((row) => row.projected_date === '2026-09-20')).toBe(false)
+    expect(afterMove.some((row) => row.projected_date === '2026-10-20')).toBe(true)
+  })
+
   it('AC6: a row older than the look-back is never touched', async () => {
     const { accountId, ruleId } = await seedRentRule()
     const window = materializationWindow(TODAY)

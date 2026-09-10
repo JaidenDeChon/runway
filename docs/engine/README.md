@@ -234,6 +234,13 @@ recurring items asked for one rather than leaving it implicit:
   not be stored regardless.
 - `nextOccurrenceOnOrAfter` inherits this for free — it is `occurrenceDates`'s
   first result over a bounded window, not a second walk.
+- **The anchor is a floor.** `occurrenceDates` expands backwards from
+  `nextOccurrence` to fill a chart's look-back, but never produces a date
+  before it — the anchor is the rule's first occurrence, not merely a phase
+  for locating the cycle. Without that floor, editing only the anchor's cycle
+  (moving a monthly rule a whole month, say) can leave every projected date
+  unchanged, since the day-of-month/weekday component is all that fed the
+  cycle.
 
 ## Performance
 

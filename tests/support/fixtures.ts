@@ -150,8 +150,8 @@ export async function seedHousehold(
             amount_source: item.amountSource,
             is_variable: item.isVariable,
             cadence: item.cadence,
-            // `anchor_date` is the cadence's phase; `nextOccurrence` is what the
-            // domain calls the same thing. See docs/database/schema.md.
+            // `anchor_date` is the rule's first occurrence; `nextOccurrence` is
+            // what the domain calls the same thing. See docs/database/schema.md.
             anchor_date: item.nextOccurrence,
             days_of_month: item.daysOfMonth ?? null,
             days_of_week: item.daysOfWeek ?? null,

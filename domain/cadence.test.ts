@@ -37,12 +37,25 @@ describe('occurrenceDates', () => {
     ).toEqual(['2026-08-21', '2026-09-04', '2026-09-18'])
   })
 
-  it('expands backwards from the anchor, so the look-back window is populated', () => {
-    // The dashboard opens two weeks before today; occurrences in that stretch
-    // already moved the balance and must not be dropped.
+  it('never produces a date before the anchor, even when the window opens earlier', () => {
+    // The anchor is the rule's first occurrence, not merely a phase: a window
+    // that opens before it must not manufacture occurrences that predate it.
     expect(
       occurrenceDates(
         item({ cadence: 'weekly', nextOccurrence: '2026-08-20' }),
+        '2026-08-01',
+        '2026-08-20',
+      ),
+    ).toEqual(['2026-08-20'])
+  })
+
+  it('expands backwards from the anchor to fill a look-back window, when the anchor is in the past', () => {
+    // The dashboard opens two weeks before today; occurrences in that stretch
+    // already moved the balance and must not be dropped. The anchor itself
+    // (2026-07-02) predates the window, so backward expansion has room to work.
+    expect(
+      occurrenceDates(
+        item({ cadence: 'weekly', nextOccurrence: '2026-07-02' }),
         '2026-08-01',
         '2026-08-20',
       ),
@@ -115,7 +128,7 @@ describe('occurrenceDates', () => {
         '2026-08-01',
         '2026-08-20',
       ),
-    ).toEqual(['2026-08-06', '2026-08-13', '2026-08-20'])
+    ).toEqual(['2026-08-20'])
   })
 
   it('splits a rule at a change date: old rule ends, new rule starts, no gap or overlap', () => {
@@ -137,12 +150,48 @@ describe('occurrenceDates', () => {
     const oldDates = occurrenceDates(oldRule, '2026-06-01', '2026-12-31')
     const newDates = occurrenceDates(newRule, '2026-06-01', '2026-12-31')
 
-    expect(oldDates).toEqual(['2026-06-01', '2026-07-01', '2026-08-01'])
+    expect(oldDates).toEqual(['2026-08-01'])
     expect(newDates).toEqual(['2026-09-01', '2026-10-01', '2026-11-01', '2026-12-01'])
 
     const combined = [...oldDates, ...newDates]
     expect(combined).toEqual([...new Set(combined)]) // no duplicate on the boundary
     expect(combined).toEqual([...combined].sort()) // strictly ascending, no gap month
+  })
+})
+
+describe('editing the anchor date has a visible effect (regression)', () => {
+  it('moving a monthly rule a whole cycle forward moves every projected date with it', () => {
+    // The reported bug: editing Sep 25 to Oct 25 previously produced the exact
+    // same series, because only the day-of-month component of the anchor fed
+    // the cycle. The anchor is now a floor, so Sep 25 cannot come back out.
+    const septemberAnchor = occurrenceDates(
+      item({ cadence: 'monthly', nextOccurrence: '2026-09-25' }),
+      '2026-08-01',
+      '2026-12-31',
+    )
+    const octoberAnchor = occurrenceDates(
+      item({ cadence: 'monthly', nextOccurrence: '2026-10-25' }),
+      '2026-08-01',
+      '2026-12-31',
+    )
+    expect(septemberAnchor).toEqual(['2026-09-25', '2026-10-25', '2026-11-25', '2026-12-25'])
+    expect(octoberAnchor).toEqual(['2026-10-25', '2026-11-25', '2026-12-25'])
+    expect(octoberAnchor).not.toContain('2026-09-25')
+  })
+
+  it('moving a weekly rule a whole week forward moves the series with it', () => {
+    const week1 = occurrenceDates(
+      item({ cadence: 'weekly', nextOccurrence: '2026-09-11' }),
+      '2026-09-01',
+      '2026-09-30',
+    )
+    const week2 = occurrenceDates(
+      item({ cadence: 'weekly', nextOccurrence: '2026-09-18' }),
+      '2026-09-01',
+      '2026-09-30',
+    )
+    expect(week1).not.toEqual(week2)
+    expect(week2).not.toContain('2026-09-11')
   })
 })
 
@@ -196,38 +245,40 @@ describe('occurrenceDates with a day set', () => {
     ).toEqual(['2026-01-01', '2026-01-31', '2026-02-01', '2026-02-28', '2026-03-01', '2026-03-31'])
   })
 
-  it('expands a day set backwards from the anchor too', () => {
+  it('does not expand a day set before the anchor', () => {
     expect(
       occurrenceDates(
         item({ cadence: 'monthly', nextOccurrence: '2026-09-15', daysOfMonth: [1, 15] }),
         '2026-08-01',
         '2026-09-15',
       ),
-    ).toEqual(['2026-08-01', '2026-08-15', '2026-09-01', '2026-09-15'])
+    ).toEqual(['2026-09-15'])
   })
 
   it('expands weekly onto several weekdays, ISO-numbered', () => {
     // 1 = Monday, 4 = Thursday. The anchor is a Thursday; the Mondays of the
-    // same weeks come too, including the one before the anchor.
+    // same weeks come too, except the one before the anchor itself, since the
+    // anchor is a floor no date may precede.
     expect(
       occurrenceDates(
         item({ cadence: 'weekly', nextOccurrence: '2026-08-20', daysOfWeek: [1, 4] }),
         '2026-08-17',
         '2026-09-03',
       ),
-    ).toEqual(['2026-08-17', '2026-08-20', '2026-08-24', '2026-08-27', '2026-08-31', '2026-09-03'])
+    ).toEqual(['2026-08-20', '2026-08-24', '2026-08-27', '2026-08-31', '2026-09-03'])
   })
 
   it('keeps the biweekly phase when several weekdays are named', () => {
     // Every other week counted from the anchor's week, not every other pair of
-    // dates: the weeks of Aug 24 and Sep 7 are skipped entirely.
+    // dates: the weeks of Aug 24 and Sep 7 are skipped entirely. The Monday
+    // before the anchor is suppressed by the anchor floor, same as above.
     expect(
       occurrenceDates(
         item({ cadence: 'biweekly', nextOccurrence: '2026-08-20', daysOfWeek: [1, 4] }),
         '2026-08-17',
         '2026-09-17',
       ),
-    ).toEqual(['2026-08-17', '2026-08-20', '2026-08-31', '2026-09-03', '2026-09-14', '2026-09-17'])
+    ).toEqual(['2026-08-20', '2026-08-31', '2026-09-03', '2026-09-14', '2026-09-17'])
   })
 
   it('ignores a day set that does not belong to the cadence', () => {
@@ -327,20 +378,43 @@ describe('distant anchors (issue #34 regression)', () => {
   // weekday Aug 20 happens to fall on in each anchor year (it differs: 1978's
   // is a Sunday, 2043's a Thursday). A 30-day window would make this test
   // flaky on exactly that phase difference.
-  const anchorYears = [1000, 1978, 2043, 2500]
+  // Anchors before the window still exercise the original repro: the window
+  // sits well after the anchor, so backward expansion (bounded only by the
+  // cycle math, not by the anchor floor) has to reach across centuries.
+  const pastAnchorYears = [1000, 1978]
+  // Anchors after the window now hit the anchor floor: since #56, the anchor
+  // is the rule's first occurrence, so a window that closes before the anchor
+  // produces nothing — there is no cycle count left to regress on.
+  const futureAnchorYears = [2043, 2500]
   const window = { start: '2026-08-01', end: '2026-08-28' }
 
-  it.each(anchorYears)('monthly: anchor year %d still produces the Aug 20 occurrence', (year) => {
-    expect(
-      occurrenceDates(
-        item({ cadence: 'monthly', nextOccurrence: `${year}-08-20` }),
-        window.start,
-        window.end,
-      ),
-    ).toEqual(['2026-08-20'])
-  })
+  it.each(pastAnchorYears)(
+    'monthly: anchor year %d still produces the Aug 20 occurrence',
+    (year) => {
+      expect(
+        occurrenceDates(
+          item({ cadence: 'monthly', nextOccurrence: `${year}-08-20` }),
+          window.start,
+          window.end,
+        ),
+      ).toEqual(['2026-08-20'])
+    },
+  )
 
-  it.each(anchorYears)('weekly: anchor year %d still produces four occurrences', (year) => {
+  it.each(futureAnchorYears)(
+    'monthly: anchor year %d produces nothing before its own anchor',
+    (year) => {
+      expect(
+        occurrenceDates(
+          item({ cadence: 'monthly', nextOccurrence: `${year}-08-20` }),
+          window.start,
+          window.end,
+        ),
+      ).toEqual([])
+    },
+  )
+
+  it.each(pastAnchorYears)('weekly: anchor year %d still produces four occurrences', (year) => {
     expect(
       occurrenceDates(
         item({ cadence: 'weekly', nextOccurrence: `${year}-08-20` }),
@@ -350,7 +424,20 @@ describe('distant anchors (issue #34 regression)', () => {
     ).toHaveLength(4)
   })
 
-  it.each(anchorYears)('biweekly: anchor year %d still produces two occurrences', (year) => {
+  it.each(futureAnchorYears)(
+    'weekly: anchor year %d produces nothing before its own anchor',
+    (year) => {
+      expect(
+        occurrenceDates(
+          item({ cadence: 'weekly', nextOccurrence: `${year}-08-20` }),
+          window.start,
+          window.end,
+        ),
+      ).toHaveLength(0)
+    },
+  )
+
+  it.each(pastAnchorYears)('biweekly: anchor year %d still produces two occurrences', (year) => {
     expect(
       occurrenceDates(
         item({ cadence: 'biweekly', nextOccurrence: `${year}-08-20` }),
@@ -360,12 +447,25 @@ describe('distant anchors (issue #34 regression)', () => {
     ).toHaveLength(2)
   })
 
-  it('monthly anchored in year 2500 produces all twelve occurrences over a full year', () => {
+  it.each(futureAnchorYears)(
+    'biweekly: anchor year %d produces nothing before its own anchor',
+    (year) => {
+      expect(
+        occurrenceDates(
+          item({ cadence: 'biweekly', nextOccurrence: `${year}-08-20` }),
+          window.start,
+          window.end,
+        ),
+      ).toHaveLength(0)
+    },
+  )
+
+  it('monthly anchored in year 2500 produces all twelve occurrences over its own year', () => {
     expect(
       occurrenceDates(
         item({ cadence: 'monthly', nextOccurrence: '2500-06-20' }),
-        '2026-01-01',
-        '2026-12-31',
+        '2500-06-20',
+        '2501-06-19',
       ),
     ).toHaveLength(12)
   })
@@ -427,5 +527,14 @@ describe('nextOccurrenceOnOrAfter', () => {
     expect(
       nextOccurrenceOnOrAfter(item({ nextOccurrence: '2026-08-20' }), '2026-08-21', 10),
     ).toBeNull()
+  })
+
+  it('finds an anchor far beyond the default 400-day search window instead of reporting null', () => {
+    // Without the search floor, `from` alone bounds the window and a rule
+    // anchored centuries out would search a range it can never reach — which
+    // renders as "Ended" for a rule that has not even started yet.
+    expect(nextOccurrenceOnOrAfter(item({ nextOccurrence: '2500-06-20' }), '2026-09-10')).toBe(
+      '2500-06-20',
+    )
   })
 })
