@@ -18,8 +18,13 @@ request, and issue #7 moved `/accounts` and `/first-run`'s account step onto
 real `public.accounts` and `public.user_settings` rows, issue #8 moved
 `/recurring-items` onto real `public.recurring_rules` rows, and issue #9 keeps
 `public.occurrences` reconciled with those rules through
-`public.regenerate_occurrences` — all behind the `useRunwayData` seam.
-Transfers are the last session-local `useState` records, held in memory and
+`public.regenerate_occurrences` — all behind the `useRunwayData` seam. Issue
+#15 moved single-occurrence edits the same way: `/`'s day editor used to hold
+a saved-overrides list in a page-local `ref`, lost on reload; it now writes
+`public.occurrences` through `override_occurrence` / `revert_occurrence`, and
+apply-to-future writes `public.recurring_rules` through
+`split_recurring_rule` — a rule split, never a bulk occurrence rewrite.
+Transfers are now the **only** session-local record left, held in memory and
 lost on reload, and start **empty** rather than from `domain/seed.ts` — a
 seeded transfer's `accountId` would dangle against account ids the database
 never held. Issue #56 owns folding transfers into ordinary transactions.
