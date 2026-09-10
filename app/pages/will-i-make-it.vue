@@ -22,7 +22,12 @@ import { useShortfallTarget } from '@/composables/useShortfallTarget'
 import { useToday } from '@/composables/useToday'
 import { ARROW_LINK } from '@/lib/arrow-link'
 import type { MinorUnits } from '~~/domain/money'
-import { canAnswerShortfall, shortfallThrough, upcomingBills } from '~~/domain/projection'
+import {
+  canAnswerShortfall,
+  shortfallOutlook,
+  shortfallThrough,
+  upcomingBills,
+} from '~~/domain/projection'
 
 useHead({ title: 'Will I Make It? - Runway' })
 
@@ -117,6 +122,15 @@ const answer = computed(() =>
     cushion: cushion.value,
   }),
 )
+
+// A second, target-independent projection over the whole selectable horizon —
+// deliberately not derived from `answer` above. It answers a different
+// question ("can any target the user picks move this verdict, and does the
+// cushion break somewhere in the horizon even if it doesn't here") from the
+// one `answer` asks about a single target. See `shortfallOutlook`.
+const outlook = computed(() =>
+  shortfallOutlook(data.value, { today: today.value, cushion: cushion.value }),
+)
 </script>
 
 <template>
@@ -158,6 +172,8 @@ const answer = computed(() =>
         :target-date="answer.through"
         :cushion="cushion"
         :today="today"
+        :target-sensitive="outlook.isTargetSensitive"
+        :first-breach="outlook.firstBreach"
       />
     </template>
   </AppPage>

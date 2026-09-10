@@ -24,6 +24,10 @@ const props = defineProps<{
   targetDate: IsoDate
   cushion: MinorUnits
   today: IsoDate
+  /** Whether any selectable target could move the verdict at all — `shortfallOutlook`. */
+  targetSensitive: boolean
+  /** First day in the outlook horizon the cushion breaks, or `null` — `shortfallOutlook`. */
+  firstBreach: IsoDate | null
 }>()
 
 const targetLabel = computed(() => formatDateShort(props.targetDate))
@@ -39,6 +43,26 @@ const lowestLabel = computed(() => {
   if (!lowest) return null
   const suffix = lowest.date === props.today ? ' (today)' : ''
   return `${formatDateShort(lowest.date)}${suffix}`
+})
+
+/**
+ * A second, target-independent fact about honesty, not the verdict itself —
+ * see `shortfallOutlook`. Invented copy, no design artifact behind it; raised
+ * in `docs/design/shortfall/spec.md`'s States section per CLAUDE.md.
+ *
+ * The two branches are mutually exclusive by construction: if the answer is
+ * target-insensitive, the narrowest and widest windows' low points are equal,
+ * so a covered target implies nothing in the horizon ever breaches either —
+ * no explicit guard needed between them.
+ */
+const outlookNote = computed(() => {
+  if (!props.targetSensitive) {
+    return "Picking a different bill or date won't change this — your low point comes before all of them."
+  }
+  if (props.verdict.isCovered && props.firstBreach) {
+    return `Look further out, though: your cushion breaks on ${formatDateShort(props.firstBreach)}.`
+  }
+  return null
 })
 </script>
 
@@ -70,6 +94,8 @@ const lowestLabel = computed(() => {
               to keep {{ cushionText }} in reserve through {{ targetLabel }}.
             </template>
           </p>
+
+          <p v-if="outlookNote" class="text-sm text-muted-foreground">{{ outlookNote }}</p>
         </div>
       </Transition>
 

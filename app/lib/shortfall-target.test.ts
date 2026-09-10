@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addDays } from '~~/domain/dates'
+import { SHORTFALL_OUTLOOK_HORIZON_DAYS } from '~~/domain/projection'
 import {
   parseBillId,
   parseMode,
@@ -8,6 +9,7 @@ import {
   resolveMode,
   resolveTargetDate,
   TARGET_DEFAULT_OFFSET_DAYS,
+  TARGET_MAX_OFFSET_DAYS,
 } from './shortfall-target'
 
 const TODAY = '2026-08-15'
@@ -136,5 +138,15 @@ describe('resolveTargetDate', () => {
 
   it('falls back to today+14 when nothing was parsed', () => {
     expect(resolveTargetDate(null, TODAY)).toBe(addDays(TODAY, TARGET_DEFAULT_OFFSET_DAYS))
+  })
+})
+
+describe('SHORTFALL_OUTLOOK_HORIZON_DAYS', () => {
+  // The engine cannot import from app/, so `shortfallOutlook`'s horizon and
+  // this screen's furthest selectable target are two separate constants kept
+  // in step by this test rather than a shared one — see the doc comment on
+  // `SHORTFALL_OUTLOOK_HORIZON_DAYS` in domain/projection.ts.
+  it('matches the furthest offset the date input allows', () => {
+    expect(SHORTFALL_OUTLOOK_HORIZON_DAYS).toBe(TARGET_MAX_OFFSET_DAYS)
   })
 })
