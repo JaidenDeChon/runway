@@ -16,7 +16,7 @@ import { Separator } from '@/components/ui/separator'
 import { formatDateShort, formatMoney } from '@/lib/format'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
-import type { Verdict } from '~~/domain/projection'
+import type { ShortfallOutlook, Verdict } from '~~/domain/projection'
 
 const props = defineProps<{
   verdict: Verdict
@@ -24,10 +24,10 @@ const props = defineProps<{
   targetDate: IsoDate
   cushion: MinorUnits
   today: IsoDate
-  /** Whether any selectable target could move the verdict at all — `shortfallOutlook`. */
-  targetSensitive: boolean
-  /** First day in the outlook horizon the cushion breaks, or `null` — `shortfallOutlook`. */
-  firstBreach: IsoDate | null
+  /** Whether a later target could still change the verdict — `laterTargetsMatter`. */
+  laterTargetsMatter: boolean
+  /** The whole-horizon picture the outlook note is built from — `shortfallOutlook`. */
+  outlook: ShortfallOutlook
 }>()
 
 const targetLabel = computed(() => formatDateShort(props.targetDate))
@@ -47,20 +47,40 @@ const lowestLabel = computed(() => {
 
 /**
  * A second, target-independent fact about honesty, not the verdict itself —
- * see `shortfallOutlook`. Invented copy, no design artifact behind it; raised
- * in `docs/design/shortfall/spec.md`'s States section per CLAUDE.md.
+ * see `shortfallOutlook` and `laterTargetsMatter`. Invented copy, no design
+ * artifact behind it; raised in `docs/design/shortfall/spec.md`'s States
+ * section per CLAUDE.md.
  *
- * The two branches are mutually exclusive by construction: if the answer is
- * target-insensitive, the narrowest and widest windows' low points are equal,
- * so a covered target implies nothing in the horizon ever breaches either —
- * no explicit guard needed between them.
+ * Three branches, ordered by specificity rather than mutually exclusive by
+ * construction — each condition below can be true at the same time as the
+ * next one, so the first match wins:
+ *
+ * 1. Already short today: `shortfallThrough` measures the running minimum
+ *    over a window that always includes today, so every selectable target
+ *    reads Short as a matter of arithmetic — saying that back is not
+ *    something the user can act on. What they can act on is when they clear
+ *    the cushion and whether it holds, which is what the three shapes below
+ *    say instead of a single flat "every target starts short".
+ * 2. Nothing later than the current target can move the verdict either way.
+ * 3. Covered right now, but the cushion breaks somewhere further out.
  */
 const outlookNote = computed(() => {
-  if (!props.targetSensitive) {
-    return "Picking a different bill or date won't change this — your low point comes before all of them."
+  if (props.outlook.firstBreach === props.today) {
+    const { recoversOn, staysClearAfterRecovery, daysBelow, horizonDays, horizonEnd } =
+      props.outlook
+    if (recoversOn === null) {
+      return `You stay below your cushion for the whole of the next ${horizonDays} days.`
+    }
+    if (staysClearAfterRecovery) {
+      return `You're below your cushion until ${formatDateShort(recoversOn)}, then clear through ${formatDateShort(horizonEnd)}.`
+    }
+    return `You're below your cushion on ${daysBelow} of the next ${horizonDays} days.`
   }
-  if (props.verdict.isCovered && props.firstBreach) {
-    return `Look further out, though: your cushion breaks on ${formatDateShort(props.firstBreach)}.`
+  if (!props.laterTargetsMatter) {
+    return "Picking a later bill or date won't change this — your low point falls inside this window."
+  }
+  if (props.verdict.isCovered && props.outlook.firstBreach) {
+    return `Look further out, though: your cushion breaks on ${formatDateShort(props.outlook.firstBreach)}.`
   }
   return null
 })
@@ -69,8 +89,10 @@ const outlookNote = computed(() => {
 <template>
   <Card>
     <CardContent class="flex flex-col gap-4 lg:items-center lg:text-center">
-      <!-- Announces itself to a screen reader on every cushion keystroke,
-           since the badge/headline/sub-line change with no focus movement. -->
+      <!-- Announces itself to a screen reader whenever the verdict changes —
+           a different bill or date picked here, or the stored cushion
+           changing on `/accounts` — since the badge/headline/sub-line change
+           with no focus movement. -->
       <Transition name="verdict-fade" mode="out-in">
         <div :key="props.verdict.isCovered ? 'covered' : 'short'" aria-live="polite" class="flex flex-col gap-2 lg:items-center">
           <Badge :class="props.verdict.isCovered ? 'bg-chart-positive/16 text-chart-positive' : 'bg-destructive/16 text-destructive'">

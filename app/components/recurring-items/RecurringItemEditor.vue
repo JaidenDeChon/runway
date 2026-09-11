@@ -46,6 +46,7 @@ import { useToday } from '@/composables/useToday'
 import { formatCadence } from '@/lib/format'
 import { SEGMENTED_SEGMENT, SEGMENTED_TRACK } from '@/lib/segmented-control'
 import { cn } from '@/lib/utils'
+import { nextOccurrenceOnOrAfter } from '~~/domain/cadence'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
 import { canPredict, MIN_DEPOSITS_FOR_PREDICTION, resolveAmount } from '~~/domain/prediction'
@@ -90,6 +91,13 @@ const form = reactive({
   startsOn: undefined as IsoDate | undefined,
 })
 
+// The date the field was seeded with, so `onSave` can tell "left untouched"
+// apart from "re-typed the same date" — an edit whose only change is
+// unrelated to the date must round-trip `item.nextOccurrence` unchanged
+// rather than walking a possibly-past anchor forward to today, which would
+// silently trim that rule's look-back on every unrelated save.
+const seededNextOccurrence = ref<IsoDate | null>(null)
+
 watch(
   () => [props.open, props.item] as const,
   ([open, item]) => {
@@ -97,13 +105,18 @@ watch(
     confirmingDelete.value = false
     errorMessage.value = null
     if (item) {
+      // The stored anchor may already be in the past (a bill from months ago
+      // whose cadence has simply been running since) — the field opens on the
+      // true next occurrence, not a stale anchor date.
+      const seeded = nextOccurrenceOnOrAfter(item, today.value) ?? item.nextOccurrence
+      seededNextOccurrence.value = seeded
       Object.assign(form, {
         type: item.kind,
         name: item.name,
         cadence: item.cadence,
         accountId: item.accountId,
         amount: item.amount,
-        nextOccurrence: item.nextOccurrence,
+        nextOccurrence: seeded,
         amountSource: item.amountSource,
         depositHistory: item.depositHistory,
         isVariable: item.isVariable,
@@ -115,6 +128,7 @@ watch(
       })
       return
     }
+    seededNextOccurrence.value = null
     Object.assign(form, {
       type: 'bill',
       name: '',
@@ -190,7 +204,13 @@ async function onSave(): Promise<void> {
         amount: form.amount,
         cadence: form.cadence,
         accountId: form.accountId,
-        nextOccurrence: form.nextOccurrence,
+        // An untouched field round-trips the stored anchor exactly, even when
+        // it is in the past — the field is seeded with the true next
+        // occurrence for display, but that is a projection, not an edit.
+        nextOccurrence:
+          props.item && form.nextOccurrence === seededNextOccurrence.value
+            ? props.item.nextOccurrence
+            : form.nextOccurrence,
         // Bills are always fixed and never carry the variable flag — the
         // type-specific controls are hidden, not cleared, when switching tabs, so
         // the invariant is enforced here rather than trusting stale form state.

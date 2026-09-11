@@ -2,10 +2,15 @@
  * Expanding a recurring item into the individual days it lands on.
  *
  * Expansion runs in **both** directions from the item's anchor
- * (`nextOccurrence`), because the dashboard's window opens two weeks before
- * today and those past occurrences are real events that already moved the
- * balance. Treating the anchor as a hard floor would silently flatten the
- * look-back portion of every chart.
+ * (`nextOccurrence`), *within the span the rule is active for*, because the
+ * dashboard's window opens two weeks before today and those past occurrences
+ * are real events that already moved the balance. But `nextOccurrence` is
+ * never itself moved earlier by that backward expansion — it is the rule's
+ * first occurrence, not merely a phase for locating the cycle. Without that
+ * floor, moving a monthly rule from Sep 25 to Oct 25 changes nothing: only the
+ * day-of-month component of the anchor feeds the cycle, so the same Sep 25
+ * comes back out. `supabase/seed.sql` has always materialized forward from
+ * `greatest(anchor_date, starts_on)`; this is the engine agreeing with it.
  *
  * A cadence has two parts: a **cycle** and the **days within it**. The cycle
  * comes from `cadence` and the anchor — every week, every other week counted
@@ -120,7 +125,13 @@ export function occurrenceDates(item: RecurringItem, start: IsoDate, end: IsoDat
   // the rule is even active, before the caller's requested range is applied.
   // This is what makes apply-to-future a rule split rather than a bulk edit —
   // the closed rule simply stops producing occurrences past its `endsOn`.
-  const effectiveStart = maxDate(start, item.startsOn ?? start)
+  //
+  // `nextOccurrence` is clamped in too, as a floor: it is the rule's first
+  // occurrence, not just a phase for locating the cycle. Without this, editing
+  // only the anchor's cycle (moving Sep 25 to Oct 25, a whole month) leaves the
+  // day-of-month unchanged and produces the exact same dates — the edit would
+  // have no visible effect anywhere the app projects occurrences.
+  const effectiveStart = maxDate(maxDate(start, item.startsOn ?? start), item.nextOccurrence)
   const effectiveEnd = minDate(end, item.endsOn ?? end)
   if (compareDates(effectiveStart, effectiveEnd) > 0) return []
 
@@ -143,6 +154,11 @@ export function occurrenceDates(item: RecurringItem, start: IsoDate, end: IsoDat
  * still be found from a Mar 1 start in a non-leap year, which is more than a
  * bare calendar year away from the previous Feb 29.
  *
+ * The search floor is `max(from, startsOn, nextOccurrence)`, the same floor
+ * `occurrenceDates` applies — otherwise a rule anchored more than `withinDays`
+ * past `from` would search a window that never reaches its own first
+ * occurrence and wrongly report `null`, which renders as "Ended".
+ *
  * Built on `occurrenceDates` rather than a second expansion path — one walk,
  * one implementation. `occurrenceDates` already clamps `startsOn`/`endsOn`
  * first, so an ended rule returns `null` for free.
@@ -152,5 +168,6 @@ export function nextOccurrenceOnOrAfter(
   from: IsoDate,
   withinDays = 400,
 ): IsoDate | null {
-  return occurrenceDates(item, from, addDays(from, withinDays))[0] ?? null
+  const searchFrom = maxDate(maxDate(from, item.startsOn ?? from), item.nextOccurrence)
+  return occurrenceDates(item, searchFrom, addDays(searchFrom, withinDays))[0] ?? null
 }

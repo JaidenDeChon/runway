@@ -130,6 +130,13 @@ export interface RecurringItem {
    */
   readonly daysOfWeek?: readonly number[]
   readonly accountId: string
+  /**
+   * The rule's first occurrence — a floor, not merely a phase. `occurrenceDates`
+   * expands backwards from it to fill a chart's look-back, but never produces a
+   * date before it; the day-of-month/weekday it carries feeds the cycle, but
+   * the cycle itself never starts earlier than this date. Maps to
+   * `recurring_rules.anchor_date`.
+   */
   readonly nextOccurrence: IsoDate
   readonly amountSource: AmountSource
   /** Past deposits backing a `predicted` amount, oldest first. */

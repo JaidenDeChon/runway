@@ -76,6 +76,18 @@ async function buildHousehold(page: import('@playwright/test').Page): Promise<vo
   await expect(itemRow).toBeVisible()
 }
 
+/**
+ * Sets the safety cushion through the real UI — the "Safety cushion" card on
+ * `/accounts`, not `/will-i-make-it`, which only displays the stored figure.
+ * See `SafetyCushionCard.vue`'s doc comment for why the cushion is edited
+ * there now.
+ */
+async function setCushion(page: import('@playwright/test').Page, amount: string): Promise<void> {
+  await gotoHydrated(page, '/accounts')
+  await page.locator('#account-cushion').fill(amount)
+  await clickUntil(page.locator('#cushion-save'), page.getByText('Saved.'))
+}
+
 /** `VerdictCard`, scoped by its own "Lowest point" stat rather than by position on the page. */
 function verdictCard(page: import('@playwright/test').Page) {
   return page
@@ -141,13 +153,30 @@ test('covered through the target still warns when the cushion breaks later in th
   ).toBeVisible()
 })
 
+test('a cushion above today\'s balance never recovers, and the note says so rather than "every target starts short"', async ({
+  emptyHouseholdPage: page,
+}) => {
+  // D's household has no income at all, so once the cushion is set above
+  // today's $2,000 balance the running balance never climbs back over it —
+  // `shortfallOutlook.recoversOn` stays null for the whole 180-day horizon,
+  // which is the "persistent" branch of the below-cushion-today note. Asserted
+  // on the stable phrase, not the horizon length or a rendered balance.
+  await buildHousehold(page)
+  await setCushion(page, '3000')
+  await gotoHydrated(page, '/will-i-make-it')
+
+  await expectTextToBe(verdictBadge(page), 'Short')
+  await expect(
+    verdictCard(page).getByText(/You stay below your cushion for the whole of the next/),
+  ).toBeVisible()
+})
+
 test('a bigger cushion flips the same projection to short, and the projection does not move', async ({
   emptyHouseholdPage: page,
 }) => {
   await buildHousehold(page)
+  await setCushion(page, '2000')
   await gotoHydrated(page, '/will-i-make-it')
-
-  await page.locator('#shortfall-cushion').fill('2000')
 
   await expectTextToBe(verdictBadge(page), 'Short')
   await expectTextToBe(verdictHeadline(page), 'You need $500 more.')
@@ -158,25 +187,16 @@ test('a bigger cushion flips the same projection to short, and the projection do
   await expectTextToBe(figures.nth(1), '$1,500')
 })
 
-test('the cushion survives a full reload', async ({ emptyHouseholdPage: page }) => {
+test('the cushion survives a full reload, and the verdict it drives is correct on a fresh page load', async ({
+  emptyHouseholdPage: page,
+}) => {
   await buildHousehold(page)
-  await gotoHydrated(page, '/will-i-make-it')
+  await setCushion(page, '2000')
 
-  // Registered before the fill, not after: the write is debounced 400ms
-  // behind the keystroke, and by the time `expectTextToBe` below resolves
-  // that debounce may already have fired. Waiting on the actual network
-  // response — rather than a fixed sleep guessing at the timing — is what
-  // `gotoHydrated`'s own doc comment calls a reactive gate over a timing one.
-  const cushionSaved = page.waitForResponse(
-    (response) => response.url().includes('/rest/v1/user_settings') && response.ok(),
-  )
-  await page.locator('#shortfall-cushion').fill('2000')
-  await expectTextToBe(verdictBadge(page), 'Short')
-  await cushionSaved
-
-  // A reload re-fetches from Supabase, so this asserts the stored row and not
-  // the in-memory overlay. Asserted on the verdict, not the input's own
-  // formatting, so this does not encode `MoneyInput`'s draft rendering.
+  // A fresh navigation re-fetches from Supabase, so this asserts the stored
+  // row rather than an in-memory overlay `setCushion` left behind on
+  // `/accounts` — `gotoHydrated` is always a real `page.goto()`, a full
+  // server round-trip, never a client-side transition.
   const response = await gotoHydrated(page, '/will-i-make-it')
 
   await expectTextToBe(verdictBadge(page), 'Short')
@@ -195,53 +215,38 @@ test('the cushion survives a full reload', async ({ emptyHouseholdPage: page }) 
   expect(/to spare above your cushion/.test(ssr)).toBe(false)
 })
 
-test('an earlier failed cushion write does not roll back a later successful one', async ({
+test('a failed cushion save shows an error and leaves the typed draft on screen', async ({
   emptyHouseholdPage: page,
 }) => {
+  // Regression for the class of bug PR #79 review finding #3 and the later
+  // navigation-breaking bug both belonged to: a write that fails must never
+  // silently snap the field back to the old stored value, or corrupt
+  // anything a still-open page is showing. The debounced-keystroke race
+  // those findings were about cannot happen through this UI any more — the
+  // Save button below is disabled for the whole time a call is in flight
+  // (`SafetyCushionCard.vue`), so there is no way to have two overlapping
+  // calls to race in the first place.
   await buildHousehold(page)
-  await gotoHydrated(page, '/will-i-make-it')
+  await gotoHydrated(page, '/accounts')
 
   // Only the write (POST, via `upsert`) is meant to fail — the household's
   // own reads of `user_settings` share this same REST path and must pass
   // through untouched, or the page never finishes loading.
-  let firstWriteSeen = false
   await page.route('**/rest/v1/user_settings*', async (route) => {
-    if (route.request().method() === 'GET' || firstWriteSeen) {
+    if (route.request().method() === 'GET') {
       await route.continue()
       return
     }
-    firstWriteSeen = true
-    // Held back long enough that the second edit's own debounced write can
-    // fire and land first — reproducing PR #79 review finding #3's race: an
-    // earlier commit's failure must not roll back a later commit's success.
-    await new Promise((resolve) => setTimeout(resolve, 800))
     await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
   })
 
-  const firstWriteFailed = page.waitForResponse(
-    (response) => response.url().includes('/rest/v1/user_settings') && response.status() === 500,
-  )
-  await page.locator('#shortfall-cushion').fill('2000')
-  // Past the 400ms debounce, so this is a genuinely separate second commit
-  // rather than one keystroke burst coalescing into a single write.
-  await page.waitForTimeout(450)
-  const secondWriteSaved = page.waitForResponse(
-    (response) => response.url().includes('/rest/v1/user_settings') && response.ok(),
-  )
-  await page.locator('#shortfall-cushion').fill('3000')
-  await secondWriteSaved
+  await page.locator('#account-cushion').fill('2000')
+  await page.locator('#cushion-save').click()
 
-  // The database was never at risk — B's write independently persisted
-  // 300000 regardless of what A's rollback does to the client's overlay.
-  // The bug this guards is the *on-screen* one: without navigating away,
-  // does the input the user is looking at silently snap back once A's
-  // held-back failure finally lands? A reload would re-fetch from the
-  // database and pass either way, so this waits for A's failure and checks
-  // the still-open page instead.
-  await firstWriteFailed
-  await expect(page.locator('#shortfall-cushion')).toHaveValue('3000')
-  await expectTextToBe(verdictBadge(page), 'Short')
-  await expectTextToBe(verdictHeadline(page), 'You need $1,500 more.')
+  await expect(
+    page.getByText('Could not save that amount. Check your connection and try again.'),
+  ).toBeVisible()
+  await expect(page.locator('#account-cushion')).toHaveValue('2000')
 })
 
 test('carries the target in the URL, and a mode round-trip restores rather than resets it', async ({

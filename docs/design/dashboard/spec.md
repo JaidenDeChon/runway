@@ -410,6 +410,33 @@ was incomplete, not restrictive.
 
 **Open question 6 (no error state) is now answered** — see the entry below.
 
+### The line steps on the day money moves
+
+The line no longer draws a diagonal between two days' points. Each `DayPoint`'s balance is true as
+of the *end* of its date, so a diagonal from yesterday's point to today's drew the change across
+yesterday and left the event marker sitting at the end of the slope — read literally, the balance
+appeared to rise before the paycheck landed, or fall before the bill did. The line now holds flat at
+yesterday's balance right up to today's x, then steps to today's balance on today's own x: flat
+before the event, moving on the event's date, flat after. `linePath` in `app/lib/burndown.ts` is the
+only place this changed; the engine, `evaluate`, and every projected figure are unaffected.
+
+One visible consequence: the daily discretionary drain, previously drawn as a smooth decline, now
+reads as a fine staircase — one step per day — because that is what the underlying arithmetic always
+was. This is a departure from `reference.html`'s own interpolated rendering, not an oversight.
+
+**A filled (income) marker sits at the lower of its day's two balances, not always the post-event
+one** — a follow-up to the above. Once the line stepped, a one-day income spike the balance falls
+back out of (a paycheck that briefly outpaces a steady discretionary decline) left its marker
+floating above the surrounding trend, at the top of a riser with nothing else drawn up there. The
+marker for a rise now uses whichever of "the balance right before" and "the balance right after" is
+smaller — ordinarily the *before* value, so the dot lands at the base of the rise instead of its
+peak — so it always sits on a visible segment of the line. A day with both a paycheck and a bigger
+same-day bill still nets down, and `lowerOfDay` correctly picks the post-event balance for it, same
+as before this existed. A hollow (bill) marker is unaffected: the post-event balance for a decline is
+already the lower of the day's two values, so it already sat on the line. The tooltip still names the
+post-event balance for the day either way; only the filled dot's position can read differently.
+`markers`/`lowerOfDay` in `app/components/dashboard/BurndownChart.vue` is the only place this changed.
+
 ### What the dashboard remembers
 
 Issue #12 moved two of this screen's controls from session-only state onto stored preferences, and
@@ -455,9 +482,15 @@ left a third exactly where it was — on purpose, not by neglect:
 7. **Zero crossing.** The only banded region is *below the safety cushion*. A balance that goes
    negative gets no distinct treatment, and the y-axis has no emphasised zero line. Should crossing
    zero read differently from crossing the cushion?
-8. **Where does the safety cushion come from?** It is a hardcoded $600 here, and the shortfall screen
-   has its own editable "Safety cushion" input. Is it one shared setting, and is it editable from
-   this screen?
+8. **Where does the safety cushion come from?** **Answered (issue #14, edited by a later fix):** it
+   is one shared `user_settings.cushion_cents`, read by this chart, `/will-i-make-it`'s verdict and
+   `evaluate()`'s covered/tight/short banding alike — never a screen-local figure. It is not editable
+   from this screen or from `/will-i-make-it`; both display it read-only. It is edited from the
+   "Safety cushion" card on `/accounts`, alongside "Everyday spending" — not `/will-i-make-it`, where
+   it first landed, because auto-saving it there on every keystroke and flushing a pending edit from
+   a component-teardown hook on the way out could leave the app unable to navigate away after an
+   edit, and could lose the write in the process, leaving this exact chart's danger band showing a
+   cushion the account did not actually hold.
 9. **"Save change" has no home.** Saved overrides mutate the projection permanently with no toast,
    no undo, and no indication afterwards that a projected occurrence was overridden. Does an
    override become a real edit to the recurring item, or a one-off exception record?

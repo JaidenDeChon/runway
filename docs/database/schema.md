@@ -58,7 +58,7 @@ below. It also serves as the RLS-predicate index, so no separate
 | `amount_source` | `recurring_amount_source` enum | `fixed` \| `predicted` — `predicted` is income-only |
 | `is_variable` | `boolean` | bill-only presentation marker (a utility bill); the stored amount is still what projection uses |
 | `cadence` | `recurring_cadence` enum | `weekly` \| `biweekly` \| `monthly` \| `annual` |
-| `anchor_date` | `date` | the cadence's phase — which week a biweekly rule falls in, which month-and-day an annual one lands on, and, absent a day set, the weekday or day-of-month everything else aligns to |
+| `anchor_date` | `date` | the rule's first occurrence — which week a biweekly rule falls in, which month-and-day an annual one lands on, and, absent a day set, the weekday or day-of-month everything else aligns to. Nothing is ever projected before it |
 | `days_of_month` | `smallint[]`, nullable | monthly only. Days the rule lands on each month; `[1, 15]` is semi-monthly. `-1` is month end. `null` ≠ `{}` — `null` means "the day `anchor_date` names", and the empty array is rejected |
 | `days_of_week` | `smallint[]`, nullable | weekly and biweekly only. ISO weekdays, `1` = Monday … `7` = Sunday. Biweekly keeps taking its phase from `anchor_date` |
 | `starts_on`, `ends_on` | `date`, nullable | inclusive window bounds; `null` = unbounded in that direction |
@@ -74,6 +74,14 @@ day. There is still no `interval_count` or scalar `weekday` column, and a day
 set that does not belong to its cadence is a check violation rather than a
 combination the reader has to know to ignore — see [A set of days, not a longer
 enum](#a-set-of-days-not-a-longer-enum).
+
+**`anchor_date` is a floor, not merely a phase.** Editing it moves the rule's
+own cycle, not just which day-of-month or weekday the cycle lands on — the
+engine (`domain/cadence.ts`) never produces a date before it, even while
+expanding backwards to fill a chart's look-back window. Without that floor,
+moving a monthly rule a whole month (or a weekly rule a whole week) can leave
+the projected dates unchanged, because only the day-of-month/weekday component
+of the anchor fed the cycle.
 
 This is still not a general-purpose RRULE engine — "the 2nd Tuesday of the
 month" is out of scope, by the issue's own words.
@@ -547,7 +555,7 @@ The table `domain/*` code should consult when wiring a store to this schema:
 | `Account.balance` | `accounts.balance_cents` | |
 | `Account.isDiscretionarySource` | *derived* | `user_settings.discretionary_account_id = accounts.id` |
 | `Account.archivedOn` | `accounts.archived_on` | `null` maps to **absent**, not to `archivedOn: undefined` — see [Archiving, not deleting](#archiving-not-deleting) |
-| `RecurringItem.nextOccurrence` | `recurring_rules.anchor_date` | **names differ deliberately**: the domain expands in both directions from it, so it is an anchor, not a "next" |
+| `RecurringItem.nextOccurrence` | `recurring_rules.anchor_date` | **names differ deliberately**: the domain expands backwards from it too (to fill a chart's look-back), so it is an anchor, not a "next" — but never *before* it, since it is the rule's first occurrence |
 | `RecurringItem.daysOfMonth` / `.daysOfWeek` | `recurring_rules.days_of_month` / `.days_of_week` | same numbering on both sides, `-1` = month end, ISO weekdays. Optional in the domain, nullable here — both mean "the day the anchor names" |
 | `RecurringItem.depositHistory` | *derived* | `occurrences.actual_amount_cents where status = 'confirmed'`, ordered by `projected_date`. No array column — this is why occurrences are materialized. **The app still always reads this as `[]`**: issue #9 materializes `projected` rows, but nothing creates a `confirmed` one yet — that is the occurrence editor (#15) or reconciliation (#26). This is not a bug — it is why the recurring-items editor's "Predict from deposits" toggle stays disabled (`canPredict([])` is false) until one of those lands |
 | `Transfer.date` | `transfers.occurs_on` | |

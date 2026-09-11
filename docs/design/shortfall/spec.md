@@ -114,12 +114,16 @@ Captured with the `.dark` class forced onto `<html>`/`<body>`, because the expor
 No loading, empty, or error state exists in the export. All three are gaps — see Open questions.
 
 ### Outlook note (invented — not in the export)
-Because the verdict is the running minimum over `[today, target]`, it is monotone in the target: widening the window can only lower or hold the low point, never raise it. For a household whose low point lands early and the balance only climbs afterward, every selectable bill or date contains that same trough, and the verdict never moves — only the "…through {date}" caption does. The export never surfaces this (it always seeds a declining household), so there is no screenshot and no copy for it. Two invented lines, rendered under the existing sub-line inside the same `aria-live` region, flagged here per CLAUDE.md rather than resolved silently — the same way `will-i-make-it.vue`'s gap-state copy is flagged in its own comments:
+Because the verdict is the running minimum over `[today, target]`, it is monotone in the target: widening the window can only lower or hold the low point, never raise it. For a household whose low point lands early and the balance only climbs afterward, every selectable bill or date past that low point contains the same trough, and the verdict never moves — only the "…through {date}" caption does. The export never surfaces this (it always seeds a declining household), so there is no screenshot and no copy for it. Three invented lines, rendered under the existing sub-line inside the same `aria-live` region, flagged here per CLAUDE.md rather than resolved silently — the same way `will-i-make-it.vue`'s gap-state copy is flagged in its own comments. Ordered by specificity, first match wins, rather than mutually exclusive:
 
-- **Target-insensitive** (any target picked contains the same trough): *"Picking a different bill or date won't change this — your low point comes before all of them."*
+- **Already short today** (the cushion breaks on today itself, so every target reads Short as a matter of arithmetic — `shortfallThrough`'s window always includes today). Three shapes, not one flat line, because "every target starts short" is accurate and tells the user nothing they can act on — replaced after user feedback made that plain:
+  - Never recovers within the 180-day horizon: *"You stay below your cushion for the whole of the next {N} days."*
+  - Recovers and stays clear: *"You're below your cushion until {date}, then clear through {date}."*
+  - Recovers but dips again later: *"You're below your cushion on {N} of the next {N} days."*
+- **Nothing later matters** (no target later than the one currently selected could change the verdict): *"Picking a later bill or date won't change this — your low point falls inside this window."*
 - **Covered here, breaks later** (the target-scoped verdict is Covered, but the cushion breaks somewhere further out in the 180-day horizon): *"Look further out, though: your cushion breaks on {date}."*
 
-These two are mutually exclusive by construction — a target-insensitive household's narrowest and widest windows share one low point, so a Covered verdict there implies no breach anywhere in the horizon either.
+The first group reads `recoversOn`, `staysClearAfterRecovery` and `daysBelow` off `shortfallOutlook` (`domain/projection.ts`) — all three produced by the one scan that already finds `firstBreach`, so none of it costs a second pass over the series, and none of it is a date comparison the component performs itself. The second line is deliberately target-*relative*, not a blanket "nothing anywhere can move this": it compares the currently selected target's own low point against the low across the full horizon (`laterTargetsMatter` in `domain/projection.ts`), so it can fire even when an earlier target on the same household would have shown a different verdict — what matters is only whether picking something *later* than what's on screen right now would.
 
 ---
 
@@ -128,10 +132,10 @@ These two are mutually exclusive by construction — a target-insensitive househ
 - **Mode Tabs** — click "Upcoming bill" / "Pick a date" → swaps the input region between the bill RadioGroup and the date Input → verdict recalculates immediately against the new target. Mode state is independent: switching back restores the previously selected bill, and the date keeps its value.
 - **Bill row** — click anywhere on the row (not just the dot) → selects that bill as the target → row gains an `--accent` background and a filled inner dot; the previous row clears → verdict and sub-line date recalculate.
 - **Date Input** — change → sets the target date. Bounded: `min` = today + 1 day, `max` = today + 180 days. An empty/cleared value is ignored (the previous date is retained).
-- **Safety cushion Input** — change → re-evaluates the verdict. Non-numeric input coerces to `0`. There is no debounce in the export; every keystroke re-renders. Recommend the real implementation update on input with the verdict region in an `aria-live` region.
-- **Everything is instant and local.** No submit button, no server round-trip, nothing optimistic. The verdict is a pure function of (target, cushion, projection).
+- **Safety cushion is read-only here**, a deviation from the export raised rather than resolved silently. The export specs an editable Input that re-evaluates the verdict on every keystroke with no debounce; issue #14 shipped exactly that, wired to a live `user_settings.cushion_cents` write on every keystroke and flushed from a component-teardown hook to catch a pending edit on the way out. That combination could leave the app unable to navigate away after an edit until the page was hard-reloaded, and the write racing the navigation could lose — the chart's danger band would then keep showing a cushion the account did not actually hold. The cushion now has one editor, the "Safety cushion" card on `/accounts` (`SafetyCushionCard.vue`, an explicit-Save field matching "Everyday spending" right above it), and this screen displays the stored figure with a link to change it. The verdict still recalculates the moment the stored cushion changes, same as before — only *where* it is typed moved.
+- **Everything else is instant and local.** No submit button, no server round-trip, nothing optimistic. The verdict is a pure function of (target, cushion, projection); the cushion itself is the one piece of it with a save step, and that step lives on `/accounts` now.
 
-Not visible in a static export: focus rings on the radio rows and both inputs, and the transition when the verdict flips between covered and short — the headline changes both text and color, so it should crossfade rather than snap.
+Not visible in a static export: focus rings on the radio rows and the date input, and the transition when the verdict flips between covered and short — the headline changes both text and color, so it should crossfade rather than snap.
 
 ---
 
@@ -148,6 +152,7 @@ Exact strings. This screen is copy-heavy and the wording carries the product's v
 | Date field label | `Date` |
 | Cushion label | `Safety cushion` |
 | Cushion help | `The lowest balance you're comfortable letting it reach.` |
+| Cushion edit link | `Change it in Accounts` — see the read-only deviation note above |
 | Badge (covered) | `Covered` |
 | Badge (short) | `Short` |
 | Headline (covered) | `You're covered.` |

@@ -26,7 +26,8 @@ without infrastructure, and it is enforced rather than promised
 | `project(data, window)` | the whole picture: per-account and combined series, each with its low point and closing balance, plus the occurrences that moved them (archived accounts are excluded, even if named in `accountIds`) |
 | `evaluate(summary, cushion)` | covered / tight / short, the margin, and the shortfall |
 | `shortfallThrough(data, question)` | "will I make it to this date?" and, if not, by how much |
-| `shortfallOutlook(data, question)` | whether any selectable target could change the verdict at all, and the first day the cushion breaks across the whole horizon — see the worked example below |
+| `shortfallOutlook(data, question)` | the low point, the first cushion breach, and — when already below today — when it clears and whether it stays clear, across the whole selectable horizon; see the worked examples below |
+| `laterTargetsMatter(answer, outlook)` | whether any target later than the one just answered could still change the verdict |
 | `occurrencesIn(data, window)` | the individual events in a window, expanded from the rules |
 | `nextOccurrenceOnOrAfter(item, from, withinDays?)` | the first date on or after `from` a rule occurs, or `null` once it has ended (`domain/cadence.ts`) — what a list screen shows as "next", never the stored anchor |
 | `upcomingBills(data, today)` | the next occurrence of each bill ahead, for the shortfall screen's picker |
@@ -134,47 +135,115 @@ approximately right is a shortfall figure that is wrong.
 `shortfallThrough`'s answer is the running minimum over `[today, through]`,
 and a running minimum can only fall or hold as the window widens, never rise.
 For a household whose low point lands early and the balance climbs
-afterward, *every* selectable target contains that same trough — the next
-bill, a date six months out, it makes no difference. `shortfallOutlook` is
-what lets a caller tell "this answer genuinely can't move" apart from "the
-control is broken", and what surfaces a cushion that breaks *after* a target
-the household is otherwise Covered through.
+afterward, *every* selectable target past that low point contains the same
+trough — the next bill, a date six months out, it makes no difference.
+`shortfallOutlook` finds the low point and the first cushion breach across
+the whole selectable horizon; `laterTargetsMatter` is what turns that into "is
+there anything left for a later target to find", so a caller can tell "this
+answer genuinely can't move" apart from "the control is broken" — and can
+surface a cushion that breaks *after* a target the household is otherwise
+Covered through.
 
 ```ts
-import { shortfallOutlook } from '~~/domain/projection'
+import { laterTargetsMatter, shortfallOutlook, shortfallThrough } from '~~/domain/projection'
 
 const outlook = shortfallOutlook(climbing, {
   today: '2026-08-15',
   cushion: 60_000,   // $600
 })
 
-outlook.horizonEnd        // '2027-02-11' — 180 days out
-outlook.horizonLowest     // { date: '2026-08-16', balance: 40_000 }
-outlook.firstBreach       // null — the cushion never actually breaks
-outlook.isTargetSensitive // false
+outlook.horizonEnd    // '2027-02-11' — 180 days out
+outlook.horizonLowest // { date: '2026-08-16', balance: 40_000 }
+outlook.firstBreach   // null — the cushion never actually breaks
+
+const answer = shortfallThrough(climbing, { today: '2026-08-15', through: '2026-08-20', cushion: 60_000 })
+answer.lowest // { date: '2026-08-16', balance: 40_000 } — same day, same balance
+
+laterTargetsMatter(answer, outlook) // false
 ```
 
 `climbing`'s balance dips once, the day after today, and only ever recovers
-from there. It compares the narrowest window any target can produce (`today`
-to `today + 1`) against the widest one (the full horizon); because the
-running minimum is monotone, agreement between those two means nothing
-selectable in between can disagree either.
+from there, so a target picked days later still lands on that same trough.
+`laterTargetsMatter` compares *this answer's* low point against the whole
+horizon's, not some fixed narrow window against the horizon — an earlier
+version of this compared the narrowest selectable window (`today` to
+`today + 1`) against the horizon instead, and it was wrong: a daily
+discretionary drain nudges that one-day low down a little further each day
+before the next paycheck lands, so it disagreed with the horizon even for a
+household whose real trough the *actual* target already fully contained. The
+question worth asking is "is there anything past what the user is looking at
+right now", which is answer-relative, not "does the narrowest possible window
+agree with the widest one".
 
 A household that digs deeper every cycle tells the opposite story:
 
 ```ts
-outlook.horizonLowest     // { date: '2027-01-20', balance: -180_000 }
-outlook.firstBreach       // '2026-11-02'
-outlook.isTargetSensitive // true
+outlook.horizonLowest // { date: '2027-01-20', balance: -180_000 }
+outlook.firstBreach   // '2026-11-02'
+
+const soon = shortfallThrough(digging, { today: '2026-08-15', through: '2026-08-25', cushion: 60_000 })
+soon.lowest // { date: '2026-08-20', balance: 150_000 } — nowhere near the horizon low yet
+
+laterTargetsMatter(soon, outlook) // true
 ```
 
 `firstBreach` answers something `horizonLowest` cannot: the *first* day the
 running balance drops under the cushion, not the worst one — the figure that
 matters when a target-scoped answer is Covered but the household is not clear
-of trouble for the rest of the horizon. It is the one place this function
+of trouble for the rest of the horizon. It is the one place `shortfallOutlook`
 scans a series rather than reading a summary `project` already produced,
 because "the first day below a line" is not a minimum, and nothing else in
-the engine had a reason to compute it.
+the engine had a reason to compute it. `laterTargetsMatter` itself runs no
+projection at all — it compares two figures `shortfallThrough` and
+`shortfallOutlook` already produced, and treats two `null` low points (nothing
+ahead in either window) as agreeing too.
+
+## Worked example: below the cushion right now
+
+`shortfallThrough` measures the running minimum over a window that always
+includes today. If today's own balance is under the cushion, *every*
+selectable target reads Short — that is arithmetically correct and useless on
+its own: a three-day dip that clears for good and a household still
+underwater six months out both come back "Short", indistinguishably.
+`shortfallOutlook` carries four more fields, all produced by the same single
+scan that finds `firstBreach`, so a caller can tell the two apart without
+adding a second pass over the series:
+
+```ts
+const outlook = shortfallOutlook(underwater, {
+  today: '2026-08-15',
+  cushion: 60_000,   // $600
+})
+
+outlook.firstBreach            // '2026-08-15' — today itself
+outlook.recoversOn             // '2026-08-18' — first day at or above the cushion
+outlook.staysClearAfterRecovery // true — nothing dips back under after that
+outlook.daysBelow              // 2 — the 16th and 17th; today itself is not counted
+```
+
+A household that dips again after recovering tells a different story with the
+same fields:
+
+```ts
+outlook.recoversOn              // '2026-08-18' — the *first* crossing, unchanged
+outlook.staysClearAfterRecovery // false — a later day dips back under
+outlook.daysBelow               // 47 — every day below the cushion, including the second dip
+```
+
+Three things worth being deliberate about:
+
+- **`recoversOn` names the first day at or above the cushion, not "the day the
+  household recovers" in some narrative sense.** If the balance was never
+  below the cushion to begin with, `recoversOn` is `today` itself, same as
+  every other day that clears it — it says what it says, not what a caller
+  might assume it implies.
+- **`staysClearAfterRecovery` is a boolean, not two dates for the caller to
+  compare.** `app/components/shortfall/VerdictCard.vue` does no date
+  arithmetic of its own; this is exactly the comparison that rule exists to
+  keep out of a `.vue` file.
+- **`daysBelow` excludes today.** Today's own status is already `firstBreach
+  === today`; counting it again would let a household read as "short 181 of
+  the next 180 days".
 
 ## Rules worth knowing before you change anything
 
@@ -206,6 +275,11 @@ amortized flat across the year, and the remainder is distributed so a month cost
 exactly what the user said a month costs. See `domain/discretionary.ts` for why
 the flat form was wrong in the one direction that matters.
 
+**Every `DayPoint` carries the same end-of-day semantics**, for the same reason:
+the low point is named on the day the money actually moved, not the day before.
+A renderer must step on that day rather than interpolate a diagonal into it — see
+`linePath` in `app/lib/burndown.ts`.
+
 **One walk, not two.** `project` produces the series, the running minimum and
 the closing balance in the same pass. `evaluate` takes that summary rather than
 a list of points precisely so that it *cannot* re-scan. If you find yourself
@@ -229,6 +303,13 @@ recurring items asked for one rather than leaving it implicit:
   not be stored regardless.
 - `nextOccurrenceOnOrAfter` inherits this for free — it is `occurrenceDates`'s
   first result over a bounded window, not a second walk.
+- **The anchor is a floor.** `occurrenceDates` expands backwards from
+  `nextOccurrence` to fill a chart's look-back, but never produces a date
+  before it — the anchor is the rule's first occurrence, not merely a phase
+  for locating the cycle. Without that floor, editing only the anchor's cycle
+  (moving a monthly rule a whole month, say) can leave every projected date
+  unchanged, since the day-of-month/weekday component is all that fed the
+  cycle.
 
 ## Performance
 

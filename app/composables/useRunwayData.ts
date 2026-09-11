@@ -10,8 +10,11 @@
  * hidden-account selection off `useState` and onto
  * `user_settings.default_horizon_days` and `public.dashboard_hidden_accounts`,
  * issue #13 gave `/accounts` a writer for
- * `user_settings.monthly_discretionary_cents`, and issue #14 gave
- * `/will-i-make-it` a writer for `user_settings.cushion_cents` —
+ * `user_settings.monthly_discretionary_cents`, and issue #14 gave a writer
+ * for `user_settings.cushion_cents` — originally on `/will-i-make-it`, moved
+ * to `/accounts` alongside the discretionary figure once the auto-save this
+ * screen did on every keystroke turned out to be able to leave the app
+ * unable to navigate away (see `SafetyCushionCard.vue`) —
  * `RunwayData.accounts`,
  * `RunwayData.recurringItems` and the settings that ride along with accounts
  * (`safetyCushion`, `monthlyDiscretionarySpend`, `timeZone`,
@@ -135,11 +138,12 @@ export function useRunwayData() {
           client
             .from('recurring_rules')
             .select(RECURRING_RULE_COLUMNS)
-            // `anchor_date` is a phase, not a "next date" (see
-            // app/lib/supabase/recurring-items.ts), so this is not the list's
-            // display order — the page computes and sorts on the true next
-            // occurrence itself. It just needs to be deterministic; id breaks
-            // the tie the same way the accounts query does.
+            // `anchor_date` is the rule's first occurrence, not a "next date"
+            // once it has passed (see app/lib/supabase/recurring-items.ts), so
+            // this is not the list's display order — the page computes and
+            // sorts on the true next occurrence itself. It just needs to be
+            // deterministic; id breaks the tie the same way the accounts
+            // query does.
             .order('anchor_date', { ascending: true })
             .order('id', { ascending: true }),
           client.from('user_settings').select(USER_SETTINGS_COLUMNS).maybeSingle(),
@@ -207,10 +211,11 @@ export function useRunwayData() {
   // persists it from the "Everyday spending" card on `/accounts` (issue #13),
   // using this overlay only to bend the chart optimistically while the write
   // is in flight. `cushion_cents` now has one too: `setSafetyCushion` persists
-  // it from `/will-i-make-it` (issue #14), the same way — the overlay is what
-  // bends the shortfall verdict (and, through this same computed, the
-  // dashboard's cushion line) the instant the user types, while that write is
-  // in flight. `time_zone` still rides along on the one `user_settings` query
+  // it from the "Safety cushion" card on the same screen (issue #14), the
+  // same way — the overlay is what bends the shortfall verdict (and, through
+  // this same computed, the dashboard's cushion line) the moment the write
+  // resolves, while it is in flight. `time_zone` still rides along on the one
+  // `user_settings` query
   // the discretionary designation already requires — a plain read, always —
   // and its setter below writes into this session-local overlay instead of
   // the database, exactly the stance `docs/database/schema.md` records for
@@ -603,19 +608,19 @@ export function useRunwayData() {
 
   /**
    * Persists the safety cushion to `user_settings.cushion_cents` under the
-   * caller's own session, from `/will-i-make-it` (issue #14) — the same
-   * component-side write path `setMonthlyDiscretionarySpend` uses, and for
-   * the same reason: this is the one stored cushion, shared with the
-   * dashboard's chart through the `safetyCushion` computed above, not a
-   * screen-local figure that could disagree with it.
+   * caller's own session, from the "Safety cushion" card on `/accounts`
+   * (issue #14) — the same component-side write path
+   * `setMonthlyDiscretionarySpend` uses, and for the same reason: this is the
+   * one stored cushion, shared with the dashboard's chart and
+   * `/will-i-make-it`'s verdict through the `safetyCushion` computed above,
+   * not a screen-local figure that could disagree with either.
    *
-   * Writes the overlay optimistically so the verdict bends the moment the
-   * user types, then persists with `upsert`, not `update`: a plain `update`
-   * silently affects zero rows for a user whose settings row is missing —
-   * exactly the case `toHouseholdSettings(null)` exists for. No `refresh()`
-   * follows: the overlay already carries the new value into `data`
-   * reactively, and re-running all four household queries would re-render
-   * the dashboard chart underneath the user.
+   * Writes the overlay optimistically, then persists with `upsert`, not
+   * `update`: a plain `update` silently affects zero rows for a user whose
+   * settings row is missing — exactly the case `toHouseholdSettings(null)`
+   * exists for. No `refresh()` follows: the overlay already carries the new
+   * value into `data` reactively, and re-running all four household queries
+   * would re-render the dashboard chart underneath the user.
    *
    * **Throws on a failed write, like `setMonthlyDiscretionarySpend` and
    * unlike `setDefaultHorizonDays`.** The cushion is a field on `RunwayData`
@@ -623,15 +628,15 @@ export function useRunwayData() {
    * against; a dropped write would leave the user reading an answer their
    * account does not hold.
    *
-   * **A failed write only rolls back its own optimistic value.** `/will-i-
-   * make-it` debounces commits behind a 400ms pause rather than a button, so
-   * two calls can be in flight at once — an earlier one failing after a
-   * later one has already landed its own optimistic write (or its own
-   * successful response) must not stomp that newer value back to the older
-   * snapshot; that is exactly "the screen shows a value the account does not
-   * hold" (PR #79 review finding #3). Checking that this call's own optimistic
-   * cushion is still current before restoring `previous` closes it without
-   * dropping either write or needing an in-flight guard at the caller.
+   * **A failed write only rolls back its own optimistic value**, not
+   * whatever is in the overlay by the time it fails. The card above disables
+   * its Save button while a call is in flight, so today's one caller cannot
+   * overlap two calls on itself — but checking that this call's own
+   * optimistic cushion is still current before restoring `previous` costs
+   * nothing and closes the failure mode a debounced, unguarded caller (this
+   * function's previous home on `/will-i-make-it`, and the reason PR #79
+   * review finding #3 exists) could otherwise hit: an earlier call's failure
+   * stomping a later call's already-landed success back to the older value.
    */
   async function setSafetyCushion(cushion: MinorUnits): Promise<void> {
     if (!Number.isFinite(cushion)) throw new Error('save-failed')

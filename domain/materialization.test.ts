@@ -134,8 +134,6 @@ describe('desiredOccurrences', () => {
     // No gap, no duplicate date, both rules present, each rule's own dates ascending.
     expect(dates).toEqual([...new Set(dates)])
     expect(desired.filter((d) => d.ruleId === 'rent-old').map((d) => d.date)).toEqual([
-      '2026-06-01',
-      '2026-07-01',
       '2026-08-01',
     ])
     expect(desired.filter((d) => d.ruleId === 'rent-new').map((d) => d.date)).toEqual([

@@ -297,6 +297,37 @@ test.describe('everyday spending', () => {
       .poll(async () => ((await headline.textContent())?.trim() ?? '') === before)
       .toBe(true)
   })
+
+  test('a failed save shows an error and leaves the typed draft on screen', async ({
+    emptyHouseholdPage: page,
+  }) => {
+    // Regression: `setMonthlyDiscretionarySpend` writes its optimistic value
+    // into the same computed the card resyncs from, and rolls that overlay
+    // straight back to the old stored value on a failed write — both before
+    // `onSave`'s own `catch` runs. Without a guard, the card's resync watcher
+    // treats that rollback as an external change and silently snaps the
+    // field back, hiding the error and destroying what was typed. Same bug,
+    // same fix, as `SafetyCushionCard.vue`'s version of this card — see its
+    // own test in `tests/e2e/shortfall.spec.ts`.
+    await addAccount(page, 'E2E Everyday Fail', '2000')
+    await gotoHydrated(page, '/accounts')
+
+    await page.route('**/rest/v1/user_settings*', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.continue()
+        return
+      }
+      await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
+    })
+
+    await page.locator('#discretionary-monthly').fill('300')
+    await page.locator('#discretionary-save').click()
+
+    await expect(
+      page.getByText('Could not save that amount. Check your connection and try again.'),
+    ).toBeVisible()
+    await expect(page.locator('#discretionary-monthly')).toHaveValue('300')
+  })
 })
 
 test.describe('the short household', () => {

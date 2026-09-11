@@ -44,6 +44,13 @@ export interface Occurrence {
   readonly isPredicted: boolean
 }
 
+/**
+ * `balance` is the balance at the *end* of `date` — the same end-of-day rule
+ * `balanceAsOf` follows, and everything that lands on `date` is already
+ * included. A renderer must therefore hold the previous day's value up to
+ * this day's x and only move on it; drawing a diagonal into this point puts
+ * the change a day early. See `linePath` in `app/lib/burndown.ts`.
+ */
 export interface DayPoint {
   readonly date: IsoDate
   readonly balance: MinorUnits
@@ -426,54 +433,86 @@ export function canAnswerShortfall(data: RunwayData): boolean {
 
 export interface ShortfallOutlook {
   readonly horizonEnd: IsoDate
+  /** The horizon length used to produce this outlook, echoed back for the caller's copy. */
+  readonly horizonDays: number
   /** The low point across the whole selectable horizon. */
   readonly horizonLowest: LowestPoint | null
   /** First day in the horizon the combined balance sits below the cushion, or `null`. */
   readonly firstBreach: IsoDate | null
-  /** Whether any selectable target can move the verdict at all. */
-  readonly isTargetSensitive: boolean
+  /**
+   * First day in the horizon at or above the cushion, or `null` if the balance
+   * never clears it within the horizon.
+   *
+   * Not "first day you recover" — if the balance was never below the cushion
+   * to begin with, this is `today` itself, same as every other day. Read it
+   * for what it says, not for what a caller might assume it implies; the
+   * screen only reads it behind a `firstBreach === today` guard, where it
+   * does mean recovery.
+   */
+  readonly recoversOn: IsoDate | null
+  /**
+   * Whether, once `recoversOn` is reached, the balance stays at or above the
+   * cushion for the rest of the horizon.
+   *
+   * A boolean rather than leaving the caller to compare `recoversOn` against
+   * the last breach itself: the component layer does no date arithmetic of
+   * its own, and this is exactly the kind of comparison that rule exists to
+   * keep out of a `.vue` file.
+   */
+  readonly staysClearAfterRecovery: boolean
+  /**
+   * Days *after* today, within the horizon, the balance sits below the
+   * cushion. Deliberately excludes today itself so this pairs with
+   * `horizonDays` — today's own status is already carried by
+   * `firstBreach === today`, and counting it here would let a household read
+   * as "short 181 of the next 180 days".
+   */
+  readonly daysBelow: number
 }
 
 /**
- * Whether the shortfall screen's target picker can change the verdict at all,
- * and what the user would see if they widened it as far as it goes.
+ * What the user would see if they widened the shortfall screen's target as
+ * far as it goes.
  *
  * `shortfallThrough`'s answer is the running minimum over `[today, through]`,
  * and a running minimum is monotonically non-increasing as the window widens —
  * it can only fall or hold as `through` moves later, never rise. For a
  * household whose low point lands early and the balance climbs afterward, that
- * means *every* selectable target contains the same trough: clicking between
- * bills or dates changes the caption and nothing else. That is not a bug in
- * the screen, but a user who sees the number refuse to move has no way to tell
- * "this answer is genuinely target-independent" apart from "this control is
- * broken" — and a household that is Covered through its target can still have
- * its cushion break shortly after it, which the target-scoped answer alone
- * never reveals.
+ * means every selectable target *past* that low point contains the same
+ * trough: clicking between bills or dates changes the caption and nothing
+ * else. That is not a bug in the screen, but a user who sees the number
+ * refuse to move has no way to tell "this answer is genuinely settled" apart
+ * from "this control is broken" — and a household that is Covered through its
+ * target can still have its cushion break shortly after it, which the
+ * target-scoped answer alone never reveals. `laterTargetsMatter` answers the
+ * first; `firstBreach` here answers the second.
  *
- * Both are answered from one extra projection rather than two, and without
- * re-deriving any minimum `project` did not already find:
- *
- * - The **narrowest** window any target can produce is `today + 1` day
- *   (`TARGET_MIN_OFFSET_DAYS`; bill targets are always ≥ today + 1 too). Its
- *   low point is the best case for the verdict moving.
- * - The **widest** window is the full horizon. Because the minimum is
- *   monotone, comparing the narrowest window's low against the widest
- *   window's low answers "can any target the user picks change this answer?"
- *   in one comparison — if they agree, nothing between them can differ either.
- * - `firstBreach` is the one scan this function performs, and it is
- *   information `project` does not compute: not a minimum, but the first day
- *   the combined line crosses below the cushion, which the running-minimum
- *   summary alone cannot name.
+ * One extra projection covers all of it, and without re-deriving any minimum
+ * `project` did not already find: `horizonLowest` is the low across the whole
+ * selectable horizon, read straight from that projection's summary. Every
+ * other field here — `firstBreach`, `recoversOn`, `staysClearAfterRecovery`,
+ * `daysBelow` — comes from one `for` loop over that same projection's
+ * `combined` series, because none of them is a minimum and `project` had no
+ * reason to compute any of them. That loop is the one scan this function
+ * performs; nothing here re-scans the series a second time to find a
+ * different fact about it.
  *
  * This is a product decision about honesty, not a rendering one — the same
  * reason `canAnswerShortfall` lives here rather than in the screen — which is
- * why the two sit together.
+ * why the two sit together. It is also why a household below its cushion
+ * *today* gets fields to describe the shape of that dip: `shortfallThrough`
+ * measures the running minimum over a window that always includes today, so
+ * every selectable target reads Short — arithmetically correct, and useless
+ * on its own. What the screen can still say honestly is when the household
+ * clears the cushion and whether it stays clear, which is exactly what
+ * `recoversOn`, `staysClearAfterRecovery` and `daysBelow` are for.
  */
 export function shortfallOutlook(
   data: RunwayData,
   question: { today: IsoDate; cushion: MinorUnits; horizonDays?: number },
 ): ShortfallOutlook {
-  const horizonEnd = addDays(question.today, question.horizonDays ?? SHORTFALL_OUTLOOK_HORIZON_DAYS)
+  const horizonDays = question.horizonDays ?? SHORTFALL_OUTLOOK_HORIZON_DAYS
+  const horizonEnd = addDays(question.today, horizonDays)
   const full = project(data, {
     start: question.today,
     end: horizonEnd,
@@ -481,25 +520,63 @@ export function shortfallOutlook(
   })
   const horizonLowest = full.combinedSummary.lowest
 
-  // The one permitted scan: the first day below the cushion is not a minimum,
-  // so nothing `project` already computed can answer it.
-  const firstBreach = full.combined.find((point) => point.balance < question.cushion)?.date ?? null
-
-  // The narrowest window any target can produce: `TARGET_MIN_OFFSET_DAYS` in
-  // app/lib/shortfall-target.ts is 1, and bill targets are always ≥ today + 1.
-  // Hardcoded rather than imported — the engine cannot import from `app/`.
-  const nearest = project(data, {
-    start: question.today,
-    end: addDays(question.today, 1),
-    verdictFrom: question.today,
-  })
+  // The one permitted scan: none of the four facts below is a minimum, so
+  // nothing `project` already computed can answer any of them, and all four
+  // come from this single pass rather than four separate ones.
+  let firstBreach: IsoDate | null = null
+  let lastBreach: IsoDate | null = null
+  let recoversOn: IsoDate | null = null
+  let daysBelow = 0
+  for (const point of full.combined) {
+    if (point.balance < question.cushion) {
+      if (firstBreach === null) firstBreach = point.date
+      lastBreach = point.date
+      if (point.date !== question.today) daysBelow += 1
+    } else if (recoversOn === null) {
+      recoversOn = point.date
+    }
+  }
+  // Stays clear once it recovers only if there was ever a breach to clear and
+  // recovery is not itself undone by a later dip — `lastBreach === null`
+  // covers "never dipped at all", where "stays clear" is vacuously true.
+  const staysClearAfterRecovery =
+    recoversOn !== null && (lastBreach === null || compareDates(lastBreach, recoversOn) < 0)
 
   return {
     horizonEnd,
+    horizonDays,
     horizonLowest,
     firstBreach,
-    isTargetSensitive: nearest.combinedSummary.lowest?.balance !== horizonLowest?.balance,
+    recoversOn,
+    staysClearAfterRecovery,
+    daysBelow,
   }
+}
+
+/**
+ * Whether any target later than this answer's could change the verdict.
+ *
+ * The running minimum is monotone in the target, so once the answer's low
+ * point equals the low across the whole horizon there is nothing further out
+ * left to find — every later target returns the identical verdict. That is
+ * the difference between "the picker is broken" and "the picker has nothing
+ * more to tell you", which the screen otherwise has no way to say.
+ *
+ * Deliberately target-*relative*, not target-*absolute*: an earlier version
+ * of this compared the narrowest selectable window (`today` to `today + 1`)
+ * against the horizon, which is too literal — a daily discretionary drain
+ * nudges that one-day low down by a dollar or two before income lands, so it
+ * disagreed with the horizon even for a household whose real trough sits at
+ * the very first selectable target. Comparing *this answer's* low against the
+ * horizon's asks the question the screen actually needs answered: is there
+ * anything past what the user is looking at right now?
+ *
+ * No extra projection — it compares two figures both engine calls already
+ * produced. Two nulls compare equal, which is the right reading: no low point
+ * in either window is "nothing more to find" too.
+ */
+export function laterTargetsMatter(answer: ShortfallAnswer, outlook: ShortfallOutlook): boolean {
+  return answer.lowest?.balance !== outlook.horizonLowest?.balance
 }
 
 export interface ShortfallQuestion {

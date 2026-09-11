@@ -32,6 +32,7 @@ import {
   gridLineYs,
   labelFlipsLeft,
   MOBILE_LAYOUT,
+  markerBalance,
   percentOf,
   scaleX,
   scaleY,
@@ -160,7 +161,13 @@ interface Marker {
   readonly filled: boolean
 }
 
-/** Markers sit only on days something actually lands, which is what makes them readable. */
+/**
+ * Markers sit only on days something actually lands, which is what makes them
+ * readable. A marker's y comes from `markerBalance` in `app/lib/burndown.ts`:
+ * a hollow (bill) marker sits at the post-event balance, and a filled
+ * (income) marker sits at the lower of the day's two balances, so a rise's
+ * marker never floats above the line at its peak.
+ */
 const markers = computed<Marker[]>(() => {
   const result: Marker[] = []
   for (const [index, date] of props.days.entries()) {
@@ -171,22 +178,30 @@ const markers = computed<Marker[]>(() => {
       if (forAccount.length === 0) continue
       const point = entry.points[index]
       if (!point) continue
+      const filled = forAccount.some((occurrence) => occurrence.amount > 0)
+      const previousPoint = index > 0 ? entry.points[index - 1] : undefined
       result.push({
         key: `${entry.id}-${date}`,
         cx: scaleX(index, count.value, layout.value),
-        cy: scaleY(point.balance, range.value, layout.value),
+        cy: scaleY(markerBalance(previousPoint, point, filled), range.value, layout.value),
         stroke: entry.stroke,
-        filled: forAccount.some((occurrence) => occurrence.amount > 0),
+        filled,
       })
     }
     const combinedPoint = props.combined?.[index]
     if (combinedPoint) {
+      const filled = onDay.some((occurrence) => occurrence.amount > 0)
+      const previousCombined = index > 0 ? props.combined?.[index - 1] : undefined
       result.push({
         key: `combined-${date}`,
         cx: scaleX(index, count.value, layout.value),
-        cy: scaleY(combinedPoint.balance, range.value, layout.value),
+        cy: scaleY(
+          markerBalance(previousCombined, combinedPoint, filled),
+          range.value,
+          layout.value,
+        ),
         stroke: 'var(--chart-1)',
-        filled: onDay.some((occurrence) => occurrence.amount > 0),
+        filled,
       })
     }
   }
@@ -426,7 +441,10 @@ function onFocus(): void {
            series: history is always solid and the forecast always dashed
            (#63), and a round linecap on a single dashed path would swallow
            the gaps at the stroke widths this chart supports (Trap B) — butt
-           caps on both segments keep the dashes readable at every density. -->
+           caps on both segments keep the dashes readable at every density.
+           Each half is a step path (see `linePath`), so the seam at
+           `todayIndex` is the shared vertex at the top/bottom of today's own
+           riser, not a point mid-diagonal. -->
       <template v-for="line in drawnLines" :key="line.key">
         <path
           v-if="line.past"
