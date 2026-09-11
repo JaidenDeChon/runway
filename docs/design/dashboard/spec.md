@@ -482,9 +482,15 @@ left a third exactly where it was — on purpose, not by neglect:
 7. **Zero crossing.** The only banded region is *below the safety cushion*. A balance that goes
    negative gets no distinct treatment, and the y-axis has no emphasised zero line. Should crossing
    zero read differently from crossing the cushion?
-8. **Where does the safety cushion come from?** It is a hardcoded $600 here, and the shortfall screen
-   has its own editable "Safety cushion" input. Is it one shared setting, and is it editable from
-   this screen?
+8. **Where does the safety cushion come from?** **Answered (issue #14, edited by a later fix):** it
+   is one shared `user_settings.cushion_cents`, read by this chart, `/will-i-make-it`'s verdict and
+   `evaluate()`'s covered/tight/short banding alike — never a screen-local figure. It is not editable
+   from this screen or from `/will-i-make-it`; both display it read-only. It is edited from the
+   "Safety cushion" card on `/accounts`, alongside "Everyday spending" — not `/will-i-make-it`, where
+   it first landed, because auto-saving it there on every keystroke and flushing a pending edit from
+   a component-teardown hook on the way out could leave the app unable to navigate away after an
+   edit, and could lose the write in the process, leaving this exact chart's danger band showing a
+   cushion the account did not actually hold.
 9. **"Save change" has no home.** Saved overrides mutate the projection permanently with no toast,
    no undo, and no indication afterwards that a projected occurrence was overridden. Does an
    override become a real edit to the recurring item, or a one-off exception record?

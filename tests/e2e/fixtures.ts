@@ -158,13 +158,15 @@ export async function assertSessionAuthenticates(session: BrowserSession): Promi
  * needed. `user_settings` is reset alongside it in case a test ever sets the
  * discretionary designation, the staleness threshold, (issue #12) the
  * dashboard's stored horizon, (issue #13) the monthly discretionary figure,
- * or (issue #14) the safety cushion. Those last two matter beyond tidiness: a
- * crashed "everyday spending" test would otherwise leave D with a drain, and
- * a crashed `/will-i-make-it` test would leave D's cushion at whatever figure
- * that test typed — either way the exact-figure verdict tests in
- * `dashboard-states.spec.ts` ("Covered"/"$2,000", "Tight"/"$700", "Short by
- * $500", all measured against D's seeded $600 cushion) would then start
- * failing for a reason that looks nothing like the cause.
+ * or (issue #14) the safety cushion — both #13 and #14 are edited from
+ * `/accounts` now (`DiscretionarySpendCard.vue`, `SafetyCushionCard.vue`).
+ * Those last two matter beyond tidiness: a crashed "everyday spending" test
+ * would otherwise leave D with a drain, and a crashed "safety cushion" test
+ * would leave D's cushion at whatever figure that test typed — either way the
+ * exact-figure verdict tests in `dashboard-states.spec.ts` ("Covered"/"$2,000",
+ * "Tight"/"$700", "Short by $500", all measured against D's seeded $600
+ * cushion) would then start failing for a reason that looks nothing like the
+ * cause.
  */
 export async function resetEmptyHousehold(): Promise<void> {
   const sql = adminSql()

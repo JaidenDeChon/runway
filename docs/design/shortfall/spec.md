@@ -132,10 +132,10 @@ The first group reads `recoversOn`, `staysClearAfterRecovery` and `daysBelow` of
 - **Mode Tabs** — click "Upcoming bill" / "Pick a date" → swaps the input region between the bill RadioGroup and the date Input → verdict recalculates immediately against the new target. Mode state is independent: switching back restores the previously selected bill, and the date keeps its value.
 - **Bill row** — click anywhere on the row (not just the dot) → selects that bill as the target → row gains an `--accent` background and a filled inner dot; the previous row clears → verdict and sub-line date recalculate.
 - **Date Input** — change → sets the target date. Bounded: `min` = today + 1 day, `max` = today + 180 days. An empty/cleared value is ignored (the previous date is retained).
-- **Safety cushion Input** — change → re-evaluates the verdict. Non-numeric input coerces to `0`. There is no debounce in the export; every keystroke re-renders. Recommend the real implementation update on input with the verdict region in an `aria-live` region.
-- **Everything is instant and local.** No submit button, no server round-trip, nothing optimistic. The verdict is a pure function of (target, cushion, projection).
+- **Safety cushion is read-only here**, a deviation from the export raised rather than resolved silently. The export specs an editable Input that re-evaluates the verdict on every keystroke with no debounce; issue #14 shipped exactly that, wired to a live `user_settings.cushion_cents` write on every keystroke and flushed from a component-teardown hook to catch a pending edit on the way out. That combination could leave the app unable to navigate away after an edit until the page was hard-reloaded, and the write racing the navigation could lose — the chart's danger band would then keep showing a cushion the account did not actually hold. The cushion now has one editor, the "Safety cushion" card on `/accounts` (`SafetyCushionCard.vue`, an explicit-Save field matching "Everyday spending" right above it), and this screen displays the stored figure with a link to change it. The verdict still recalculates the moment the stored cushion changes, same as before — only *where* it is typed moved.
+- **Everything else is instant and local.** No submit button, no server round-trip, nothing optimistic. The verdict is a pure function of (target, cushion, projection); the cushion itself is the one piece of it with a save step, and that step lives on `/accounts` now.
 
-Not visible in a static export: focus rings on the radio rows and both inputs, and the transition when the verdict flips between covered and short — the headline changes both text and color, so it should crossfade rather than snap.
+Not visible in a static export: focus rings on the radio rows and the date input, and the transition when the verdict flips between covered and short — the headline changes both text and color, so it should crossfade rather than snap.
 
 ---
 
@@ -152,6 +152,7 @@ Exact strings. This screen is copy-heavy and the wording carries the product's v
 | Date field label | `Date` |
 | Cushion label | `Safety cushion` |
 | Cushion help | `The lowest balance you're comfortable letting it reach.` |
+| Cushion edit link | `Change it in Accounts` — see the read-only deviation note above |
 | Badge (covered) | `Covered` |
 | Badge (short) | `Short` |
 | Headline (covered) | `You're covered.` |

@@ -4,6 +4,7 @@ import AppPage from '@/components/AppPage.vue'
 import AccountEditor from '@/components/accounts/AccountEditor.vue'
 import AccountRow from '@/components/accounts/AccountRow.vue'
 import DiscretionarySpendCard from '@/components/accounts/DiscretionarySpendCard.vue'
+import SafetyCushionCard from '@/components/accounts/SafetyCushionCard.vue'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -135,6 +136,11 @@ function openAdd(): void {
          least one account: a spending figure with nothing to drain is noise,
          and the accounts card already carries the empty-state copy. -->
     <DiscretionarySpendCard v-if="!showSkeleton && !loadError && accounts.length > 0" />
+
+    <!-- Same gate as the card above: a cushion has nothing to be measured
+         against until there is a balance to project. Moved here from
+         `/will-i-make-it` — see SafetyCushionCard's own doc comment for why. -->
+    <SafetyCushionCard v-if="!showSkeleton && !loadError && accounts.length > 0" />
 
     <!-- Inert by design: not focusable, not clickable, and kept out of the
          tab order entirely rather than merely dimmed. -->

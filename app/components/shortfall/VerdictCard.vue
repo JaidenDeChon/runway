@@ -89,8 +89,10 @@ const outlookNote = computed(() => {
 <template>
   <Card>
     <CardContent class="flex flex-col gap-4 lg:items-center lg:text-center">
-      <!-- Announces itself to a screen reader on every cushion keystroke,
-           since the badge/headline/sub-line change with no focus movement. -->
+      <!-- Announces itself to a screen reader whenever the verdict changes —
+           a different bill or date picked here, or the stored cushion
+           changing on `/accounts` — since the badge/headline/sub-line change
+           with no focus movement. -->
       <Transition name="verdict-fade" mode="out-in">
         <div :key="props.verdict.isCovered ? 'covered' : 'short'" aria-live="polite" class="flex flex-col gap-2 lg:items-center">
           <Badge :class="props.verdict.isCovered ? 'bg-chart-positive/16 text-chart-positive' : 'bg-destructive/16 text-destructive'">

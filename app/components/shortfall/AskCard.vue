@@ -1,14 +1,17 @@
 <script setup lang="ts">
 /**
  * The "ask" card: mode Tabs, then either the bill RadioGroup or a date
- * Input, then the safety-cushion row.
+ * Input, then a read-only safety-cushion row.
  *
- * All four pieces of state (mode, selected bill, selected date, cushion) are
- * owned by the page — this component only renders them and emits changes, so
- * switching tabs never loses the bill selection or the typed date.
+ * Mode, selected bill and selected date are owned by the page — this
+ * component only renders them and emits changes, so switching tabs never
+ * loses the bill selection or the typed date. The cushion is read-only here:
+ * it moved to `/accounts` (`SafetyCushionCard.vue`), the one place that
+ * writes it now, so this card only displays the stored figure and points at
+ * where to change it.
  */
 import { computed } from 'vue'
-import MoneyInput from '@/components/MoneyInput.vue'
+import MoneyText from '@/components/MoneyText.vue'
 import BillOptionRow from '@/components/shortfall/BillOptionRow.vue'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -29,7 +32,6 @@ const props = defineProps<{
   selectedBillId: string | null
   selectedDate: IsoDate
   cushion: MinorUnits
-  cushionError?: string | null
   bills: readonly UpcomingBill[]
   today: IsoDate
 }>()
@@ -38,7 +40,6 @@ const emit = defineEmits<{
   'update:mode': [value: 'bill' | 'date']
   'update:selectedBillId': [value: string]
   'update:selectedDate': [value: IsoDate]
-  'update:cushion': [value: MinorUnits]
 }>()
 
 // Bounded per spec: the earliest answerable date is tomorrow, the furthest is
@@ -137,25 +138,16 @@ function onDateInput(value: string | number): void {
 
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex-1">
-          <Label for="shortfall-cushion">Safety cushion</Label>
+          <p class="text-sm font-medium">Safety cushion</p>
           <p class="mt-1 text-xs text-muted-foreground lg:whitespace-nowrap">
             The lowest balance you're comfortable letting it reach.
           </p>
-          <p class="mt-1 text-xs text-muted-foreground">
-            Saved to your account. Your dashboard uses the same cushion.
-          </p>
         </div>
-        <MoneyInput
-          id="shortfall-cushion"
-          :model-value="props.cushion"
-          aria-label="Safety cushion"
-          class="w-28 shrink-0"
-          @update:model-value="(value) => emit('update:cushion', value)"
-        />
+        <MoneyText :amount="props.cushion" size="lg" label="Safety cushion" />
       </div>
-      <p v-if="props.cushionError" role="alert" class="text-sm text-destructive">
-        {{ props.cushionError }}
-      </p>
+      <NuxtLink to="/accounts" :class="ARROW_LINK">
+        Change it in Accounts<span aria-hidden="true"> →</span>
+      </NuxtLink>
     </CardContent>
   </Card>
 </template>
