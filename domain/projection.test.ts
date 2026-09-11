@@ -762,6 +762,102 @@ describe('shortfallOutlook', () => {
     const wide = shortfallOutlook(dataset, { today: SEED_TODAY, cushion, horizonDays: 45 })
     expect(wide.firstBreach).toBe(addDays(SEED_TODAY, 40))
   })
+
+  it('recoversOn is the first day at or above the cushion, not the day the dip ends deepening', () => {
+    // Already below cushion today, dips deeper on day 2, then recovers on day
+    // 6 — recoversOn must name day 6, not day 2 (the day the dip stopped
+    // getting worse, which is not the same thing as clearing the cushion).
+    const dataset = data({
+      accounts: [account({ balance: toMinorUnits(400) })],
+      recurringItems: [
+        onceOn(addDays(SEED_TODAY, 2), { id: 'bill', name: 'Bill', amount: toMinorUnits(100) }),
+        onceOn(addDays(SEED_TODAY, 6), {
+          id: 'pay',
+          name: 'Pay',
+          kind: 'income',
+          amount: toMinorUnits(700),
+        }),
+      ],
+    })
+    const outlook = shortfallOutlook(dataset, { today: SEED_TODAY, cushion: toMinorUnits(500) })
+    expect(outlook.firstBreach).toBe(SEED_TODAY)
+    expect(outlook.recoversOn).toBe(addDays(SEED_TODAY, 6))
+  })
+
+  it('recoversOn is null when the balance never clears the cushion within the horizon', () => {
+    const dataset = data({ accounts: [account({ balance: toMinorUnits(100) })] })
+    const outlook = shortfallOutlook(dataset, { today: SEED_TODAY, cushion: toMinorUnits(500) })
+    expect(outlook.recoversOn).toBeNull()
+  })
+
+  it('daysBelow excludes today itself, so it pairs with horizonDays rather than over-counting', () => {
+    const dataset = data({
+      accounts: [account({ balance: toMinorUnits(500) })],
+      recurringItems: [
+        onceOn(addDays(SEED_TODAY, 10), {
+          id: 'pay',
+          name: 'Pay',
+          kind: 'income',
+          amount: toMinorUnits(700),
+        }),
+      ],
+    })
+    const outlook = shortfallOutlook(dataset, { today: SEED_TODAY, cushion: toMinorUnits(1000) })
+    // Below on today and every day through day 9; recovers on day 10. Nine
+    // days counted, not ten — today's own status is `firstBreach === today`.
+    expect(outlook.firstBreach).toBe(SEED_TODAY)
+    expect(outlook.recoversOn).toBe(addDays(SEED_TODAY, 10))
+    expect(outlook.daysBelow).toBe(9)
+  })
+
+  // Regression lock for the two shapes the "below the cushion today" note used
+  // to be unable to tell apart: a flat "every target starts short" is
+  // arithmetically correct but reads identically for a three-day dip that
+  // clears for good and a household still underwater six months out. These
+  // two fields are what let the copy layer distinguish them without doing any
+  // date comparison of its own.
+  it('regression: below today, clears, and stays clear reports staysClearAfterRecovery true', () => {
+    const dataset = data({
+      accounts: [account({ balance: toMinorUnits(300) })],
+      recurringItems: [
+        onceOn(addDays(SEED_TODAY, 3), {
+          id: 'pay',
+          name: 'Pay',
+          kind: 'income',
+          amount: toMinorUnits(250),
+        }),
+      ],
+    })
+    const outlook = shortfallOutlook(dataset, { today: SEED_TODAY, cushion: toMinorUnits(500) })
+    expect(outlook.firstBreach).toBe(SEED_TODAY)
+    expect(outlook.recoversOn).toBe(addDays(SEED_TODAY, 3))
+    expect(outlook.daysBelow).toBe(2)
+    expect(outlook.staysClearAfterRecovery).toBe(true)
+  })
+
+  it('regression: below today, clears, then dips again reports staysClearAfterRecovery false with daysBelow well above zero', () => {
+    const dataset = data({
+      accounts: [account({ balance: toMinorUnits(300) })],
+      recurringItems: [
+        onceOn(addDays(SEED_TODAY, 3), {
+          id: 'pay',
+          name: 'Pay',
+          kind: 'income',
+          amount: toMinorUnits(250),
+        }),
+        // A permanent second drop, well after the first recovery, that the
+        // household never climbs back out of within the horizon.
+        onceOn(addDays(SEED_TODAY, 50), { id: 'bill', name: 'Bill', amount: toMinorUnits(100) }),
+      ],
+    })
+    const outlook = shortfallOutlook(dataset, { today: SEED_TODAY, cushion: toMinorUnits(500) })
+    // recoversOn still names the *first* crossing — the second dip does not
+    // erase it — but staysClearAfterRecovery is false because a later day
+    // dips back under.
+    expect(outlook.recoversOn).toBe(addDays(SEED_TODAY, 3))
+    expect(outlook.staysClearAfterRecovery).toBe(false)
+    expect(outlook.daysBelow).toBeGreaterThan(100)
+  })
 })
 
 describe('laterTargetsMatter', () => {
@@ -787,8 +883,12 @@ describe('laterTargetsMatter', () => {
   })
   const outlookWithLow = (balance: number | null): ShortfallOutlook => ({
     horizonEnd: '2026-12-01',
+    horizonDays: 108,
     horizonLowest: balance === null ? null : { date: '2026-11-01', balance: toMinorUnits(balance) },
     firstBreach: null,
+    recoversOn: '2026-08-15',
+    staysClearAfterRecovery: false,
+    daysBelow: 0,
   })
 
   it('is true when a trough later than the target is deeper', () => {

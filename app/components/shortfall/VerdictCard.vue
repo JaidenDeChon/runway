@@ -16,7 +16,7 @@ import { Separator } from '@/components/ui/separator'
 import { formatDateShort, formatMoney } from '@/lib/format'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
-import type { Verdict } from '~~/domain/projection'
+import type { ShortfallOutlook, Verdict } from '~~/domain/projection'
 
 const props = defineProps<{
   verdict: Verdict
@@ -26,8 +26,8 @@ const props = defineProps<{
   today: IsoDate
   /** Whether a later target could still change the verdict — `laterTargetsMatter`. */
   laterTargetsMatter: boolean
-  /** First day in the outlook horizon the cushion breaks, or `null` — `shortfallOutlook`. */
-  firstBreach: IsoDate | null
+  /** The whole-horizon picture the outlook note is built from — `shortfallOutlook`. */
+  outlook: ShortfallOutlook
 }>()
 
 const targetLabel = computed(() => formatDateShort(props.targetDate))
@@ -55,20 +55,32 @@ const lowestLabel = computed(() => {
  * construction — each condition below can be true at the same time as the
  * next one, so the first match wins:
  *
- * 1. Already short today: no target can do anything but reproduce that, and
- *    naming it directly is more useful than letting the picker look inert.
+ * 1. Already short today: `shortfallThrough` measures the running minimum
+ *    over a window that always includes today, so every selectable target
+ *    reads Short as a matter of arithmetic — saying that back is not
+ *    something the user can act on. What they can act on is when they clear
+ *    the cushion and whether it holds, which is what the three shapes below
+ *    say instead of a single flat "every target starts short".
  * 2. Nothing later than the current target can move the verdict either way.
  * 3. Covered right now, but the cushion breaks somewhere further out.
  */
 const outlookNote = computed(() => {
-  if (props.firstBreach === props.today) {
-    return 'You are below your cushion today, so every target starts short.'
+  if (props.outlook.firstBreach === props.today) {
+    const { recoversOn, staysClearAfterRecovery, daysBelow, horizonDays, horizonEnd } =
+      props.outlook
+    if (recoversOn === null) {
+      return `You stay below your cushion for the whole of the next ${horizonDays} days.`
+    }
+    if (staysClearAfterRecovery) {
+      return `You're below your cushion until ${formatDateShort(recoversOn)}, then clear through ${formatDateShort(horizonEnd)}.`
+    }
+    return `You're below your cushion on ${daysBelow} of the next ${horizonDays} days.`
   }
   if (!props.laterTargetsMatter) {
     return "Picking a later bill or date won't change this — your low point falls inside this window."
   }
-  if (props.verdict.isCovered && props.firstBreach) {
-    return `Look further out, though: your cushion breaks on ${formatDateShort(props.firstBreach)}.`
+  if (props.verdict.isCovered && props.outlook.firstBreach) {
+    return `Look further out, though: your cushion breaks on ${formatDateShort(props.outlook.firstBreach)}.`
   }
   return null
 })
