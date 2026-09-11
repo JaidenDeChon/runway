@@ -170,3 +170,17 @@ Full guide: `docs/testing.md`. What an agent must not get wrong:
   `test.fixme` is only for what cannot run at all yet.
 - Playwright traces and screenshots contain rendered balances. They are failure-
   only CI artifacts; never commit them and never echo them into a log.
+
+---
+
+## Watching a PR
+
+**Event-based wakeups only — never timer-based polling.** Subscribing to a
+PR's GitHub activity delivers CI completion, new commits and comments as they
+happen; a scheduled check-in that re-checks the same PR on a timer duplicates
+that for no benefit and burns a session wakeup for nothing. If you are
+subscribed and CI is still running, that is not a reason to schedule a
+check-in — the completion event will arrive on its own. Only schedule a
+timed follow-up for something that genuinely cannot notify you: a person
+said they'd get back to you by a certain time, or a system you have no
+subscription or event hook for.
