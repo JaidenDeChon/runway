@@ -40,7 +40,17 @@ const justSaved = ref(false)
 
 // Resync if the household reloads underneath (a `refresh()` elsewhere, a
 // sign-in), and drop the confirmation once the stored value has moved on.
+//
+// Skipped while a save is in flight: `setSafetyCushion` writes its optimistic
+// value to this same computed *and*, on a failed write, rolls it straight
+// back to the old one — both changes land before `onSave`'s `catch` even
+// runs. Resyncing on the second one would silently snap the field back to
+// the stored value the instant the error appeared, hiding the very thing the
+// error message is reporting and destroying what the user typed. `onSave`'s
+// `finally` is what clears `saving`, so the field simply keeps whatever the
+// user last typed until they act on the error.
 watch(safetyCushion, (next) => {
+  if (saving.value) return
   draft.value = next
   justSaved.value = false
 })
