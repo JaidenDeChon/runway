@@ -134,6 +134,49 @@ test.describe('creating and managing an account', () => {
     await expect(row).toContainText(/Last updated \d+ days ago/)
   })
 
+  test('re-dates the reading to today when only the balance changes', async ({
+    emptyHouseholdPage: page,
+  }) => {
+    // A fixed, known day rather than "today" — the assertion below only needs
+    // to know this exact string disappears from the row, never what today's
+    // date actually renders as, so it carries no timezone risk of its own.
+    const pastIso = '2026-01-05'
+    const pastFormatted = new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(new Date(`${pastIso}T00:00:00Z`))
+
+    await gotoHydrated(page, '/accounts')
+    const dialog = page.getByRole('dialog')
+    await clickUntil(page.getByRole('button', { name: 'Add account' }), dialog)
+
+    await page.locator('#account-name').fill('E2E Balance Only')
+    await page.locator('#account-balance').fill('500')
+    await page.locator('#account-as-of').fill(pastIso)
+
+    const row = page.getByRole('button', { name: 'Edit E2E Balance Only' })
+    await clickUntil(dialog.getByRole('button', { name: 'Add account' }), row)
+    await expect(row).toContainText(`Balance as of ${pastFormatted}`)
+
+    // Reopen and change only the balance — "As of" is left exactly as the
+    // form seeded it. The fix under test is that this must not save $550
+    // back against `pastIso`, silently redating that account's current
+    // reading to a stale day instead of recording what it holds now.
+    await clickUntil(row, dialog)
+    await page.locator('#account-balance').fill('550')
+    await clickUntil(
+      dialog.getByRole('button', { name: 'Save changes' }),
+      row.filter({
+        hasText: '$550',
+      }),
+    )
+
+    await expect(row).toContainText('$550')
+    await expect(row).not.toContainText(`Balance as of ${pastFormatted}`)
+  })
+
   test('archives an account and restores it', async ({ emptyHouseholdPage: page }) => {
     await gotoHydrated(page, '/accounts')
     const dialog = page.getByRole('dialog')

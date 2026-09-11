@@ -15,7 +15,7 @@ import { dailyDiscretionary } from './discretionary'
 import type { MinorUnits } from './money'
 import type { OccurrenceOverride } from './overrides'
 import { applyOverrides } from './overrides'
-import type { Account, RecurringItem, RunwayData } from './types'
+import type { Account, BalanceSnapshot, RecurringItem, RunwayData } from './types'
 
 /** $250 of headroom above the cushion is the boundary between Covered and Tight. */
 export const TIGHT_THRESHOLD: MinorUnits = 25_000
@@ -232,29 +232,87 @@ function buildDeltas(
 }
 
 /**
- * Integrates one account's deltas outward from its as-of reading.
+ * Every reading that anchors `account`'s balance, oldest first: its history
+ * from `data.balanceHistory`, followed by its current `balance`/`balanceAsOf`.
  *
- * The stored balance is true *on* `balanceAsOf` and already includes that day's
- * activity, so integration runs forward from that index and backward from it —
- * subtracting, not adding — for any part of the window that precedes it.
+ * Kept to one entry per account per day — a day can only have one true
+ * balance — so a history row sharing `account`'s current `balanceAsOf` is
+ * dropped in favour of the current reading, which is always the freshest
+ * write for that day.
  */
-function integrate(
-  account: Account,
+function readingsFor(data: RunwayData, account: Account): BalanceSnapshot[] {
+  const earlier = data.balanceHistory
+    .filter(
+      (reading) =>
+        reading.accountId === account.id && compareDates(reading.asOf, account.balanceAsOf) < 0,
+    )
+    .sort((a, b) => compareDates(a.asOf, b.asOf))
+  return [
+    ...earlier,
+    { accountId: account.id, balance: account.balance, asOf: account.balanceAsOf },
+  ]
+}
+
+/**
+ * Lays one reading's forward projection onto `balances`, in place.
+ *
+ * `backfill` also walks backward from the reading — subtracting each day's
+ * delta rather than adding it — to cover any part of `days` that precedes it.
+ * Only the oldest reading in a chain is ever given `backfill: true`; every
+ * later one must leave what an earlier reading already said about a day
+ * before it untouched, which is exactly what makes a new reading move the
+ * chart from its own day forward and nowhere earlier.
+ */
+function applyReading(
+  balances: MinorUnits[],
+  reading: { readonly balance: MinorUnits; readonly asOf: IsoDate },
   days: readonly IsoDate[],
   deltas: Map<IsoDate, MinorUnits>,
-): MinorUnits[] {
-  const balances = new Array<MinorUnits>(days.length).fill(0)
-  if (days.length === 0) return balances
-
-  let anchorIndex = days.findIndex((date) => compareDates(date, account.balanceAsOf) >= 0)
-  if (anchorIndex === -1) anchorIndex = days.length - 1
-  balances[anchorIndex] = account.balance
+  backfill: boolean,
+): void {
+  const foundIndex = days.findIndex((date) => compareDates(date, reading.asOf) >= 0)
+  // A later reading dated entirely after every visible day has nothing to
+  // overwrite yet — the window simply has not reached it. Only the oldest
+  // reading (`backfill: true`) falls back to the last day instead, which is
+  // what lets a single, future-dated reading still back-fill a window that
+  // does not yet reach it — the original, single-anchor behaviour.
+  if (foundIndex === -1 && !backfill) return
+  const anchorIndex = foundIndex === -1 ? days.length - 1 : foundIndex
+  balances[anchorIndex] = reading.balance
 
   for (let i = anchorIndex + 1; i < days.length; i++) {
     balances[i] = (balances[i - 1] ?? 0) + (deltas.get(days[i] as IsoDate) ?? 0)
   }
-  for (let i = anchorIndex - 1; i >= 0; i--) {
-    balances[i] = (balances[i + 1] ?? 0) - (deltas.get(days[i + 1] as IsoDate) ?? 0)
+  if (backfill) {
+    for (let i = anchorIndex - 1; i >= 0; i--) {
+      balances[i] = (balances[i + 1] ?? 0) - (deltas.get(days[i + 1] as IsoDate) ?? 0)
+    }
+  }
+}
+
+/**
+ * Integrates one account's deltas outward from its chain of readings.
+ *
+ * Each stored balance is true *on* its own `asOf` and already includes that
+ * day's activity. The oldest reading in `readings` is integrated both ways —
+ * forward, and backward to cover whatever part of `days` precedes it — the
+ * same single-anchor walk this function always did. Every later reading only
+ * overwrites forward from its own day, layered on top in ascending order, so
+ * a new reading can never rewrite what an earlier one already produced for a
+ * day before it. With exactly one reading — still the common case — this is
+ * byte-for-byte the original single-anchor walk.
+ */
+function integrate(
+  readings: readonly BalanceSnapshot[],
+  days: readonly IsoDate[],
+  deltas: Map<IsoDate, MinorUnits>,
+): MinorUnits[] {
+  const balances = new Array<MinorUnits>(days.length).fill(0)
+  if (days.length === 0 || readings.length === 0) return balances
+
+  applyReading(balances, readings[0] as BalanceSnapshot, days, deltas, true)
+  for (let i = 1; i < readings.length; i++) {
+    applyReading(balances, readings[i] as BalanceSnapshot, days, deltas, false)
   }
 
   return balances
@@ -269,13 +327,17 @@ function integrate(
  */
 export function project(data: RunwayData, window: ProjectionWindow): Projection {
   const accounts = accountsFor(data, window.accountIds)
-  const earliestAsOf = accounts.reduce<IsoDate>(
-    (earliest, account) => minDate(earliest, account.balanceAsOf),
-    window.start,
+  const readingsByAccount = new Map(
+    accounts.map((account) => [account.id, readingsFor(data, account)]),
   )
+  const earliestAsOf = accounts.reduce<IsoDate>((earliest, account) => {
+    const oldest = readingsByAccount.get(account.id)?.[0]?.asOf ?? account.balanceAsOf
+    return minDate(earliest, oldest)
+  }, window.start)
   // Integration must begin at the earlier of the window and every as-of
-  // reading, otherwise an account whose reading predates the window would be
-  // anchored at the wrong day and the whole series would be offset.
+  // reading (the oldest one on file, once history is involved), otherwise an
+  // account whose reading predates the window would be anchored at the wrong
+  // day and the whole series would be offset.
   const seriesDays = eachDay(minDate(window.start, earliestAsOf), window.end)
   const occurrences = occurrencesIn(data, {
     start: seriesDays[0] ?? window.start,
@@ -308,7 +370,8 @@ export function project(data: RunwayData, window: ProjectionWindow): Projection 
   // own low point and closing balance. No series is walked a second time.
   const combinedBalances = new Array<MinorUnits>(days.length).fill(0)
   const byAccount: AccountSeries[] = accounts.map((account) => {
-    const balances = integrate(account, seriesDays, deltas.get(account.id) ?? new Map())
+    const readings = readingsByAccount.get(account.id) ?? []
+    const balances = integrate(readings, seriesDays, deltas.get(account.id) ?? new Map())
     const points: DayPoint[] = []
     let lowest: LowestPoint | null = null
     for (let i = 0; i < days.length; i++) {

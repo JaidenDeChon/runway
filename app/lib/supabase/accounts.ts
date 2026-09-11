@@ -10,7 +10,7 @@ import type { Database } from '#shared/supabase/database.types'
 import { DEFAULT_STALE_AFTER_DAYS } from '~~/domain/accounts'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
-import type { Account, AccountColor } from '~~/domain/types'
+import type { Account, AccountColor, BalanceSnapshot } from '~~/domain/types'
 import { ACCOUNT_COLORS } from '~~/domain/types'
 
 export type AccountRow = Database['public']['Tables']['accounts']['Row']
@@ -136,4 +136,23 @@ export type SelectedHiddenAccountRow = Pick<HiddenAccountRow, 'account_id'>
 /** Ids of the accounts the user has hidden from the dashboard's chart legend. */
 export function toHiddenAccountIds(rows: readonly SelectedHiddenAccountRow[] | null): string[] {
   return (rows ?? []).map((row) => row.account_id)
+}
+
+export type BalanceReadingRow = Database['public']['Tables']['balance_readings']['Row']
+/** Named columns, never `select('*')` — same rule as `ACCOUNT_COLUMNS`. */
+export const BALANCE_READING_COLUMNS = 'account_id, balance_cents, as_of' as const
+export type SelectedBalanceReadingRow = Pick<
+  BalanceReadingRow,
+  'account_id' | 'balance_cents' | 'as_of'
+>
+
+/** Superseded balance readings, for `RunwayData.balanceHistory`. */
+export function toBalanceHistory(
+  rows: readonly SelectedBalanceReadingRow[] | null,
+): BalanceSnapshot[] {
+  return (rows ?? []).map((row) => ({
+    accountId: row.account_id,
+    balance: row.balance_cents,
+    asOf: row.as_of,
+  }))
 }

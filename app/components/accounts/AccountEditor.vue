@@ -50,6 +50,11 @@ const form = reactive({
   isDiscretionarySource: false,
 })
 
+// The balance the field was seeded with, so `onSave` can tell "left the
+// figure alone" apart from "typed a new one" — the same idiom
+// `RecurringItemEditor`'s `seededNextOccurrence` uses for its date field.
+const seededBalance = ref(0)
+
 watch(
   () => [props.open, props.account] as const,
   ([open, account]) => {
@@ -57,6 +62,7 @@ watch(
     confirmingArchive.value = false
     errorMessage.value = null
     if (account) {
+      seededBalance.value = account.balance
       Object.assign(form, {
         name: account.name,
         balance: account.balance,
@@ -66,6 +72,7 @@ watch(
       })
       return
     }
+    seededBalance.value = 0
     Object.assign(form, {
       name: '',
       balance: 0,
@@ -78,6 +85,27 @@ watch(
   },
   { immediate: true },
 )
+
+/**
+ * What "As of" to actually save.
+ *
+ * Editing the balance without touching "As of" must not silently redate the
+ * account's *current* reading to whatever day it already carried — a day can
+ * hold only one true balance, so saving the typed figure against the old date
+ * would redefine what the account held back then rather than record what it
+ * holds now, and the correction would never even reach
+ * `docs/database/schema.md`'s `balance_readings` history: nothing else moved
+ * for that day to be superseded from. So a changed balance whose date field
+ * was left alone saves against today instead. A deliberate "As of" edit —
+ * typing a different day, whether or not the balance also changed — always
+ * wins; correcting a specific past reading is still what the field is for.
+ */
+const balanceAsOfToSave = computed(() => {
+  if (!props.account) return form.balanceAsOf
+  const dateUntouched = form.balanceAsOf === props.account.balanceAsOf
+  const balanceChanged = form.balance !== seededBalance.value
+  return dateUntouched && balanceChanged ? today.value : form.balanceAsOf
+})
 
 const isValid = computed(() => form.name.trim().length > 0)
 
@@ -107,7 +135,7 @@ async function onSave(): Promise<void> {
       ...(props.account ? { id: props.account.id } : {}),
       name: form.name.trim(),
       balance: form.balance,
-      balanceAsOf: form.balanceAsOf,
+      balanceAsOf: balanceAsOfToSave.value,
       color: form.color,
       isDiscretionarySource: form.isDiscretionarySource,
     })

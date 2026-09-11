@@ -70,6 +70,7 @@ const data = (over: Partial<RunwayData>): RunwayData => ({
   accounts: [],
   recurringItems: [],
   transfers: [],
+  balanceHistory: [],
   monthlyDiscretionarySpend: 0,
   safetyCushion: 60_000,
   timeZone: null,
@@ -251,6 +252,16 @@ export const GOLDEN_SCENARIOS: readonly GoldenScenario[] = [
       monthlyDiscretionarySpend: 103_400,
     }),
     window: { start: '2026-01-01', end: '2026-03-31', verdictFrom: '2026-01-02' },
+  },
+  {
+    name: 'superseded-reading-does-not-rewrite-the-past',
+    why: 'A later reading (asOf 06-10) must move the chart from its own day forward and leave what an earlier reading (asOf 06-01) already produced for the days before it untouched — the bug a manual balance correction used to cause by collapsing to one anchor and recomputing everything backward from it.',
+    data: data({
+      accounts: [account({ id: 'checking', balanceAsOf: '2026-06-10', balance: 650_000 })],
+      balanceHistory: [{ accountId: 'checking', balance: 500_000, asOf: '2026-06-01' }],
+      recurringItems: [once('Card', '2026-06-12', { amount: 20_000 })],
+    }),
+    window: { start: '2026-06-01', end: '2026-06-15' },
   },
 ]
 

@@ -397,5 +397,34 @@
         }
       }
     ]
+  },
+  {
+    "name": "superseded-reading-does-not-rewrite-the-past",
+    "why": "A later reading (asOf 06-10) must move the chart from its own day forward and leave what an earlier reading (asOf 06-01) already produced for the days before it untouched — the bug a manual balance correction used to cause by collapsing to one anchor and recomputing everything backward from it.",
+    "window": {
+      "start": "2026-06-01",
+      "end": "2026-06-15",
+      "days": 15
+    },
+    "occurrences": ["2026-06-12 Card -20000"],
+    "combined": [
+      500000, 500000, 500000, 500000, 500000, 500000, 500000, 500000, 500000, 650000, 650000,
+      630000, 630000, 630000, 630000
+    ],
+    "combinedLowest": {
+      "date": "2026-06-01",
+      "balance": 500000
+    },
+    "combinedEnding": 630000,
+    "byAccount": [
+      {
+        "accountId": "checking",
+        "ending": 630000,
+        "lowest": {
+          "date": "2026-06-01",
+          "balance": 500000
+        }
+      }
+    ]
   }
 ]
