@@ -41,7 +41,7 @@ describe.skipIf(LOCAL_STACK === null)(
         accounts: [
           {
             id: 'a',
-            name: fixtureName(LABEL, 'save-account'),
+            name: 'save-account',
             balance: 100_000,
             balanceAsOf: '2026-07-01',
             color: 'chart-2',
@@ -104,7 +104,7 @@ describe.skipIf(LOCAL_STACK === null)(
         accounts: [
           {
             id: 'a',
-            name: fixtureName(LABEL, 'bulk-a'),
+            name: 'bulk-a',
             balance: 50_000,
             balanceAsOf: '2026-08-01',
             color: 'chart-2',
@@ -112,7 +112,7 @@ describe.skipIf(LOCAL_STACK === null)(
           },
           {
             id: 'b',
-            name: fixtureName(LABEL, 'bulk-b'),
+            name: 'bulk-b',
             balance: 75_000,
             balanceAsOf: '2026-08-01',
             color: 'chart-3',
