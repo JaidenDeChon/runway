@@ -26,7 +26,7 @@ without infrastructure, and it is enforced rather than promised
 | `project(data, window)` | the whole picture: per-account and combined series, each with its low point and closing balance, plus the occurrences that moved them (archived accounts are excluded, even if named in `accountIds`) |
 | `evaluate(summary, cushion)` | covered / tight / short, the margin, and the shortfall |
 | `shortfallThrough(data, question)` | "will I make it to this date?" and, if not, by how much |
-| `shortfallOutlook(data, question)` | the low point and the first cushion breach across the whole selectable horizon — see the worked example below |
+| `shortfallOutlook(data, question)` | the low point, the first cushion breach, and — when already below today — when it clears and whether it stays clear, across the whole selectable horizon; see the worked examples below |
 | `laterTargetsMatter(answer, outlook)` | whether any target later than the one just answered could still change the verdict |
 | `occurrencesIn(data, window)` | the individual events in a window, expanded from the rules |
 | `nextOccurrenceOnOrAfter(item, from, withinDays?)` | the first date on or after `from` a rule occurs, or `null` once it has ended (`domain/cadence.ts`) — what a list screen shows as "next", never the stored anchor |
@@ -197,6 +197,53 @@ the engine had a reason to compute it. `laterTargetsMatter` itself runs no
 projection at all — it compares two figures `shortfallThrough` and
 `shortfallOutlook` already produced, and treats two `null` low points (nothing
 ahead in either window) as agreeing too.
+
+## Worked example: below the cushion right now
+
+`shortfallThrough` measures the running minimum over a window that always
+includes today. If today's own balance is under the cushion, *every*
+selectable target reads Short — that is arithmetically correct and useless on
+its own: a three-day dip that clears for good and a household still
+underwater six months out both come back "Short", indistinguishably.
+`shortfallOutlook` carries four more fields, all produced by the same single
+scan that finds `firstBreach`, so a caller can tell the two apart without
+adding a second pass over the series:
+
+```ts
+const outlook = shortfallOutlook(underwater, {
+  today: '2026-08-15',
+  cushion: 60_000,   // $600
+})
+
+outlook.firstBreach            // '2026-08-15' — today itself
+outlook.recoversOn             // '2026-08-18' — first day at or above the cushion
+outlook.staysClearAfterRecovery // true — nothing dips back under after that
+outlook.daysBelow              // 2 — the 16th and 17th; today itself is not counted
+```
+
+A household that dips again after recovering tells a different story with the
+same fields:
+
+```ts
+outlook.recoversOn              // '2026-08-18' — the *first* crossing, unchanged
+outlook.staysClearAfterRecovery // false — a later day dips back under
+outlook.daysBelow               // 47 — every day below the cushion, including the second dip
+```
+
+Three things worth being deliberate about:
+
+- **`recoversOn` names the first day at or above the cushion, not "the day the
+  household recovers" in some narrative sense.** If the balance was never
+  below the cushion to begin with, `recoversOn` is `today` itself, same as
+  every other day that clears it — it says what it says, not what a caller
+  might assume it implies.
+- **`staysClearAfterRecovery` is a boolean, not two dates for the caller to
+  compare.** `app/components/shortfall/VerdictCard.vue` does no date
+  arithmetic of its own; this is exactly the comparison that rule exists to
+  keep out of a `.vue` file.
+- **`daysBelow` excludes today.** Today's own status is already `firstBreach
+  === today`; counting it again would let a household read as "short 181 of
+  the next 180 days".
 
 ## Rules worth knowing before you change anything
 

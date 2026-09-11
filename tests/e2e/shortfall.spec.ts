@@ -141,6 +141,25 @@ test('covered through the target still warns when the cushion breaks later in th
   ).toBeVisible()
 })
 
+test('a cushion above today\'s balance never recovers, and the note says so rather than "every target starts short"', async ({
+  emptyHouseholdPage: page,
+}) => {
+  // D's household has no income at all, so once the cushion is set above
+  // today's $2,000 balance the running balance never climbs back over it —
+  // `shortfallOutlook.recoversOn` stays null for the whole 180-day horizon,
+  // which is the "persistent" branch of the below-cushion-today note. Asserted
+  // on the stable phrase, not the horizon length or a rendered balance.
+  await buildHousehold(page)
+  await gotoHydrated(page, '/will-i-make-it')
+
+  await page.locator('#shortfall-cushion').fill('3000')
+
+  await expectTextToBe(verdictBadge(page), 'Short')
+  await expect(
+    verdictCard(page).getByText(/You stay below your cushion for the whole of the next/),
+  ).toBeVisible()
+})
+
 test('a bigger cushion flips the same projection to short, and the projection does not move', async ({
   emptyHouseholdPage: page,
 }) => {

@@ -180,7 +180,7 @@ const outlookMatters = computed(() => laterTargetsMatter(answer.value, outlook.v
         :cushion="cushion"
         :today="today"
         :later-targets-matter="outlookMatters"
-        :first-breach="outlook.firstBreach"
+        :outlook="outlook"
       />
     </template>
   </AppPage>

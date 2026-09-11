@@ -433,10 +433,41 @@ export function canAnswerShortfall(data: RunwayData): boolean {
 
 export interface ShortfallOutlook {
   readonly horizonEnd: IsoDate
+  /** The horizon length used to produce this outlook, echoed back for the caller's copy. */
+  readonly horizonDays: number
   /** The low point across the whole selectable horizon. */
   readonly horizonLowest: LowestPoint | null
   /** First day in the horizon the combined balance sits below the cushion, or `null`. */
   readonly firstBreach: IsoDate | null
+  /**
+   * First day in the horizon at or above the cushion, or `null` if the balance
+   * never clears it within the horizon.
+   *
+   * Not "first day you recover" — if the balance was never below the cushion
+   * to begin with, this is `today` itself, same as every other day. Read it
+   * for what it says, not for what a caller might assume it implies; the
+   * screen only reads it behind a `firstBreach === today` guard, where it
+   * does mean recovery.
+   */
+  readonly recoversOn: IsoDate | null
+  /**
+   * Whether, once `recoversOn` is reached, the balance stays at or above the
+   * cushion for the rest of the horizon.
+   *
+   * A boolean rather than leaving the caller to compare `recoversOn` against
+   * the last breach itself: the component layer does no date arithmetic of
+   * its own, and this is exactly the kind of comparison that rule exists to
+   * keep out of a `.vue` file.
+   */
+  readonly staysClearAfterRecovery: boolean
+  /**
+   * Days *after* today, within the horizon, the balance sits below the
+   * cushion. Deliberately excludes today itself so this pairs with
+   * `horizonDays` — today's own status is already carried by
+   * `firstBreach === today`, and counting it here would let a household read
+   * as "short 181 of the next 180 days".
+   */
+  readonly daysBelow: number
 }
 
 /**
@@ -456,23 +487,32 @@ export interface ShortfallOutlook {
  * target-scoped answer alone never reveals. `laterTargetsMatter` answers the
  * first; `firstBreach` here answers the second.
  *
- * One extra projection covers both, and without re-deriving any minimum
+ * One extra projection covers all of it, and without re-deriving any minimum
  * `project` did not already find: `horizonLowest` is the low across the whole
- * selectable horizon, read straight from that projection's summary.
- * `firstBreach` is the one scan this function performs, and it is information
- * `project` does not compute: not a minimum, but the first day the combined
- * line crosses below the cushion, which the running-minimum summary alone
- * cannot name.
+ * selectable horizon, read straight from that projection's summary. Every
+ * other field here — `firstBreach`, `recoversOn`, `staysClearAfterRecovery`,
+ * `daysBelow` — comes from one `for` loop over that same projection's
+ * `combined` series, because none of them is a minimum and `project` had no
+ * reason to compute any of them. That loop is the one scan this function
+ * performs; nothing here re-scans the series a second time to find a
+ * different fact about it.
  *
  * This is a product decision about honesty, not a rendering one — the same
  * reason `canAnswerShortfall` lives here rather than in the screen — which is
- * why the two sit together.
+ * why the two sit together. It is also why a household below its cushion
+ * *today* gets fields to describe the shape of that dip: `shortfallThrough`
+ * measures the running minimum over a window that always includes today, so
+ * every selectable target reads Short — arithmetically correct, and useless
+ * on its own. What the screen can still say honestly is when the household
+ * clears the cushion and whether it stays clear, which is exactly what
+ * `recoversOn`, `staysClearAfterRecovery` and `daysBelow` are for.
  */
 export function shortfallOutlook(
   data: RunwayData,
   question: { today: IsoDate; cushion: MinorUnits; horizonDays?: number },
 ): ShortfallOutlook {
-  const horizonEnd = addDays(question.today, question.horizonDays ?? SHORTFALL_OUTLOOK_HORIZON_DAYS)
+  const horizonDays = question.horizonDays ?? SHORTFALL_OUTLOOK_HORIZON_DAYS
+  const horizonEnd = addDays(question.today, horizonDays)
   const full = project(data, {
     start: question.today,
     end: horizonEnd,
@@ -480,11 +520,37 @@ export function shortfallOutlook(
   })
   const horizonLowest = full.combinedSummary.lowest
 
-  // The one permitted scan: the first day below the cushion is not a minimum,
-  // so nothing `project` already computed can answer it.
-  const firstBreach = full.combined.find((point) => point.balance < question.cushion)?.date ?? null
+  // The one permitted scan: none of the four facts below is a minimum, so
+  // nothing `project` already computed can answer any of them, and all four
+  // come from this single pass rather than four separate ones.
+  let firstBreach: IsoDate | null = null
+  let lastBreach: IsoDate | null = null
+  let recoversOn: IsoDate | null = null
+  let daysBelow = 0
+  for (const point of full.combined) {
+    if (point.balance < question.cushion) {
+      if (firstBreach === null) firstBreach = point.date
+      lastBreach = point.date
+      if (point.date !== question.today) daysBelow += 1
+    } else if (recoversOn === null) {
+      recoversOn = point.date
+    }
+  }
+  // Stays clear once it recovers only if there was ever a breach to clear and
+  // recovery is not itself undone by a later dip — `lastBreach === null`
+  // covers "never dipped at all", where "stays clear" is vacuously true.
+  const staysClearAfterRecovery =
+    recoversOn !== null && (lastBreach === null || compareDates(lastBreach, recoversOn) < 0)
 
-  return { horizonEnd, horizonLowest, firstBreach }
+  return {
+    horizonEnd,
+    horizonDays,
+    horizonLowest,
+    firstBreach,
+    recoversOn,
+    staysClearAfterRecovery,
+    daysBelow,
+  }
 }
 
 /**
