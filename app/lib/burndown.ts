@@ -265,6 +265,32 @@ export function linePath(
   return commands.join(' ')
 }
 
+/**
+ * Where a day's event marker sits: the lower of that day's two balances when
+ * `filled` (income), or always the post-event balance when not (a bill).
+ *
+ * A bill's post-event balance is already the lower of the two — a decline
+ * lands there — so a hollow marker is unaffected by this and always sits on
+ * the line. A filled marker for a clean rise would otherwise sit at the
+ * *peak*: fine when the balance stays elevated, but a one-day spike the
+ * balance falls back out of leaves the marker floating in empty space above
+ * the surrounding trend. Anchoring to the lower value puts it at the base of
+ * the rise instead. A day with both a paycheck and a bigger same-day bill
+ * still nets down, and the lower value is then correctly the post-event
+ * balance — unchanged from a bill-only day.
+ *
+ * The tooltip and the `aria-live` announcement still name the post-event
+ * balance for the day; only a filled marker's *position* can differ from it.
+ */
+export function markerBalance(
+  previous: DayPoint | undefined,
+  current: DayPoint,
+  filled: boolean,
+): MinorUnits {
+  if (!filled) return current.balance
+  return previous && previous.balance < current.balance ? previous.balance : current.balance
+}
+
 /** Two paths through one series, split at `todayIndex` so history and forecast can be drawn differently. */
 export interface SplitPath {
   /** Day 0 through `todayIndex` inclusive. `''` when there is no past segment to draw. */

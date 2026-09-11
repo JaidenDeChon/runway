@@ -32,6 +32,7 @@ import {
   gridLineYs,
   labelFlipsLeft,
   MOBILE_LAYOUT,
+  markerBalance,
   percentOf,
   scaleX,
   scaleY,
@@ -162,9 +163,10 @@ interface Marker {
 
 /**
  * Markers sit only on days something actually lands, which is what makes them
- * readable. A marker sits at the end of that day's step — `points[index].balance`,
- * the post-event balance — the same figure the tooltip names for that day, so
- * marker and tooltip can never disagree (see `linePath` in `app/lib/burndown.ts`).
+ * readable. A marker's y comes from `markerBalance` in `app/lib/burndown.ts`:
+ * a hollow (bill) marker sits at the post-event balance, and a filled
+ * (income) marker sits at the lower of the day's two balances, so a rise's
+ * marker never floats above the line at its peak.
  */
 const markers = computed<Marker[]>(() => {
   const result: Marker[] = []
@@ -176,22 +178,30 @@ const markers = computed<Marker[]>(() => {
       if (forAccount.length === 0) continue
       const point = entry.points[index]
       if (!point) continue
+      const filled = forAccount.some((occurrence) => occurrence.amount > 0)
+      const previousPoint = index > 0 ? entry.points[index - 1] : undefined
       result.push({
         key: `${entry.id}-${date}`,
         cx: scaleX(index, count.value, layout.value),
-        cy: scaleY(point.balance, range.value, layout.value),
+        cy: scaleY(markerBalance(previousPoint, point, filled), range.value, layout.value),
         stroke: entry.stroke,
-        filled: forAccount.some((occurrence) => occurrence.amount > 0),
+        filled,
       })
     }
     const combinedPoint = props.combined?.[index]
     if (combinedPoint) {
+      const filled = onDay.some((occurrence) => occurrence.amount > 0)
+      const previousCombined = index > 0 ? props.combined?.[index - 1] : undefined
       result.push({
         key: `combined-${date}`,
         cx: scaleX(index, count.value, layout.value),
-        cy: scaleY(combinedPoint.balance, range.value, layout.value),
+        cy: scaleY(
+          markerBalance(previousCombined, combinedPoint, filled),
+          range.value,
+          layout.value,
+        ),
         stroke: 'var(--chart-1)',
-        filled: onDay.some((occurrence) => occurrence.amount > 0),
+        filled,
       })
     }
   }

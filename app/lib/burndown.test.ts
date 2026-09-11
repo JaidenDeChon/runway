@@ -16,6 +16,7 @@ import {
   labelFlipsLeft,
   linePath,
   MOBILE_LAYOUT,
+  markerBalance,
   normalizeDensity,
   percentOf,
   plotHeight,
@@ -185,6 +186,39 @@ describe('linePath', () => {
       return point.balance !== series[index - 1]?.balance ? [scaleX(index, 5, layout)] : []
     })
     expect(riserXs).toEqual(changedDayXs)
+  })
+})
+
+describe('markerBalance', () => {
+  const point = (balance: number): DayPoint => ({
+    date: '2026-08-20',
+    balance: toMinorUnits(balance),
+  })
+
+  it('uses the post-event balance for a hollow (bill) marker, ignoring the previous day', () => {
+    expect(markerBalance(point(200), point(100), false)).toBe(toMinorUnits(100))
+  })
+
+  it('has nothing to ignore when there is no previous day, hollow or filled', () => {
+    expect(markerBalance(undefined, point(100), false)).toBe(toMinorUnits(100))
+    expect(markerBalance(undefined, point(100), true)).toBe(toMinorUnits(100))
+  })
+
+  it('anchors a filled (income) marker to the base of a clean rise, not its peak', () => {
+    // The reported bug: a paycheck that briefly outpaces a steady decline
+    // left the marker floating at the peak, above the surrounding trend.
+    expect(markerBalance(point(100), point(200), true)).toBe(toMinorUnits(100))
+  })
+
+  it('keeps a filled marker at the post-event balance when the day still nets down', () => {
+    // A same-day paycheck and a bigger bill: the day nets negative despite
+    // containing income, so the "lower of the two" is correctly the
+    // post-event balance — unchanged from a bill-only day.
+    expect(markerBalance(point(500), point(300), true)).toBe(toMinorUnits(300))
+  })
+
+  it('picks either balance when they are equal, since it makes no visual difference', () => {
+    expect(markerBalance(point(100), point(100), true)).toBe(toMinorUnits(100))
   })
 })
 

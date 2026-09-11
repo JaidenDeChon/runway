@@ -424,6 +424,19 @@ One visible consequence: the daily discretionary drain, previously drawn as a sm
 reads as a fine staircase — one step per day — because that is what the underlying arithmetic always
 was. This is a departure from `reference.html`'s own interpolated rendering, not an oversight.
 
+**A filled (income) marker sits at the lower of its day's two balances, not always the post-event
+one** — a follow-up to the above. Once the line stepped, a one-day income spike the balance falls
+back out of (a paycheck that briefly outpaces a steady discretionary decline) left its marker
+floating above the surrounding trend, at the top of a riser with nothing else drawn up there. The
+marker for a rise now uses whichever of "the balance right before" and "the balance right after" is
+smaller — ordinarily the *before* value, so the dot lands at the base of the rise instead of its
+peak — so it always sits on a visible segment of the line. A day with both a paycheck and a bigger
+same-day bill still nets down, and `lowerOfDay` correctly picks the post-event balance for it, same
+as before this existed. A hollow (bill) marker is unaffected: the post-event balance for a decline is
+already the lower of the day's two values, so it already sat on the line. The tooltip still names the
+post-event balance for the day either way; only the filled dot's position can read differently.
+`markers`/`lowerOfDay` in `app/components/dashboard/BurndownChart.vue` is the only place this changed.
+
 ### What the dashboard remembers
 
 Issue #12 moved two of this screen's controls from session-only state onto stored preferences, and
