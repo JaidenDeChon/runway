@@ -163,7 +163,19 @@ export function useRunwayData() {
           .order('id', { ascending: true }),
         client.from('user_settings').select(USER_SETTINGS_COLUMNS).maybeSingle(),
         client.from('dashboard_hidden_accounts').select(HIDDEN_ACCOUNT_COLUMNS),
-        client.from('balance_readings').select(BALANCE_READING_COLUMNS),
+        // Ascending, unlike every other query above: this table is
+        // append-only and grows with every balance correction, so it is the
+        // one that can actually reach PostgREST's `max_rows` cap
+        // (`supabase/config.toml`) — and the row `readingsFor` cannot afford
+        // to lose to that cap is the *oldest* one, since it anchors the
+        // backward fill for everything before it (see `domain/projection.ts`
+        // `project`'s `earliestAsOf`). Ascending order means a truncation
+        // drops the newest superseded readings instead, which only costs
+        // some mid-history precision, never the anchor.
+        client
+          .from('balance_readings')
+          .select(BALANCE_READING_COLUMNS)
+          .order('as_of', { ascending: true }),
       ])
       // The database's own error message can name columns, constraints and
       // policies. It goes nowhere near the UI, and nothing but the code is

@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import type { AccountRow, SelectedHiddenAccountRow, UserSettingsRow } from './accounts'
-import { toAccount, toAccountColumns, toHiddenAccountIds, toHouseholdSettings } from './accounts'
+import type {
+  AccountRow,
+  SelectedBalanceReadingRow,
+  SelectedHiddenAccountRow,
+  UserSettingsRow,
+} from './accounts'
+import {
+  toAccount,
+  toAccountColumns,
+  toBalanceHistory,
+  toHiddenAccountIds,
+  toHouseholdSettings,
+} from './accounts'
 
 const row = (over: Partial<AccountRow> = {}): AccountRow => ({
   id: 'acct-1',
@@ -137,5 +148,36 @@ describe('toHiddenAccountIds', () => {
     expect(
       toHiddenAccountIds([hiddenRow('acct-1'), hiddenRow('acct-2'), hiddenRow('acct-1')]),
     ).toEqual(['acct-1', 'acct-2', 'acct-1'])
+  })
+})
+
+describe('toBalanceHistory', () => {
+  const readingRow = (
+    over: Partial<SelectedBalanceReadingRow> = {},
+  ): SelectedBalanceReadingRow => ({
+    account_id: 'acct-1',
+    balance_cents: 214_000,
+    as_of: '2026-08-01',
+    ...over,
+  })
+
+  it('maps null to an empty list', () => {
+    expect(toBalanceHistory(null)).toEqual([])
+  })
+
+  it('maps an empty list to an empty list', () => {
+    expect(toBalanceHistory([])).toEqual([])
+  })
+
+  it('maps each row to a BalanceSnapshot, preserving order', () => {
+    expect(
+      toBalanceHistory([
+        readingRow({ balance_cents: 100_000, as_of: '2026-07-01' }),
+        readingRow({ account_id: 'acct-2', balance_cents: 50_000, as_of: '2026-07-15' }),
+      ]),
+    ).toEqual([
+      { accountId: 'acct-1', balance: 100_000, asOf: '2026-07-01' },
+      { accountId: 'acct-2', balance: 50_000, asOf: '2026-07-15' },
+    ])
   })
 })
