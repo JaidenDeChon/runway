@@ -19,7 +19,12 @@
  * `RunwayData.recurringItems` and the settings that ride along with accounts
  * (`safetyCushion`, `monthlyDiscretionarySpend`, `timeZone`,
  * `staleAfterDays`) come from `public.accounts`, `public.recurring_rules` and
- * `public.user_settings` under the signed-in user's own session. Transfers
+ * `public.user_settings` under the signed-in user's own session.
+ * `RunwayData.balanceHistory` comes from `public.balance_readings`, the
+ * readings each account has since moved past — `saveAccount` and
+ * `saveBalances` preserve the outgoing reading there before overwriting an
+ * account's current one, so a later reading moves the chart from its own day
+ * forward instead of rewriting what an earlier one already showed. Transfers
  * are the last session-local `useState` records — issue #56 owns folding them
  * into ordinary transactions — and start **empty** rather than from
  * `domain/seed.ts`: a seeded transfer carries account ids like
@@ -46,9 +51,11 @@ import type { HouseholdSettings } from '@/lib/supabase/accounts'
 import {
   ACCOUNT_COLUMNS,
   type AccountDraft,
+  BALANCE_READING_COLUMNS,
   HIDDEN_ACCOUNT_COLUMNS,
   toAccount,
   toAccountColumns,
+  toBalanceHistory,
   toHiddenAccountIds,
   toHouseholdSettings,
   USER_SETTINGS_COLUMNS,
@@ -66,7 +73,7 @@ import type { IsoDate } from '~~/domain/dates'
 import { desiredOccurrences, materializationWindow } from '~~/domain/materialization'
 import type { MinorUnits } from '~~/domain/money'
 import { resolveAmount } from '~~/domain/prediction'
-import type { Account, RecurringItem, RunwayData, Transfer } from '~~/domain/types'
+import type { Account, BalanceSnapshot, RecurringItem, RunwayData, Transfer } from '~~/domain/types'
 
 export type { AccountDraft, RecurringItemDraft }
 
@@ -76,6 +83,8 @@ interface RemoteHousehold {
   readonly settings: HouseholdSettings
   /** Ids of the accounts hidden from the dashboard's chart legend. */
   readonly hiddenAccountIds: readonly string[]
+  /** Readings each account has since moved past. See `RunwayData.balanceHistory`. */
+  readonly balanceHistory: readonly BalanceSnapshot[]
 }
 
 /** What an anonymous visitor, or a request with no session, sees. */
@@ -84,6 +93,7 @@ const EMPTY_HOUSEHOLD: RemoteHousehold = {
   recurringItems: [],
   settings: toHouseholdSettings(null),
   hiddenAccountIds: [],
+  balanceHistory: [],
 }
 
 interface LocalRecords {
@@ -126,29 +136,47 @@ export function useRunwayData() {
     'runway-household',
     async () => {
       if (!authUser.value) return EMPTY_HOUSEHOLD
-      const [accountsResult, recurringRulesResult, settingsResult, hiddenAccountsResult] =
-        await Promise.all([
-          client
-            .from('accounts')
-            .select(ACCOUNT_COLUMNS)
-            // The seeded Checking/Savings rows share a created_at; id breaks the
-            // tie in the order the design draws them.
-            .order('created_at', { ascending: true })
-            .order('id', { ascending: true }),
-          client
-            .from('recurring_rules')
-            .select(RECURRING_RULE_COLUMNS)
-            // `anchor_date` is the rule's first occurrence, not a "next date"
-            // once it has passed (see app/lib/supabase/recurring-items.ts), so
-            // this is not the list's display order — the page computes and
-            // sorts on the true next occurrence itself. It just needs to be
-            // deterministic; id breaks the tie the same way the accounts
-            // query does.
-            .order('anchor_date', { ascending: true })
-            .order('id', { ascending: true }),
-          client.from('user_settings').select(USER_SETTINGS_COLUMNS).maybeSingle(),
-          client.from('dashboard_hidden_accounts').select(HIDDEN_ACCOUNT_COLUMNS),
-        ])
+      const [
+        accountsResult,
+        recurringRulesResult,
+        settingsResult,
+        hiddenAccountsResult,
+        balanceHistoryResult,
+      ] = await Promise.all([
+        client
+          .from('accounts')
+          .select(ACCOUNT_COLUMNS)
+          // The seeded Checking/Savings rows share a created_at; id breaks the
+          // tie in the order the design draws them.
+          .order('created_at', { ascending: true })
+          .order('id', { ascending: true }),
+        client
+          .from('recurring_rules')
+          .select(RECURRING_RULE_COLUMNS)
+          // `anchor_date` is the rule's first occurrence, not a "next date"
+          // once it has passed (see app/lib/supabase/recurring-items.ts), so
+          // this is not the list's display order — the page computes and
+          // sorts on the true next occurrence itself. It just needs to be
+          // deterministic; id breaks the tie the same way the accounts
+          // query does.
+          .order('anchor_date', { ascending: true })
+          .order('id', { ascending: true }),
+        client.from('user_settings').select(USER_SETTINGS_COLUMNS).maybeSingle(),
+        client.from('dashboard_hidden_accounts').select(HIDDEN_ACCOUNT_COLUMNS),
+        // Ascending, unlike every other query above: this table is
+        // append-only and grows with every balance correction, so it is the
+        // one that can actually reach PostgREST's `max_rows` cap
+        // (`supabase/config.toml`) — and the row `readingsFor` cannot afford
+        // to lose to that cap is the *oldest* one, since it anchors the
+        // backward fill for everything before it (see `domain/projection.ts`
+        // `project`'s `earliestAsOf`). Ascending order means a truncation
+        // drops the newest superseded readings instead, which only costs
+        // some mid-history precision, never the anchor.
+        client
+          .from('balance_readings')
+          .select(BALANCE_READING_COLUMNS)
+          .order('as_of', { ascending: true }),
+      ])
       // The database's own error message can name columns, constraints and
       // policies. It goes nowhere near the UI, and nothing but the code is
       // logged — see CLAUDE.md on what must never reach a log.
@@ -170,6 +198,10 @@ export function useRunwayData() {
         })
         throw new Error('load-failed')
       }
+      if (balanceHistoryResult.error) {
+        console.error('balance history read failed', { code: balanceHistoryResult.error.code })
+        throw new Error('load-failed')
+      }
       const settings = toHouseholdSettings(settingsResult.data)
       return {
         hiddenAccountIds: toHiddenAccountIds(hiddenAccountsResult.data),
@@ -177,6 +209,7 @@ export function useRunwayData() {
           toAccount(row, settings.discretionaryAccountId),
         ),
         recurringItems: (recurringRulesResult.data ?? []).map(toRecurringItem),
+        balanceHistory: toBalanceHistory(balanceHistoryResult.data),
         settings,
       }
     },
@@ -336,6 +369,7 @@ export function useRunwayData() {
     accounts: accounts.value,
     recurringItems: recurringItems.value,
     transfers: transfers.value,
+    balanceHistory: remote.value.balanceHistory,
     monthlyDiscretionarySpend: monthlyDiscretionarySpend.value,
     safetyCushion: safetyCushion.value,
     timeZone: timeZoneOverride.value,

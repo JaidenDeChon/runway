@@ -45,6 +45,41 @@ export type Database = {
         }
         Relationships: []
       }
+      balance_readings: {
+        Row: {
+          account_id: string
+          as_of: string
+          balance_cents: number
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          as_of: string
+          balance_cents: number
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          as_of?: string
+          balance_cents?: number
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "balance_readings_account_fk"
+            columns: ["user_id", "account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["user_id", "id"]
+          },
+        ]
+      }
       dashboard_hidden_accounts: {
         Row: {
           account_id: string

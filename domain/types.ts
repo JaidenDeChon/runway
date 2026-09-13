@@ -52,6 +52,23 @@ export interface Account {
   readonly archivedOn?: IsoDate
 }
 
+/**
+ * A balance reading recorded for an account on some past day, kept after a
+ * later reading supersedes it as the account's current one.
+ *
+ * This is what lets a new reading move the chart only from its own day
+ * forward: `project` walks each account's readings oldest first, and only the
+ * earliest is ever allowed to back-fill days before it. Every later one
+ * overwrites the days from its own `asOf` onward and never touches what an
+ * earlier reading already said about a day before it — see `integrate` in
+ * `domain/projection.ts`. Maps to `public.balance_readings`.
+ */
+export interface BalanceSnapshot {
+  readonly accountId: string
+  readonly balance: MinorUnits
+  readonly asOf: IsoDate
+}
+
 export type Cadence = 'weekly' | 'biweekly' | 'monthly' | 'annual'
 
 /**
@@ -178,6 +195,17 @@ export interface RunwayData {
   readonly accounts: readonly Account[]
   readonly recurringItems: readonly RecurringItem[]
   readonly transfers: readonly Transfer[]
+  /**
+   * Readings older than each account's current `balanceAsOf`, oldest first
+   * within an account. A reading naming an account not in `accounts` is
+   * ignored, the same stance `applyBalanceReadings` takes for readings applied
+   * live.
+   *
+   * `Account.balance`/`balanceAsOf` is always the most recent reading — it is
+   * never duplicated in here — so an account with no correcting history at all
+   * (the common case today) contributes nothing to this array.
+   */
+  readonly balanceHistory: readonly BalanceSnapshot[]
   /**
    * What discretionary spending costs per month, drawn from the account flagged
    * `isDiscretionarySource`.

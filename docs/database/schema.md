@@ -143,6 +143,38 @@ primary key, so that index is the RLS-predicate index; no separate
 trigger: the row's existence is the value, so hiding inserts and showing
 deletes rather than either ever updating a row in place.
 
+### `balance_readings`
+
+| column | type | notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `user_id`, `account_id` | `uuid` | composite FK → `accounts (user_id, id)`, cascade delete |
+| `balance_cents` | `bigint` | signed, same as `accounts.balance_cents` |
+| `as_of` | `date` | the day this reading was true |
+| `created_at` | `timestamptz` | default `now()` |
+
+`unique (user_id, account_id, as_of)` is the natural key — a day can only have
+one true balance — and doubles as the RLS-predicate index, the same shape
+`accounts`' own `unique (user_id, id)` takes; no separate
+`balance_readings_user_id_idx` exists.
+
+One row per reading an account has since moved past. `accounts.balance_cents`/
+`balance_as_of` still holds the *current* reading; this table exists so the
+one it replaces is not simply gone. `save_account` and `save_account_balances`
+(`supabase/migrations/20260911120500_preserve_superseded_balance_readings.sql`)
+both insert the outgoing (`balance_cents`, `balance_as_of`) pair here,
+`on conflict do nothing`, immediately before overwriting it — skipped when
+neither is actually changing. `domain/projection.ts`'s `readingsFor` merges
+this table's rows for an account (kept only for days strictly before its
+current `balance_as_of`) with that current reading, oldest first, and
+`integrate` walks the chain so that only the very oldest reading is allowed to
+back-fill days before it; every later one overwrites forward from its own day
+only. See [docs/engine/README.md](../engine/README.md) — "A stored balance is
+true *as of* its own day" — for why a single mutable anchor got this wrong: a
+new reading's backward walk silently reshaped every day already shown,
+whenever the correction did not match what the recurring items alone would
+have predicted.
+
 ## Design decisions
 
 ### Cross-user integrity: composite foreign keys
@@ -552,7 +584,8 @@ The table `domain/*` code should consult when wiring a store to this schema:
 
 | domain | column | note |
 |---|---|---|
-| `Account.balance` | `accounts.balance_cents` | |
+| `Account.balance` / `.balanceAsOf` | `accounts.balance_cents` / `.balance_as_of` | the *current* reading only |
+| `RunwayData.balanceHistory` | `balance_readings` | readings an account has since moved past; `save_account` / `save_account_balances` insert into it before overwriting `accounts.balance_cents`/`.balance_as_of` — see [`balance_readings`](#balance_readings) |
 | `Account.isDiscretionarySource` | *derived* | `user_settings.discretionary_account_id = accounts.id` |
 | `Account.archivedOn` | `accounts.archived_on` | `null` maps to **absent**, not to `archivedOn: undefined` — see [Archiving, not deleting](#archiving-not-deleting) |
 | `RecurringItem.nextOccurrence` | `recurring_rules.anchor_date` | **names differ deliberately**: the domain expands backwards from it too (to fill a chart's look-back), so it is an anchor, not a "next" — but never *before* it, since it is the rule's first occurrence |

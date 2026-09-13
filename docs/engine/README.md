@@ -63,6 +63,7 @@ const data: RunwayData = {
       amountSource: 'fixed', depositHistory: [], isVariable: false },
   ],
   transfers: [],
+  balanceHistory: [],                   // readings each account has since moved past
   monthlyDiscretionarySpend: 103_400,   // $1,034 a month
   safetyCushion: 60_000,                // $600
 }
@@ -256,6 +257,30 @@ surprise people:
   is not charged again.
 - A bill dated *before* it raises the earlier balances, correctly — the account
   had more money before it paid.
+
+**A later reading moves the chart from its own day forward, and nowhere
+earlier.** `RunwayData.balanceHistory` carries the readings an account has since
+moved past — `Account.balance`/`.balanceAsOf` is always the current one, never
+duplicated in this array. `readingsFor` (in `domain/projection.ts`) merges the
+two, oldest first, and `integrate` walks the chain so that only the very oldest
+reading is allowed to back-fill days before it; every later one only overwrites
+forward from its own day. Before this existed, an account had exactly one
+reading, and correcting it — a hand-typed number no recurring item explains —
+meant the single stored anchor moved, and its backward walk silently reshaped
+every day already shown, all the way back to the window's start. Two things
+worth being deliberate about:
+
+- **Only the oldest reading back-fills.** A reading dated after every day in
+  the visible window (a correction recorded ahead of when the window reaches
+  it) contributes nothing to what is shown yet, rather than reaching backward
+  into it — that is not the single-anchor fallback's job once there is more
+  than one reading in the chain.
+- **A day can only have one true balance.** Editing a balance without also
+  moving its date does not create a second reading for that day, in the chart's
+  eyes — it redefines what the account held on the one day already on file.
+  `AccountEditor.vue` accounts for this: changing the balance while leaving "As
+  of" untouched saves against today instead, so the correction actually lands
+  on a new day rather than overwriting the old one silently.
 
 **A transfer is neutral on the combined line only once it post-dates every
 reading involved.** Both legs come from one record, so they cancel — unless one

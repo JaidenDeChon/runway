@@ -16,7 +16,7 @@
 
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { addDays } from './dates'
+import { addDays, compareDates } from './dates'
 import type { DayPoint, Projection } from './projection'
 import { project } from './projection'
 import type { Account, RecurringItem, RunwayData, Transfer } from './types'
@@ -123,6 +123,7 @@ const dataArb: fc.Arbitrary<RunwayData> = accountsArb.chain((accounts) => {
     .record({
       recurringItems: listOf(itemArb, ids, 6),
       transfers: listOf(transferArb, ids, 4),
+      balanceHistory: fc.constant([]),
       monthlyDiscretionarySpend: fc.integer({ min: 0, max: 300_000 }),
       safetyCushion: fc.integer({ min: 0, max: 200_000 }),
       timeZone: fc.constant(null),
@@ -261,6 +262,48 @@ describe('income never lowers the projected minimum', () => {
             }),
             { numRuns: 5 },
           )
+        },
+      ),
+    )
+  })
+})
+
+describe('a later reading never changes what an earlier one already produced', () => {
+  it('holds for any portfolio and any pair of readings', () => {
+    fc.assert(
+      fc.property(
+        dataArb,
+        windowLengthArb,
+        // Strictly after the window's start, so it lands inside the visible
+        // series regardless of window length, and strictly after every
+        // generated `balanceAsOf` (always at or before `WINDOW_START`).
+        fc.integer({ min: 1, max: 30 }),
+        fc.integer({ min: -200_000, max: 5_000_000 }),
+        (data, length, laterOffsetDays, laterBalance) => {
+          const [first, ...restAccounts] = data.accounts
+          if (!first) return
+          const before = projectOver(data, length)
+
+          const laterAsOf = addDays(WINDOW_START, laterOffsetDays)
+          const layered: RunwayData = {
+            ...data,
+            accounts: [
+              { ...first, balance: laterBalance, balanceAsOf: laterAsOf },
+              ...restAccounts,
+            ],
+            balanceHistory: [
+              ...data.balanceHistory,
+              { accountId: first.id, balance: first.balance, asOf: first.balanceAsOf },
+            ],
+          }
+          const after = projectOver(layered, length)
+
+          const beforePoints = before.byAccount.find((s) => s.accountId === first.id)?.points ?? []
+          const afterPoints = after.byAccount.find((s) => s.accountId === first.id)?.points ?? []
+          for (const [index, point] of beforePoints.entries()) {
+            if (compareDates(point.date, laterAsOf) >= 0) continue
+            expect(afterPoints[index]?.balance).toBe(point.balance)
+          }
         },
       ),
     )

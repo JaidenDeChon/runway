@@ -134,6 +134,112 @@ test.describe('creating and managing an account', () => {
     await expect(row).toContainText(/Last updated \d+ days ago/)
   })
 
+  test('re-dates the reading to today when only the balance changes', async ({
+    emptyHouseholdPage: page,
+  }) => {
+    // A fixed, known day rather than "today" — the assertion below only needs
+    // to know this exact string disappears from the row, never what today's
+    // date actually renders as, so it carries no timezone risk of its own.
+    const pastIso = '2026-01-05'
+    const pastFormatted = new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(new Date(`${pastIso}T00:00:00Z`))
+
+    await gotoHydrated(page, '/accounts')
+    const dialog = page.getByRole('dialog')
+    await clickUntil(page.getByRole('button', { name: 'Add account' }), dialog)
+
+    await page.locator('#account-name').fill('E2E Balance Only')
+    await page.locator('#account-balance').fill('500')
+    await page.locator('#account-as-of').fill(pastIso)
+
+    const row = page.getByRole('button', { name: 'Edit E2E Balance Only' })
+    await clickUntil(dialog.getByRole('button', { name: 'Add account' }), row)
+    await expect(row).toContainText(`Balance as of ${pastFormatted}`)
+
+    // Reopen and change only the balance — "As of" is left exactly as the
+    // form seeded it. The fix under test is that this must not save $550
+    // back against `pastIso`, silently redating that account's current
+    // reading to a stale day instead of recording what it holds now.
+    await clickUntil(row, dialog)
+    await page.locator('#account-balance').fill('550')
+
+    // The field itself moves, rather than the save quietly disagreeing with
+    // what the field shows. Asserted as "no longer the past day" rather than
+    // "equals today" so the assertion carries no timezone risk of its own.
+    await expect(page.locator('#account-as-of')).not.toHaveValue(pastIso)
+
+    await clickUntil(
+      dialog.getByRole('button', { name: 'Save changes' }),
+      row.filter({
+        hasText: '$550',
+      }),
+    )
+
+    await expect(row).toContainText('$550')
+    await expect(row).not.toContainText(`Balance as of ${pastFormatted}`)
+  })
+
+  test('touching "As of" — even to reaffirm the day already shown — corrects that day instead of today', async ({
+    emptyHouseholdPage: page,
+  }) => {
+    // The case the auto-advance above must not swallow: correcting what an
+    // account held on a *specific* day, including the day it already reads.
+    // Reaffirming the field's own value is the only way to say "yes, this
+    // day, a different figure" — leaving it untouched cannot mean that, since
+    // it is indistinguishable from never having looked at it.
+    const pastIso = '2026-02-10'
+    const pastFormatted = new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(new Date(`${pastIso}T00:00:00Z`))
+
+    await gotoHydrated(page, '/accounts')
+    const dialog = page.getByRole('dialog')
+    await clickUntil(page.getByRole('button', { name: 'Add account' }), dialog)
+
+    await page.locator('#account-name').fill('E2E Same-Day Correction')
+    await page.locator('#account-balance').fill('500')
+    await page.locator('#account-as-of').fill(pastIso)
+
+    const row = page.getByRole('button', { name: 'Edit E2E Same-Day Correction' })
+    await clickUntil(dialog.getByRole('button', { name: 'Add account' }), row)
+    await expect(row).toContainText(`Balance as of ${pastFormatted}`)
+
+    // Reopen, correct the balance — which moves the field to today — and
+    // reaffirm "As of" by refilling it with the exact day already shown:
+    // touching the field, not changing its value.
+    await clickUntil(row, dialog)
+    await page.locator('#account-balance').fill('550')
+    await expect(page.locator('#account-as-of')).not.toHaveValue(pastIso)
+    await page.locator('#account-as-of').fill(pastIso)
+    await expect(page.locator('#account-as-of')).toHaveValue(pastIso)
+
+    // The balance moves once more, *after* the day was typed. This is the
+    // half that needs the editor to remember the field was touched rather
+    // than compare its value: the day must now stay put, where the first
+    // balance edit moved it. Without that memory this snaps back to today and
+    // correcting a specific day is unreachable again — and an assertion that
+    // stops before this step passes against an editor that never consults
+    // the flag at all.
+    await page.locator('#account-balance').fill('575')
+    await expect(page.locator('#account-as-of')).toHaveValue(pastIso)
+
+    await clickUntil(
+      dialog.getByRole('button', { name: 'Save changes' }),
+      row.filter({ hasText: '$575' }),
+    )
+
+    // The correction landed on the day it was for, not on today.
+    await expect(row).toContainText('$575')
+    await expect(row).toContainText(`Balance as of ${pastFormatted}`)
+  })
+
   test('archives an account and restores it', async ({ emptyHouseholdPage: page }) => {
     await gotoHydrated(page, '/accounts')
     const dialog = page.getByRole('dialog')

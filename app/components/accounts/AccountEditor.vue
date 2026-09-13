@@ -50,13 +50,33 @@ const form = reactive({
   isDiscretionarySource: false,
 })
 
+// The balance the field was seeded with, so `onSave` can tell "left the
+// figure alone" apart from "typed a new one" — the same idiom
+// `RecurringItemEditor`'s `seededNextOccurrence` uses for its date field.
+const seededBalance = ref(0)
+
+/**
+ * Whether the user has interacted with "As of" this time the editor is open.
+ *
+ * Comparing the field's current value against the account's stored day is not
+ * enough on its own: it cannot tell "left it alone" apart from "deliberately
+ * re-affirmed the same day", and the second of those is exactly what
+ * correcting *today's* stored reading looks like — the field is seeded with
+ * that same day, so retyping it changes nothing for a value comparison to
+ * see. Tracking real interaction, not just the resulting value, is what makes
+ * both cases reachable.
+ */
+const asOfTouched = ref(false)
+
 watch(
   () => [props.open, props.account] as const,
   ([open, account]) => {
     if (!open) return
     confirmingArchive.value = false
     errorMessage.value = null
+    asOfTouched.value = false
     if (account) {
+      seededBalance.value = account.balance
       Object.assign(form, {
         name: account.name,
         balance: account.balance,
@@ -66,6 +86,7 @@ watch(
       })
       return
     }
+    seededBalance.value = 0
     Object.assign(form, {
       name: '',
       balance: 0,
@@ -77,6 +98,38 @@ watch(
     })
   },
   { immediate: true },
+)
+
+/**
+ * Typing a new balance moves the "As of" field to today, on screen.
+ *
+ * Editing the balance without touching "As of" must not silently redate the
+ * account's *current* reading to whatever day it already carried — a day can
+ * hold only one true balance, so saving the typed figure against the old date
+ * would redefine what the account held back then rather than record what it
+ * holds now, and the correction would never even reach
+ * `docs/database/schema.md`'s `balance_readings` history: nothing else moved
+ * for that day to be superseded from.
+ *
+ * What is saved is therefore always plain `form.balanceAsOf` — the field the
+ * user is looking at. The alternative, leaving the field reading the old day
+ * and quietly saving today, makes a populated and editable control lie about
+ * what it will do; `docs/design/accounts/spec.md` is explicit that a row is
+ * the pair "balance + as-of date". Moving the field shows the mechanism
+ * rather than hiding it behind explanatory text.
+ *
+ * Touching "As of" at all — even retyping the day already shown — always
+ * wins, and keeps winning through later balance edits: that is what
+ * `asOfTouched` is for. Undoing the balance edit puts the original day back,
+ * so a form returned to its seeded state saves what it was seeded with.
+ */
+watch(
+  () => form.balance,
+  (balance) => {
+    const account = props.account
+    if (!account || asOfTouched.value) return
+    form.balanceAsOf = balance === seededBalance.value ? account.balanceAsOf : today.value
+  },
 )
 
 const isValid = computed(() => form.name.trim().length > 0)
@@ -175,7 +228,13 @@ async function onRestore(): Promise<void> {
           </div>
           <div class="flex min-w-0 flex-col gap-2">
             <Label for="account-as-of">As of</Label>
-            <Input id="account-as-of" v-model="form.balanceAsOf" type="date" class="font-mono" />
+            <Input
+              id="account-as-of"
+              v-model="form.balanceAsOf"
+              type="date"
+              class="font-mono"
+              @input="asOfTouched = true"
+            />
           </div>
         </div>
 

@@ -437,3 +437,13 @@ insert into public.transfers (id, user_id, from_account_id, to_account_id, amoun
 -- fixtures above already set.
 insert into public.dashboard_hidden_accounts (user_id, account_id) values
   ('00000000-0000-4000-8000-00000000000b', '10000000-0000-4000-8001-00000000000b');
+
+-- balance_readings — B Checking's superseded reading, one day before its
+-- current $900.00. Sits on user B, not A or C, for the same reason as the
+-- archived account and the hidden chart account above: A and C mirror
+-- domain/seed.ts exactly, and tests/rls/seed-fidelity.test.ts holds them to
+-- it, so a history row would either have to be invented into the domain
+-- fixture too or make the two disagree.
+insert into public.balance_readings (user_id, account_id, balance_cents, as_of) values
+  ('00000000-0000-4000-8000-00000000000b', '10000000-0000-4000-8000-00000000000b',
+   85000, '2026-08-14');

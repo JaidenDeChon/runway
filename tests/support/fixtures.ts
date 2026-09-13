@@ -38,7 +38,7 @@
 
 import { occurrenceDates } from '~~/domain/cadence'
 import type { IsoDate } from '~~/domain/dates'
-import type { Account, RecurringItem, Transfer } from '~~/domain/types'
+import type { Account, BalanceSnapshot, RecurringItem, Transfer } from '~~/domain/types'
 import type { AuthContext } from './auth'
 import { adminSql, type RunwayTestClient } from './database'
 
@@ -61,6 +61,8 @@ export interface HouseholdSpec {
   readonly accounts: readonly Account[]
   readonly recurringItems?: readonly RecurringItem[]
   readonly transfers?: readonly Transfer[]
+  /** Superseded readings to seed into `public.balance_readings`, keyed by domain account id. */
+  readonly balanceHistory?: readonly BalanceSnapshot[]
   /**
    * When set, each rule is expanded across this window by the engine's own
    * `occurrenceDates` and the resulting occurrences are inserted. Omitted means
@@ -220,6 +222,29 @@ export async function seedHousehold(
       'transfers',
     )
     for (const row of transferRows) transferIds.push(row.id as string)
+  }
+
+  const balanceHistory = spec.balanceHistory ?? []
+  if (balanceHistory.length > 0) {
+    requireInsert(
+      await insert(
+        client,
+        'balance_readings',
+        balanceHistory.map((reading) => {
+          const accountId = accountIds.get(reading.accountId)
+          if (!accountId) {
+            throw new Error(`balance reading references unknown account "${reading.accountId}"`)
+          }
+          return {
+            user_id: userId,
+            account_id: accountId,
+            balance_cents: reading.balance,
+            as_of: reading.asOf,
+          }
+        }),
+      ),
+      'balance_readings',
+    )
   }
 
   return { userId, accountIds, ruleIds, transferIds, occurrenceCount }

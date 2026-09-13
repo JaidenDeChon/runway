@@ -46,6 +46,7 @@ const data = (over: Partial<RunwayData> = {}): RunwayData => ({
   accounts: [account()],
   recurringItems: [],
   transfers: [],
+  balanceHistory: [],
   monthlyDiscretionarySpend: 0,
   safetyCushion: 0,
   timeZone: null,
@@ -305,6 +306,51 @@ describe('events between a stale reading and the window', () => {
       { start: '2026-05-15', end: '2026-05-16' },
     )
     expect(withoutGap.combined[0]?.balance).toBe(toMinorUnits(5000))
+  })
+})
+
+describe('a later reading moves the chart from its own day forward, not before', () => {
+  it('leaves days before the new reading exactly as the superseded one produced them', () => {
+    // $1,000 on the 1st, corrected to $1,200 on the 10th — an unmodelled deposit
+    // no recurring item explains. Before this fixed a real bug, the 10th's
+    // reading became the account's only anchor and the whole window, days
+    // before the 10th included, was recomputed backwards from it.
+    const data_ = data({
+      accounts: [account({ id: 'a', balance: toMinorUnits(1200), balanceAsOf: '2026-08-10' })],
+      balanceHistory: [{ accountId: 'a', balance: toMinorUnits(1000), asOf: '2026-08-01' }],
+    })
+    const result = project(data_, { start: '2026-08-01', end: '2026-08-12' })
+    const balances = result.combined.map((point) => point.balance)
+    // The 1st through the 9th: the superseded reading, untouched.
+    expect(balances.slice(0, 9)).toEqual(Array(9).fill(toMinorUnits(1000)))
+    // The 10th onward: the new reading, in effect exactly from its own day.
+    expect(balances.slice(9)).toEqual(Array(3).fill(toMinorUnits(1200)))
+  })
+
+  it('still integrates deltas forward from the new reading, same as a single anchor would', () => {
+    const data_ = data({
+      accounts: [account({ id: 'a', balance: toMinorUnits(1200), balanceAsOf: '2026-08-10' })],
+      balanceHistory: [{ accountId: 'a', balance: toMinorUnits(1000), asOf: '2026-08-01' }],
+      recurringItems: [item({ nextOccurrence: '2026-08-11' })],
+    })
+    const result = project(data_, { start: '2026-08-09', end: '2026-08-12' })
+    expect(result.combined.map((point) => point.balance)).toEqual([
+      toMinorUnits(1000), // the 9th: the superseded reading, before the new one lands
+      toMinorUnits(1200), // the 10th: the new reading
+      toMinorUnits(1100), // the 11th: the item's $100 bill charged against it
+      toMinorUnits(1100),
+    ])
+  })
+
+  it('a reading dated after the visible window leaves the window alone', () => {
+    // The correction was recorded for tomorrow, or the window simply has not
+    // reached it yet either way. It must not reach backward into what is shown.
+    const data_ = data({
+      accounts: [account({ id: 'a', balance: toMinorUnits(1200), balanceAsOf: '2026-08-20' })],
+      balanceHistory: [{ accountId: 'a', balance: toMinorUnits(1000), asOf: '2026-08-01' }],
+    })
+    const result = project(data_, { start: '2026-08-01', end: '2026-08-03' })
+    expect(result.combined.map((point) => point.balance)).toEqual(Array(3).fill(toMinorUnits(1000)))
   })
 })
 
