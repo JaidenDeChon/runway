@@ -45,12 +45,27 @@
  * data) because it is measured, not asserted, and restating it in different
  * words risks overclaiming:
  *
- * > `Math.round(parseFloat(v)*100)` is exact for `|amount| < 90071992547409`
- * > — i.e. it is *not* wrong at any realistic magnitude. **Do not claim it
- * > is.** It *does* silently collapse sub-cent precision: `1.005 -> 100`
- * > ($1.00, not $1.01). A string-based parser is still the correct answer,
- * > but the honest justification is sub-cent precision and auditability,
- * > **not** "floats break at $19.99 with rounding."
+ * > `Math.round(parseFloat(v)*100)` is exact for `|amount| <
+ * > 22517998136852.48` (= 2^51/100) — i.e. it is *not* wrong at any realistic
+ * > magnitude. **Do not claim it is.** It *does* silently collapse sub-cent
+ * > precision: `1.005 -> 100` ($1.00, not $1.01). A string-based parser is
+ * > still the correct answer, but the honest justification is sub-cent
+ * > precision and auditability, **not** "floats break at $19.99 with
+ * > rounding."
+ *
+ * The bound is 2^51 cents, not 2^53. `2^53/100` is the bound for "the
+ * resulting cents are a safe integer", which is necessary but not
+ * sufficient: `parseFloat(v)` already rounds to the nearest double before
+ * the multiply, contributing ~|C|*2^-53 of error in cents, and the product
+ * rounds again for another ~|C|*2^-53. The combined ~|C|*2^-52 must stay
+ * under the 0.5 that `Math.round` can absorb, which gives |C| < 2^51 cents.
+ * Verified counterexample, comfortably under the 2^53/100 figure this file
+ * used to quote:
+ *
+ *     v                 = "35361522496920.88"
+ *     parseFloat(v)*100 = 3536152249692088.5
+ *     Math.round(...)   = 3536152249692089
+ *     exact cents       = 3536152249692088    <- off by one cent
  */
 
 import { Buffer } from 'node:buffer'
@@ -166,11 +181,15 @@ async function main(): Promise<void> {
       throw new Error(`POST claim URL -> ${claimResponse.status}`)
     }
     const claimBody = (await claimResponse.text()).trim()
+    // Register the body as a secret BEFORE parsing it. `new URL()` throws with
+    // the input embedded in the message, and the error path scans against this
+    // array — so a body registered afterwards is a body the gate cannot catch.
+    secrets.push(claimBody)
     const parsedAccessUrl = new URL(claimBody)
     if (parsedAccessUrl.username === '') {
       throw new Error('Claim returned a body that is not a credentialed access URL.')
     }
-    secrets.push(claimBody, parsedAccessUrl.username, parsedAccessUrl.password)
+    secrets.push(parsedAccessUrl.username, parsedAccessUrl.password)
     lines.push(
       `[2/3] POST claim URL -> 200; access URL received: https://<redacted>@${parsedAccessUrl.host}${parsedAccessUrl.pathname}`,
     )
@@ -337,7 +356,7 @@ async function main(): Promise<void> {
   }
   lines.push('')
   lines.push(
-    '`Math.round(parseFloat(v)*100)` is exact for `|amount| < 90071992547409` — i.e. it is *not* wrong at any realistic magnitude. **Do not claim it is.** It *does* silently collapse sub-cent precision: `1.005 -> 100` ($1.00, not $1.01). A string-based parser is still the correct answer, but the honest justification is sub-cent precision and auditability, **not** "floats break at $19.99 with rounding."',
+    '`Math.round(parseFloat(v)*100)` is exact for `|amount| < 22517998136852.48` (= 2^51/100) — i.e. it is *not* wrong at any realistic magnitude. **Do not claim it is.** It *does* silently collapse sub-cent precision: `1.005 -> 100` ($1.00, not $1.01). A string-based parser is still the correct answer, but the honest justification is sub-cent precision and auditability, **not** "floats break at $19.99 with rounding."',
   )
 
   // Step 8: instant -> calendar-day self-test, synthetic constant only.

@@ -241,7 +241,7 @@ x-api-message: ["Provide a 'start-date' parameter to receive transactions prior 
 | 1.005 | 100 | 100 | error (sub-cent) |
 | -33.33 | -3333 | -3333 | -3333 |
 
-`Math.round(parseFloat(v)*100)` is exact for `|amount| < 90071992547409` — i.e. it is *not* wrong at any realistic magnitude. **Do not claim it is.** It *does* silently collapse sub-cent precision: `1.005 -> 100` ($1.00, not $1.01). A string-based parser is still the correct answer, but the honest justification is sub-cent precision and auditability, **not** "floats break at $19.99 with rounding."
+`Math.round(parseFloat(v)*100)` is exact for `|amount| < 22517998136852.48` (= 2^51/100) — i.e. it is *not* wrong at any realistic magnitude. **Do not claim it is.** It *does* silently collapse sub-cent precision: `1.005 -> 100` ($1.00, not $1.01). A string-based parser is still the correct answer, but the honest justification is sub-cent precision and auditability, **not** "floats break at $19.99 with rounding."
 
 posted 2026-01-02T03:00:00Z -> UTC: 2026-01-02 | America/Los_Angeles: 2026-01-01
 A one-day disagreement: an adapter must take a timezone parameter and can never use the server's local zone.
@@ -286,12 +286,36 @@ here:
    Quoting the module comment verbatim, because restating it risks
    overclaiming:
 
-   > `Math.round(parseFloat(v)*100)` is exact for `|amount| < 90071992547409`
-   > — i.e. it is *not* wrong at any realistic magnitude. **Do not claim it
-   > is.** It *does* silently collapse sub-cent precision: `1.005 -> 100`
-   > ($1.00, not $1.01). A string-based parser is still the correct answer,
-   > but the honest justification is sub-cent precision and auditability,
-   > **not** "floats break at $19.99 with rounding."
+   > `Math.round(parseFloat(v)*100)` is exact for `|amount| <
+   > 22517998136852.48` (= 2^51/100) — i.e. it is *not* wrong at any
+   > realistic magnitude. **Do not claim it is.** It *does* silently
+   > collapse sub-cent precision: `1.005 -> 100` ($1.00, not $1.01). A
+   > string-based parser is still the correct answer, but the honest
+   > justification is sub-cent precision and auditability, **not** "floats
+   > break at $19.99 with rounding."
+
+   The bound is **2^51 cents, not 2^53**, and this document originally got
+   that wrong — PR #82's adversarial review caught it. `2^53/100` is the
+   bound for "the resulting cents are a safe integer", which is necessary
+   but not sufficient: `parseFloat(v)` already rounds to the nearest double
+   *before* the multiply, contributing roughly `|C|*2^-53` of error in
+   cents, and the product rounds again for another `|C|*2^-53`. The combined
+   `|C|*2^-52` has to stay under the `0.5` that `Math.round` can absorb,
+   which gives `|C| < 2^51` cents. The verified counterexample, comfortably
+   under the figure this section used to quote:
+
+   ```
+   v                 = "35361522496920.88"
+   parseFloat(v)*100 = 3536152249692088.5
+   Math.round(...)   = 3536152249692089
+   exact cents       = 3536152249692088    <- off by one cent
+   ```
+
+   A band scan of 300k random two-decimal values per power-of-two band found
+   zero failures below 2^51 cents, then ~7% in 2^51..2^52 and ~15% in
+   2^52..2^53. None of this changes the operative conclusion — rounding is
+   still exact at every magnitude Runway will ever see, and the case for a
+   string parser is still sub-cent precision. Only the bound was wrong.
 
    `domain/money.ts:12`'s `toMinorUnits` is already `Math.round(major * 100)`
    — the correct rounding form. The repo has no truncation bug today; the
