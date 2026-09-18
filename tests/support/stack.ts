@@ -139,9 +139,75 @@ export function assertLocalOnly(
 
 let cached: LocalStack | null | undefined
 
+/**
+ * Why the last `resolveStack()` came back `null`, in words safe to print.
+ *
+ * Issue #68: every failure below used to collapse into a bare `null`, so the
+ * guard could only report the symptom — "not reachable" — for a stack that was
+ * demonstrably up and answering. That sends the next person looking at Docker
+ * when the real cause was a spawn, an exit code, or a parse. It is also the
+ * exact shape of nuisance that gets `RUNWAY_RLS_REQUIRE_STACK` switched off,
+ * which is the one outcome `docs/testing.md` says must never happen.
+ *
+ * **Never the output itself.** `supabase status` prints the anon key, the
+ * service-role key, the JWT secret and a connection string, and a failed
+ * `execFileSync` carries that output on the thrown error. So this records the
+ * *kind* of failure and the safe particulars only — an errno, an exit code, the
+ * names of the keys that were missing — per CLAUDE.md on what may reach a log.
+ */
+let lastFailure: string | null = null
+
+/**
+ * The reason the last resolution failed, or `null` if it succeeded or has not
+ * run. Read by the `RUNWAY_RLS_REQUIRE_STACK=1` guards so their message names
+ * the cause rather than only the symptom.
+ */
+export function stackResolutionFailure(): string | null {
+  return lastFailure
+}
+
+/**
+ * The sentence the `RUNWAY_RLS_REQUIRE_STACK=1` guards append to "not
+ * reachable", or an empty string when the resolver has nothing to add.
+ *
+ * Shared so both guards — `tests/support/global-setup.ts` for the integration
+ * project and `requireStackOrSkip` for E2E — say the same thing. Neither guard
+ * is softened by this: the throw is unconditional exactly as before, and this
+ * only tells the reader where to look.
+ */
+export function describeStackResolution(): string {
+  const reason = stackResolutionFailure()
+  if (!reason) return ''
+  return (
+    ` The resolver did not simply find an absent stack — it failed: ${reason}. ` +
+    'If the stack is in fact up (`curl http://127.0.0.1:54321/rest/v1/`), export the ' +
+    'RUNWAY_RLS_* variables instead, which skip the subprocess and are still loopback-checked.'
+  )
+}
+
 /** Test-only escape hatch so the guard's own tests can re-resolve. */
 export function resetStackCache(): void {
   cached = undefined
+  lastFailure = null
+}
+
+/**
+ * Turns whatever `execFileSync` threw into one safe sentence.
+ *
+ * Node puts an errno on a spawn failure (`ENOENT` when the CLI is not on PATH)
+ * and a `status` on a non-zero exit. Both are printable. `stdout`/`stderr` on
+ * the error are not, and are never read here.
+ */
+function describeSpawnFailure(err: unknown): string {
+  const code = (err as { code?: unknown }).code
+  const status = (err as { status?: unknown }).status
+  if (code === 'ENOENT') {
+    return '`supabase` could not be spawned (ENOENT) — the CLI is not on PATH for this process'
+  }
+  if (typeof code === 'string') return `\`supabase status\` could not be spawned (${code})`
+  if (typeof status === 'number') return `\`supabase status\` exited with code ${status}`
+  const name = err instanceof Error ? err.name : typeof err
+  return `\`supabase status\` failed to run (${name})`
 }
 
 /**
@@ -173,23 +239,50 @@ export function resolveStack(): LocalStack | null {
     return cached
   }
 
+  let raw: string
   try {
-    const raw = execFileSync('supabase', ['status', '-o', 'json'], {
+    raw = execFileSync('supabase', ['status', '-o', 'json'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     })
+  } catch (err) {
+    lastFailure = describeSpawnFailure(err)
+    cached = null
+    return cached
+  }
+
+  try {
+    // Parsed in its own try so a `JSON.parse` throw is not reported as a spawn
+    // failure. `supabase status` also writes a "Stopped services" line and an
+    // upgrade notice, but to stderr — discarded above — so output that is not
+    // JSON here means something else, and saying so is the point.
     const status = JSON.parse(raw) as Record<string, string>
     // ANON_KEY is the legacy JWT; PUBLISHABLE_KEY is its replacement. Newer CLI
     // versions may stop emitting the former, so accept either.
     const anonKey = status.ANON_KEY || status.PUBLISHABLE_KEY
     const serviceRoleKey = status.SERVICE_ROLE_KEY || status.SECRET_KEY
-    if (!status.API_URL || !status.DB_URL || !anonKey || !serviceRoleKey) {
+    const apiUrl = status.API_URL
+    const dbUrl = status.DB_URL
+    // Collected rather than short-circuited so one run names every missing
+    // field, not just the first — the reader is usually looking at a CLI whose
+    // output shape changed, and one name at a time is three runs.
+    const missing = [
+      apiUrl ? null : 'API_URL',
+      dbUrl ? null : 'DB_URL',
+      anonKey ? null : 'ANON_KEY/PUBLISHABLE_KEY',
+      serviceRoleKey ? null : 'SERVICE_ROLE_KEY/SECRET_KEY',
+    ].filter((name): name is string => name !== null)
+    if (!apiUrl || !dbUrl || !anonKey || !serviceRoleKey) {
+      // Names only. The values are exactly the secrets that must not be logged.
+      lastFailure =
+        `\`supabase status\` returned JSON without ${missing.join(', ')} ` +
+        `(${Object.keys(status).length} field(s) present)`
       cached = null
       return cached
     }
     const candidate: LocalStack = {
-      apiUrl: status.API_URL,
-      dbUrl: status.DB_URL,
+      apiUrl,
+      dbUrl,
       anonKey,
       serviceRoleKey,
       jwtSecret: status.JWT_SECRET || null,
@@ -198,9 +291,21 @@ export function resolveStack(): LocalStack | null {
     // never fire. It is checked anyway: the value of a guard is that it holds
     // for the case nobody predicted.
     assertLocalOnly(candidate, '`supabase status`')
+    lastFailure = null
     cached = candidate
   } catch (err) {
+    // A stack pointed somewhere it must never be pointed is not a resolution
+    // failure to describe — it is a refusal, and it keeps propagating.
     if (err instanceof NonLocalStackError) throw err
+    // Deliberately not `err.message`. V8 quotes the offending input back in a
+    // `JSON.parse` SyntaxError ("Unexpected token 'S', \"…\" is not valid
+    // JSON"), and the input here is the banner carrying the anon key, the
+    // service-role key and the JWT secret. A length is a count and is safe;
+    // the text is not.
+    lastFailure =
+      err instanceof SyntaxError
+        ? `\`supabase status\` returned ${raw.length} character(s) that are not JSON`
+        : `\`supabase status\` output could not be read (${err instanceof Error ? err.name : typeof err})`
     cached = null
   }
   return cached
