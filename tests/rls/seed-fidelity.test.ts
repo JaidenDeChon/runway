@@ -27,7 +27,7 @@
 
 import { beforeAll, describe, expect, it } from 'vitest'
 import { occurrenceDates } from '~~/domain/cadence'
-import { compareDates, maxDate } from '~~/domain/dates'
+import { addDays, compareDates, maxDate } from '~~/domain/dates'
 import {
   createSeedData,
   createShortSeedData,
@@ -45,7 +45,36 @@ import { adminSql, LOCAL_STACK, USER_A, USER_C } from './helpers'
 const SEED_HORIZON_END = '2026-12-31'
 
 /**
- * Keeps only the dates `supabase/seed.sql` itself is responsible for.
+ * A ceiling far enough past `SEED_HORIZON_END` that no plausible real
+ * `materializationWindow(today)` — `today + 365`, for any `today` this
+ * machine's clock could report — reaches it. Ten years, not one, because
+ * this only ever needs to be generous, never tight.
+ */
+const CADENCE_CEILING = addDays(SEED_HORIZON_END, 3650)
+
+/**
+ * Whether `date` is a day `item`'s own cadence would land on for *some*
+ * window that includes it — i.e., whether a legitimate materialization top-up
+ * could have produced it, regardless of which `today` ran that top-up.
+ *
+ * This works because of one fact about `occurrenceDates`
+ * (`domain/cadence.ts`): its effective start is clamped up to at least
+ * `item.nextOccurrence` regardless of what start the caller passes in. So
+ * `occurrenceDates(item, X, ceiling)` returns the identical set for *any* `X`
+ * at or before the rule's own start — including both `item.nextOccurrence`
+ * itself (what this check passes) and `today - 90` (what a real top-up
+ * passes, `domain/materialization.ts` `materializationWindow`). Whatever
+ * `today` actually was when a session dirtied this rule, its top-up's desired
+ * set and this check's set agree past `SEED_HORIZON_END` byte for byte,
+ * because both are the same function computing the same rule's cadence.
+ */
+function isCadenceConsistent(item: RecurringItem, date: string): boolean {
+  return occurrenceDates(item, item.nextOccurrence, CADENCE_CEILING).includes(date)
+}
+
+/**
+ * Keeps only the dates that can be compared against `expected` without a real
+ * session's own materialization producing a false disagreement.
  *
  * Issue #67: `public.occurrences` is not this file's alone. Any signed-in
  * session for a seeded user runs `useOccurrenceMaterialization`'s client-side
@@ -57,21 +86,43 @@ const SEED_HORIZON_END = '2026-12-31'
  * and the next `bun run test:integration` — with no `supabase db reset`
  * between — inherits it. Reproduced directly: calling the same RPC with the
  * same window as a real browser session would, then re-running this suite,
- * turns a `to equal []` pass into an eight-rule, hundred-plus-date diff.
+ * turned a `to equal []` pass into an eight-rule, hundred-plus-date diff.
  *
  * The fix is not to relax the comparison — an exact match is what proves the
- * seed and the engine agree — but to compare the same *range* twice. `actual`
- * is whatever is in the table right now, seed rows and any top-up alike;
- * bounding it to `[start, SEED_HORIZON_END]`, the exact range `expected` is
- * already computed over, drops only the rows a real session could have added
- * outside that range. A genuine disagreement inside it — the thing this test
- * exists to catch — still fails loudly: nothing here can make a wrong date
- * *inside* the seed's own horizon compare equal to a correct one.
+ * seed and the engine agree — and a blind date-range filter turned out to be
+ * too blunt an instrument for that: it would just as happily hide a genuine
+ * `supabase/seed.sql` bug that generates past its own horizon (a `least(...)`
+ * clamp regressed to a later date, say) as it hides legitimate materialization
+ * surplus, because both look identical from the date alone. So a date beyond
+ * `SEED_HORIZON_END` is dropped only when `isCadenceConsistent` says a real
+ * top-up *could* have produced it — any date a materialization run never
+ * would (the sticky-`generate_series` regression this file's own top comment
+ * describes, reintroduced and drifting far enough to cross the horizon, is
+ * exactly the shape this catches) is kept, and surfaces as a disagreement.
+ *
+ * A date *before* `start` is never dropped, unconditionally: nothing about
+ * materialization can ever produce one — see `isCadenceConsistent`'s own
+ * comment on why `occurrenceDates` clamps up to at least `nextOccurrence`
+ * regardless of the window a caller passes — so a row found there can only
+ * mean the seed generated it wrongly, and the exact-match comparison below
+ * must see it to fail on it. The one thing this cannot catch is a horizon
+ * clamp *widened* rather than removed (`2026-12-31` typo'd to `2027-12-31`):
+ * the dates that produces are, by construction, cadence-consistent — the
+ * seed's own generator steps correctly, just for longer than intended — which
+ * is indistinguishable from real surplus by date content alone.
+ * `tests/guards/seed-horizon-clamp.test.ts` closes that gap a different way:
+ * by reading `supabase/seed.sql` itself rather than its output.
  */
-function withinSeedHorizon(dates: readonly string[], start: string): string[] {
-  return dates.filter(
-    (date) => compareDates(date, start) >= 0 && compareDates(date, SEED_HORIZON_END) <= 0,
-  )
+function actualForComparison(
+  item: RecurringItem,
+  dates: readonly string[],
+  start: string,
+): string[] {
+  return dates.filter((date) => {
+    if (compareDates(date, start) < 0) return true
+    if (compareDates(date, SEED_HORIZON_END) <= 0) return true
+    return !isCadenceConsistent(item, date)
+  })
 }
 
 /**
@@ -193,10 +244,11 @@ describe.skipIf(LOCAL_STACK === null)('the seed and the domain fixture agree', (
       const item = toItem(row)
       const start = maxDate(item.nextOccurrence, item.startsOn ?? item.nextOccurrence)
       const expected = occurrenceDates(item, start, SEED_HORIZON_END)
-      // Bounded to the seed's own horizon before comparing — see
-      // `withinSeedHorizon`'s comment. `expected` needs no bounding: it was
-      // never anything but this range to begin with.
-      const actual = withinSeedHorizon(occurrencesByRule.get(row.id) ?? [], start)
+      // Cleared of only what a real session's own top-up could explain —
+      // see `actualForComparison`'s comment. `expected` needs no equivalent
+      // treatment: it was never anything but `[start, SEED_HORIZON_END]` to
+      // begin with.
+      const actual = actualForComparison(item, occurrencesByRule.get(row.id) ?? [], start)
       if (actual.join(',') !== expected.join(',')) {
         disagreements.push(
           `${row.name} (${row.cadence}, anchor ${iso(row.anchor_date)})\n` +
