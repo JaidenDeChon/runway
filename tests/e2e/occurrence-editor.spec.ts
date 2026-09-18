@@ -163,7 +163,7 @@ test.describe('saving an edit', () => {
 })
 
 test.describe('previewing an edit', () => {
-  test('a what-if preview returns to the item list, moves the chart, and is discarded on close', async ({
+  test('a what-if preview returns to the item list, moves the forecast, and is discarded on close', async ({
     emptyHouseholdPage: page,
   }) => {
     await createAccount(page, 'E2E Occurrence Preview Checking', '500')
@@ -191,12 +191,14 @@ test.describe('previewing an edit', () => {
     // `Done` only renders in the item list, so its return *is* the assertion.
     await expect(dialog.getByRole('button', { name: 'Done' })).toBeVisible()
 
-    const previewed = new RegExp(`Lowest projected balance ${MINUS}\\$200 on ${shortDate(dueDate)}`)
-    await expect
-      .poll(async () => previewed.test((await chart.getAttribute('aria-label')) ?? ''), {
-        message: 'expected the preview to move the chart without saving',
-      })
-      .toBe(true)
+    // Read the day's balance from inside the sheet rather than off the chart's
+    // aria-label: the sheet is modal, so everything behind it leaves the
+    // accessibility tree and `getByRole('img')` cannot resolve the chart while
+    // it is open. This is the same figure — `activeBalances` and the chart are
+    // both views onto the one `projection` computed in index.vue — so $500
+    // opening balance − $700 previewed bill = −$200 proves the preview reached
+    // the engine, not just the form.
+    await expect(dialog.getByText(`${MINUS}$200`)).toBeVisible()
 
     // Closing discards the what-if list — nothing was ever written, so the
     // forecast returns to the rule's own figure.
