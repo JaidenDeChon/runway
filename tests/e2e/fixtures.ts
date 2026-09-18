@@ -37,7 +37,13 @@
 import { test as base, expect } from '@playwright/test'
 import { createServerClient } from '@supabase/ssr'
 import { adminSql, LOCAL_STACK, type SeedUser, USER_A, USER_C, USER_D } from '../support/database'
-import { assertLocalOnly, assertLocalUrl, hostOf, isLoopbackHost } from '../support/stack'
+import {
+  assertLocalOnly,
+  assertLocalUrl,
+  describeStackResolution,
+  hostOf,
+  isLoopbackHost,
+} from '../support/stack'
 
 export { expect }
 
@@ -219,7 +225,10 @@ export function requireStackOrSkip(): void {
     throw new Error(
       'RUNWAY_RLS_REQUIRE_STACK=1 but the local Supabase stack is not reachable. ' +
         'Refusing to skip the authenticated E2E tests: skipping them here would report a ' +
-        'green run for a session nothing has checked.',
+        'green run for a session nothing has checked.' +
+        // Issue #68, same reasoning as the integration guard: name what actually
+        // failed, so a resolver problem is not mistaken for a stack problem.
+        describeStackResolution(),
     )
   }
   test.skip(true, 'needs the local Supabase stack — `bun run db:start`')

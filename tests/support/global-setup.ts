@@ -19,7 +19,7 @@
  * environment. See tests/support/stack.ts.
  */
 
-import { publishStackToEnvironment, resolveStack } from './stack'
+import { describeStackResolution, publishStackToEnvironment, resolveStack } from './stack'
 
 const MISSING_STACK = [
   '',
@@ -68,7 +68,11 @@ export default function setup(): () => void {
       throw new Error(
         'RUNWAY_RLS_REQUIRE_STACK=1 but the local Supabase stack is not reachable. ' +
           'Refusing to skip the integration suite: skipping it here would report a green run ' +
-          'for a database nothing has checked.',
+          'for a database nothing has checked.' +
+          // Issue #68: the resolver can fail for reasons that have nothing to do
+          // with the stack being down, and "not reachable" then points everyone
+          // at Docker. Whatever actually went wrong is named here.
+          describeStackResolution(),
       )
     }
     console.warn(MISSING_STACK)
