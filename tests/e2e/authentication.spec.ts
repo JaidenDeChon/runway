@@ -337,7 +337,9 @@ test.describe('the password-reset entry points', () => {
     }
   }
 
-  test('acknowledges a reset request identically for any address', async ({ page }) => {
+  test('acknowledges a reset request identically for any address, in words and in tone', async ({
+    page,
+  }) => {
     const registered = await responseFor(page, USER_A.email)
     expect(registered.text).not.toBe('')
 
@@ -347,38 +349,17 @@ test.describe('the password-reset entry points', () => {
     // enumeration test above makes, which this one was missing entirely.
     expect(unregistered.text).toBe(registered.text)
     expect(registered.text).not.toMatch(/registered|exists|not found|no account/i)
-  })
 
-  // Issue #89. Marked failing, not deleted or softened — CLAUDE.md's rule for broken
-  // behaviour. It runs, and the suite goes red the day the leak is fixed and
-  // somebody forgets to remove this line.
-  //
-  // The words are identical (above) but the *tone* is not, and tone is part of
-  // the answer: `AuthMessage` renders the destructive variant for `alert` and
-  // the plain one for `status`, so a registered address gets a red box and an
-  // unregistered one a neutral box. That is an enumeration signal a visitor can
-  // read off the screen, and CLAUDE.md calls the property it breaks absolute.
-  //
-  // Observed in CI on both projects and all retries: registered -> `alert`,
-  // unregistered -> `status`. The reading that fits is that GoTrue only
-  // attempts delivery for an address it knows, so only that one can fail on a
-  // stack with no mailer — which makes this a failure-mode leak: it appears
-  // whenever sending is broken, and CI has no mailer at all.
-  //
-  // Beware the shape of the "fix": once a mailer exists both paths succeed,
-  // this test passes, and `test.fail()` turns the suite red. That is the
-  // annotation doing its job, not a false alarm — it forces the question of
-  // whether the leak was closed or merely hidden behind a working SMTP server.
-  test('answers in the same tone for a registered and an unregistered address', async ({
-    page,
-  }) => {
-    // Inside the body on purpose: at describe scope this would mark the
-    // sibling tests failing too.
-    test.fail()
-
-    const registered = await responseFor(page, USER_A.email)
-    const unregistered = await responseFor(page, 'nobody-here@runway.test')
-
+    // Issue #89. CI starts the stack with `-x mailpit`, so GoTrue cannot
+    // deliver — and, per its own design, it attempts delivery only for an
+    // address it knows, so *only* the registered one can hit a send failure
+    // here. Before the fix, that meant `alert` for the registered address and
+    // `status` for the unregistered one on this exact run: identical words in
+    // two different-looking boxes, which is still two different outcomes to
+    // an eye. Asserting this on CI, where the mailer really is down, is what
+    // makes it more than a local nicety — a fix that only worked with
+    // mailpit up would leave this exact case broken in production during any
+    // real SMTP outage.
     expect(unregistered.role).toBe(registered.role)
   })
 
@@ -399,5 +380,33 @@ test.describe('the password-reset entry points', () => {
     // rather than presenting a form that would fail on submit.
     await expect(page.getByRole('alert')).toBeVisible()
     await expect(page.getByRole('link', { name: 'Email me a new link' })).toBeVisible()
+  })
+})
+
+test.describe('the sign-up door', () => {
+  test('signing up with an address that already has an account gives the neutral acknowledgement, not an alert', async ({
+    page,
+  }) => {
+    // Issue #89's other instance of the same bug — reproducible locally,
+    // without a broken mailer. The local stack runs with
+    // `enable_confirmations = false` ('the full lifecycle' above), so signing
+    // up with an address GoTrue already knows returns a real error, masked to
+    // the same neutral sentence a genuine sign-up would show
+    // (useAuthActions.ts signUp / shared/auth/errors.ts authErrorMessage).
+    // Before the fix, that masked error still rendered as `role="alert"` —
+    // the words were identical to a real acknowledgement and the box around
+    // them was not.
+    await gotoHydrated(page, '/sign-up')
+    await page.getByLabel('Email').fill(USER_A.email)
+    await page.getByLabel('Password', { exact: true }).fill(THROWAWAY_PASSWORD)
+    await page.getByLabel('Confirm password').fill(THROWAWAY_PASSWORD)
+    await page.getByRole('button', { name: 'Create account' }).click()
+
+    const response = page.locator('[data-slot="card"] [data-slot="alert"]')
+    await expect(response).toBeVisible()
+    expect(await response.getAttribute('role')).toBe('status')
+    expect((await response.textContent())?.trim()).not.toMatch(
+      /registered|exists|not found|no account/i,
+    )
   })
 })
