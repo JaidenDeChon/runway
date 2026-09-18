@@ -27,7 +27,7 @@
 
 import { beforeAll, describe, expect, it } from 'vitest'
 import { occurrenceDates } from '~~/domain/cadence'
-import { maxDate } from '~~/domain/dates'
+import { compareDates, maxDate } from '~~/domain/dates'
 import {
   createSeedData,
   createShortSeedData,
@@ -43,6 +43,36 @@ import { adminSql, LOCAL_STACK, USER_A, USER_C } from './helpers'
 
 /** The horizon `supabase/seed.sql` generates through. */
 const SEED_HORIZON_END = '2026-12-31'
+
+/**
+ * Keeps only the dates `supabase/seed.sql` itself is responsible for.
+ *
+ * Issue #67: `public.occurrences` is not this file's alone. Any signed-in
+ * session for a seeded user runs `useOccurrenceMaterialization`'s client-side
+ * horizon top-up (`app/composables/useOccurrenceMaterialization.ts`), which
+ * calls `regenerate_occurrences` across `[today - 90, today + 365]` —
+ * `domain/materialization.ts` `materializationWindow` — and that window
+ * reaches almost a year past `SEED_HORIZON_END`. An E2E run that signs in as
+ * user A or C (`tests/e2e/fixtures.ts`) leaves exactly that surplus behind,
+ * and the next `bun run test:integration` — with no `supabase db reset`
+ * between — inherits it. Reproduced directly: calling the same RPC with the
+ * same window as a real browser session would, then re-running this suite,
+ * turns a `to equal []` pass into an eight-rule, hundred-plus-date diff.
+ *
+ * The fix is not to relax the comparison — an exact match is what proves the
+ * seed and the engine agree — but to compare the same *range* twice. `actual`
+ * is whatever is in the table right now, seed rows and any top-up alike;
+ * bounding it to `[start, SEED_HORIZON_END]`, the exact range `expected` is
+ * already computed over, drops only the rows a real session could have added
+ * outside that range. A genuine disagreement inside it — the thing this test
+ * exists to catch — still fails loudly: nothing here can make a wrong date
+ * *inside* the seed's own horizon compare equal to a correct one.
+ */
+function withinSeedHorizon(dates: readonly string[], start: string): string[] {
+  return dates.filter(
+    (date) => compareDates(date, start) >= 0 && compareDates(date, SEED_HORIZON_END) <= 0,
+  )
+}
 
 /**
  * `Rent` is deliberately two rows here and one in the domain module: the seed
@@ -163,7 +193,10 @@ describe.skipIf(LOCAL_STACK === null)('the seed and the domain fixture agree', (
       const item = toItem(row)
       const start = maxDate(item.nextOccurrence, item.startsOn ?? item.nextOccurrence)
       const expected = occurrenceDates(item, start, SEED_HORIZON_END)
-      const actual = occurrencesByRule.get(row.id) ?? []
+      // Bounded to the seed's own horizon before comparing — see
+      // `withinSeedHorizon`'s comment. `expected` needs no bounding: it was
+      // never anything but this range to begin with.
+      const actual = withinSeedHorizon(occurrencesByRule.get(row.id) ?? [], start)
       if (actual.join(',') !== expected.join(',')) {
         disagreements.push(
           `${row.name} (${row.cadence}, anchor ${iso(row.anchor_date)})\n` +
