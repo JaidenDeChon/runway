@@ -205,6 +205,32 @@ export default defineConfig({
 
   use: {
     baseURL: BASE_URL,
+    /**
+     * The browser's clock is UTC, on every machine.
+     *
+     * The specs frame their dates in UTC — `isoDaysFromToday` floors
+     * `Date.now()` to UTC midnight — while the app resolves "today" through
+     * `useToday()` → `todayIn(timeZone)`, and `useTimeZone` corrects to the
+     * *browser's* zone on mount. With no `timezoneId` pinned that zone is
+     * whatever the developer's machine says, so the two frames agreed only
+     * where the local calendar date matched UTC's.
+     *
+     * They disagreed for the hours between local evening and local midnight at
+     * any negative offset, which made `recurring-items.spec.ts`'s "Ended" test
+     * fail deterministically after ~17:00 at UTC−7 and pass every morning.
+     * Reproducible at any hour with `TZ=Etc/GMT+12`. CI runs UTC and therefore
+     * never saw it — a suite that is green only where it happens to be run.
+     *
+     * Pinning the browser is the fix rather than patching the helper again:
+     * the frames have now been mismatched in *both* directions (81fb69f moved
+     * the helper from local to UTC to close the mirror-image hazard and flipped
+     * this one open), which is the signal that the harness should stop having
+     * two frames at all. `assertBrowserZoneIsUtc` in tests/e2e/fixtures.ts
+     * checks the browser actually honoured it, because a harness whose
+     * determinism rests on an unpinned ambient value reports a safety it never
+     * measured. Issue #64.
+     */
+    timezoneId: 'UTC',
     // The issue's words: "trace on failure". `retain-on-failure` keeps a trace
     // for a test that failed and discards every passing one, so the artifact
     // stays small enough that people actually download it.
