@@ -44,15 +44,18 @@ const OK: AuthActionResult = { ok: true, message: null, tone: 'notice' }
  * this masking does not apply to, or the rate-limiting exception) is
  * reported as one, exactly as before.
  *
- * A masked failure is still logged — never the address, never the provider's
- * own message, per CLAUDE.md on what must never reach a log, extended here
- * the way `shared/auth/errors.ts` extends it to an email address. This is
- * the one place that can happen: every masked failure passes through here.
+ * A masked failure is logged when `authErrorResult` says it is worth an
+ * operator's attention (`.loggable` — false for a confirmed-routine outcome
+ * like signing up twice, so that does not bury a genuine incident in noise)
+ * — never the address, never the provider's own message, per CLAUDE.md on
+ * what must never reach a log, extended here the way `shared/auth/errors.ts`
+ * extends it to an email address. This is the one place that can happen:
+ * every masked failure passes through here.
  */
 function failed(operation: AuthOperation, error: unknown): AuthActionResult {
   const typed = error as AuthErrorLike
-  const { message, tone } = authErrorResult(operation, typed)
-  if (tone === 'notice') {
+  const { message, tone, loggable } = authErrorResult(operation, typed)
+  if (tone === 'notice' && loggable) {
     console.error('auth request failed, masked from the user', {
       operation,
       code: typed?.code ?? null,

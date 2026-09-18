@@ -105,6 +105,27 @@ export function revealsRegistration(message: string | undefined): boolean {
 }
 
 /**
+ * The neutral acknowledgement `operation` falls through to on a masked
+ * failure, or `null` when it has none.
+ *
+ * The one place that decides *which* operations are anti-enumeration
+ * operations. `authErrorMessage` and `authErrorResult` below both call this
+ * rather than each carrying their own copy of the same three-way check — a
+ * second copy is exactly how issue #89 happened: the message half of this
+ * file was already masked correctly, and the tone half re-derived "which
+ * operations count" independently, so the two silently disagreed. A single
+ * function means a future operation added here is masked *and* toned
+ * correctly the moment it is added, not after someone remembers to update
+ * two places.
+ */
+function neutralAcknowledgementFor(operation: AuthOperation): string | null {
+  if (operation === 'sign-up') return NEUTRAL_SIGN_UP_SENT
+  if (operation === 'magic-link' || operation === 'password-reset-request')
+    return NEUTRAL_EMAIL_SENT
+  return null
+}
+
+/**
  * The message to show the user for a failed auth call.
  *
  * `sign-up` and `password-reset-request` never surface a failure that would
@@ -129,9 +150,8 @@ export function authErrorMessage(
     return SAFE_CODES[code] ?? 'Too many attempts. Wait a minute and try again.'
   }
 
-  if (operation === 'sign-up') return NEUTRAL_SIGN_UP_SENT
-  if (operation === 'magic-link' || operation === 'password-reset-request')
-    return NEUTRAL_EMAIL_SENT
+  const neutral = neutralAcknowledgementFor(operation)
+  if (neutral !== null) return neutral
 
   const safe = SAFE_CODES[code]
   if (safe) return safe
@@ -141,10 +161,42 @@ export function authErrorMessage(
   return GENERIC[operation]
 }
 
-/** The message *and* the tone it is delivered in, decided together. */
+/**
+ * Masked codes that are a routine, expected business outcome rather than a
+ * system or delivery problem.
+ *
+ * `user_already_exists`, confirmed against the real local GoTrue: signing up
+ * with an address that already has an account is completely ordinary
+ * behaviour — someone forgot, or is testing the form — not a broken mailer.
+ * `authErrorResult.loggable` exists because logging every one of these at
+ * the same severity as a genuine send failure would bury the incidents that
+ * logging is for (issue #89's AC4) under routine traffic — a busy sign-up
+ * form could produce more of these in an hour than a real SMTP outage does
+ * in a week.
+ *
+ * Deliberately narrow — this excludes the one code verified to be routine
+ * rather than trying to classify GoTrue's whole error taxonomy; a code this
+ * set does not name defaults to loggable. An unregistered address on
+ * `password-reset-request` never needs an entry here at all: verified
+ * directly against the local stack, GoTrue does not attempt delivery for an
+ * address it does not know, so that call returns no error in the first
+ * place — never reaching `authErrorResult`, let alone getting logged.
+ */
+const ROUTINE_MASKED_CODES = new Set(['user_already_exists'])
+
+/** The message, the tone, and whether a masked failure is worth logging — decided together. */
 export interface AuthErrorResult {
   readonly message: string
   readonly tone: 'error' | 'notice'
+  /**
+   * Whether a caller should log this outcome for an operator to see. Only
+   * ever `false` for a masked (`tone: 'notice'`) failure whose code is a
+   * confirmed-routine one; a real, surfaced (`tone: 'error'`) failure is
+   * already visible to the user, so callers today only consult this when
+   * `tone === 'notice'` — the value is still defined either way, so it never
+   * needs a caller to duplicate the tone check before reading it.
+   */
+  readonly loggable: boolean
 }
 
 /**
@@ -166,17 +218,20 @@ export interface AuthErrorResult {
  * message (`over_email_send_rate_limit`, …), never the neutral
  * acknowledgement, so the check below never matches it — the same exception
  * `authErrorMessage`'s own doc comment already names, applied consistently.
+ *
+ * `neutralAcknowledgementFor` is what `authErrorMessage` itself consults for
+ * the same question, so this cannot re-derive "which operations count" and
+ * quietly disagree with the message half the way the first version of this
+ * fix did.
  */
 export function authErrorResult(
   operation: AuthOperation,
   error: AuthErrorLike | null | undefined,
 ): AuthErrorResult {
   const message = authErrorMessage(operation, error)
-  const neutral =
-    operation === 'sign-up'
-      ? NEUTRAL_SIGN_UP_SENT
-      : operation === 'magic-link' || operation === 'password-reset-request'
-        ? NEUTRAL_EMAIL_SENT
-        : null
-  return { message, tone: neutral !== null && message === neutral ? 'notice' : 'error' }
+  const neutral = neutralAcknowledgementFor(operation)
+  const tone = neutral !== null && message === neutral ? 'notice' : 'error'
+  const code = typeof error?.code === 'string' ? error.code : null
+  const loggable = !(code !== null && ROUTINE_MASKED_CODES.has(code))
+  return { message, tone, loggable }
 }
