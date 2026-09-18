@@ -307,6 +307,10 @@ describe('a transfer never moves the combined line', () => {
       monthlyDiscretionarySpend: 0,
       safetyCushion: 0,
       timeZone: null,
+      // Empty on purpose: this case is about transfers cancelling, and an
+      // override here would change the lines for a reason that has nothing to
+      // do with what it is testing.
+      occurrenceOverrides: [],
     }
 
     const before = projectOver({ ...data, transfers: [] }, 30)
