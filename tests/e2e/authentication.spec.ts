@@ -294,65 +294,92 @@ test.describe('user_id comes from the session, never from the request', () => {
 })
 
 test.describe('the password-reset entry points', () => {
-  test('acknowledges a reset request identically for any address', async ({ page }) => {
-    // `AuthMessage`'s own node, scoped to the auth card, matched by neither
-    // role. Two separate reasons, and the locator has to survive both:
-    //
-    // 1. Not page-wide. `<NuxtRouteAnnouncer>` in app/app.vue mounts a
-    //    visually-hidden `role="status"` span on every route holding the
-    //    document title, and it is the *only* one here until `AuthMessage`
-    //    renders. A page-wide `getByRole('status')` read the announcer — so
-    //    this test compared "Reset your password · Runway" with itself and
-    //    would have passed whatever the two responses said. It went red only
-    //    when AuthMessage won the race and made the locator ambiguous; the red
-    //    runs in #84 were the honest ones.
-    //
-    // 2. Not by role at all. `AuthMessage` renders `role="status"` for a
-    //    notice and `role="alert"` for a failure, and *which one appears here
-    //    depends on the environment*: CI starts the stack with `-x mailpit`
-    //    (.github/workflows/ci.yml), so GoTrue cannot send and the request
-    //    fails, while a local `bun run db:start` brings mailpit up and the
-    //    same request succeeds. Pinning either role makes the test pass in one
-    //    place and fail in the other — the same class of defect as the one
-    //    above.
-    //
-    // What the property actually says is tone-agnostic: *whatever* the app
-    // answers, it must answer identically for both addresses. So this matches
-    // the Alert itself, through the `data-slot` hook the primitives emit —
-    // the same one onboarding.spec.ts and shortfall.spec.ts reach for.
-    const acknowledgement = page.locator('[data-slot="card"] [data-slot="alert"]')
-
-    /**
-     * One fresh load per request. `onSubmit` clears `result` and then awaits,
-     * so a second submission on the same page briefly leaves the *previous*
-     * response on screen — and since the two are identical by design, reading
-     * the stale one is precisely how a regression would slip through.
-     */
-    async function responseFor(address: string): Promise<{ text: string; role: string | null }> {
-      await gotoHydrated(page, '/forgot-password')
-      await page.getByLabel('Email').fill(address)
-      await page.getByRole('button', { name: 'Email me a link' }).click()
-      await expect(acknowledgement).toBeVisible()
-      return {
-        text: (await acknowledgement.textContent())?.trim() ?? '',
-        // The tone is part of the answer, not decoration: `AuthMessage` renders
-        // the destructive variant for `alert` and the plain one for `status`.
-        // Identical words in a red box for one address and a neutral box for
-        // the other would still tell a visitor which address has an account.
-        role: await acknowledgement.getAttribute('role'),
-      }
+  /**
+   * What `/forgot-password` answers for one address: the words, and the tone
+   * they are delivered in.
+   *
+   * The locator is `AuthMessage`'s own node, scoped to the auth card and
+   * matched by neither role. Two separate reasons, and it has to survive both:
+   *
+   * 1. Not page-wide. `<NuxtRouteAnnouncer>` in app/app.vue mounts a
+   *    visually-hidden `role="status"` span on every route holding the document
+   *    title, and it is the *only* one here until `AuthMessage` renders. A
+   *    page-wide `getByRole('status')` read the announcer — so this test used to
+   *    compare "Reset your password · Runway" with itself and would have passed
+   *    whatever the two responses said. It went red only when AuthMessage won
+   *    the race and made the locator ambiguous; the red runs in #84 were the
+   *    honest ones.
+   *
+   * 2. Not by role at all. `AuthMessage` renders `role="status"` for a notice
+   *    and `role="alert"` for a failure, and which one appears depends on the
+   *    environment: CI starts the stack with `-x mailpit`
+   *    (.github/workflows/ci.yml), so GoTrue cannot send, while a local
+   *    `bun run db:start` brings mailpit up. Pinning either role makes the test
+   *    pass in one place and fail in the other.
+   *
+   * One fresh load per request, too. `onSubmit` clears `result` and then
+   * awaits, so a second submission on the same page briefly leaves the
+   * *previous* response on screen — and since the two are meant to be
+   * identical, reading the stale one is how a regression would slip through.
+   */
+  async function responseFor(
+    page: import('@playwright/test').Page,
+    address: string,
+  ): Promise<{ text: string; role: string | null }> {
+    const response = page.locator('[data-slot="card"] [data-slot="alert"]')
+    await gotoHydrated(page, '/forgot-password')
+    await page.getByLabel('Email').fill(address)
+    await page.getByRole('button', { name: 'Email me a link' }).click()
+    await expect(response).toBeVisible()
+    return {
+      text: (await response.textContent())?.trim() ?? '',
+      role: await response.getAttribute('role'),
     }
+  }
 
-    const registered = await responseFor(USER_A.email)
+  test('acknowledges a reset request identically for any address', async ({ page }) => {
+    const registered = await responseFor(page, USER_A.email)
     expect(registered.text).not.toBe('')
 
-    const unregistered = await responseFor('nobody-here@runway.test')
+    const unregistered = await responseFor(page, 'nobody-here@runway.test')
 
     // The property, stated directly — the same assertions the sign-in
     // enumeration test above makes, which this one was missing entirely.
     expect(unregistered.text).toBe(registered.text)
-    expect(unregistered.role).toBe(registered.role)
     expect(registered.text).not.toMatch(/registered|exists|not found|no account/i)
+  })
+
+  // Issue #89. Marked failing, not deleted or softened — CLAUDE.md's rule for broken
+  // behaviour. It runs, and the suite goes red the day the leak is fixed and
+  // somebody forgets to remove this line.
+  //
+  // The words are identical (above) but the *tone* is not, and tone is part of
+  // the answer: `AuthMessage` renders the destructive variant for `alert` and
+  // the plain one for `status`, so a registered address gets a red box and an
+  // unregistered one a neutral box. That is an enumeration signal a visitor can
+  // read off the screen, and CLAUDE.md calls the property it breaks absolute.
+  //
+  // Observed in CI on both projects and all retries: registered -> `alert`,
+  // unregistered -> `status`. The reading that fits is that GoTrue only
+  // attempts delivery for an address it knows, so only that one can fail on a
+  // stack with no mailer — which makes this a failure-mode leak: it appears
+  // whenever sending is broken, and CI has no mailer at all.
+  //
+  // Beware the shape of the "fix": once a mailer exists both paths succeed,
+  // this test passes, and `test.fail()` turns the suite red. That is the
+  // annotation doing its job, not a false alarm — it forces the question of
+  // whether the leak was closed or merely hidden behind a working SMTP server.
+  test('answers in the same tone for a registered and an unregistered address', async ({
+    page,
+  }) => {
+    // Inside the body on purpose: at describe scope this would mark the
+    // sibling tests failing too.
+    test.fail()
+
+    const registered = await responseFor(page, USER_A.email)
+    const unregistered = await responseFor(page, 'nobody-here@runway.test')
+
+    expect(unregistered.role).toBe(registered.role)
   })
 
   test('sends a used or invalid link to a page that explains nothing', async ({ page }) => {
