@@ -295,17 +295,36 @@ test.describe('user_id comes from the session, never from the request', () => {
 
 test.describe('the password-reset entry points', () => {
   test('acknowledges a reset request identically for any address', async ({ page }) => {
-    await gotoHydrated(page, '/forgot-password')
+    // Scoped to the auth card, never to the page. `<NuxtRouteAnnouncer>` in
+    // app/app.vue mounts its own visually-hidden `role="status"` span on every
+    // route, holding the document title, and it is the *only* one on this page
+    // until `AuthMessage` renders. A page-wide `getByRole('status')` therefore
+    // read the announcer — this test compared "Reset your password · Runway"
+    // with itself and would have passed whatever the two acknowledgements
+    // said. It went red only when AuthMessage arrived fast enough to make the
+    // locator ambiguous, which is the "flake" in #84: the red runs were the
+    // honest ones. `data-slot` is the stable hook the primitives emit, the
+    // same one onboarding.spec.ts and shortfall.spec.ts reach for.
+    const acknowledgement = page.locator('[data-slot="card"]').getByRole('status')
 
-    await page.getByLabel('Email').fill(USER_A.email)
-    await page.getByRole('button', { name: 'Email me a link' }).click()
-    const registered = (await page.getByRole('status').textContent()) ?? ''
+    /**
+     * One fresh load per request. `onSubmit` clears `result` and then awaits,
+     * so a second submission on the same page briefly leaves the *previous*
+     * acknowledgement on screen — and since the two are identical by design,
+     * reading the stale one is precisely how a regression would slip through.
+     */
+    async function acknowledgementFor(address: string): Promise<string> {
+      await gotoHydrated(page, '/forgot-password')
+      await page.getByLabel('Email').fill(address)
+      await page.getByRole('button', { name: 'Email me a link' }).click()
+      await expect(acknowledgement).toBeVisible()
+      return (await acknowledgement.textContent()) ?? ''
+    }
+
+    const registered = await acknowledgementFor(USER_A.email)
     expect(registered).not.toBe('')
 
-    await page.getByLabel('Email').fill('nobody-here@runway.test')
-    await page.getByRole('button', { name: 'Email me a link' }).click()
-    const unregistered = (await page.getByRole('status').textContent()) ?? ''
-
+    const unregistered = await acknowledgementFor('nobody-here@runway.test')
     expect(unregistered).toBe(registered)
   })
 
