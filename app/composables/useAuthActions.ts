@@ -12,8 +12,9 @@
  */
 
 import {
+  type AuthErrorLike,
   type AuthOperation,
-  authErrorMessage,
+  authErrorResult,
   NEUTRAL_EMAIL_SENT,
   NEUTRAL_SIGN_UP_SENT,
 } from '#shared/auth/errors'
@@ -33,12 +34,31 @@ export interface AuthActionResult {
 
 const OK: AuthActionResult = { ok: true, message: null, tone: 'notice' }
 
+/**
+ * `ok` follows `tone`, not the provider's own success/failure: issue #89's
+ * fix. `authErrorResult` reports `'notice'` precisely when the message it
+ * chose is the operation's own neutral acknowledgement — the same sentence
+ * `notice(NEUTRAL_…)` returns on a genuine success — so a masked failure and
+ * a real success become, on every field a caller can read, the same result.
+ * Anything that still comes back `'error'` (a real failure on an operation
+ * this masking does not apply to, or the rate-limiting exception) is
+ * reported as one, exactly as before.
+ *
+ * A masked failure is still logged — never the address, never the provider's
+ * own message, per CLAUDE.md on what must never reach a log, extended here
+ * the way `shared/auth/errors.ts` extends it to an email address. This is
+ * the one place that can happen: every masked failure passes through here.
+ */
 function failed(operation: AuthOperation, error: unknown): AuthActionResult {
-  return {
-    ok: false,
-    message: authErrorMessage(operation, error as { message?: string; code?: string }),
-    tone: 'error',
+  const typed = error as AuthErrorLike
+  const { message, tone } = authErrorResult(operation, typed)
+  if (tone === 'notice') {
+    console.error('auth request failed, masked from the user', {
+      operation,
+      code: typed?.code ?? null,
+    })
   }
+  return { ok: tone === 'notice', message, tone }
 }
 
 function notice(message: string): AuthActionResult {
@@ -127,10 +147,12 @@ export function useAuthActions() {
   /**
    * Ask for a password-reset link.
    *
-   * The acknowledgement is returned on failure too — see
-   * `authErrorMessage('password-reset-request', …)` — so an unregistered
-   * address is indistinguishable from a registered one. Rate limiting is the
-   * one thing that does surface, because it is a fact about this browser.
+   * The acknowledgement — words *and* tone — is returned on failure too, via
+   * `failed()` -> `authErrorResult('password-reset-request', …)`, so an
+   * unregistered address is indistinguishable from a registered one even when
+   * GoTrue cannot deliver (issue #89: it used to be distinguishable exactly
+   * then, because only the words were masked). Rate limiting is the one thing
+   * that does surface, because it is a fact about this browser.
    */
   async function requestPasswordReset(email: string): Promise<AuthActionResult> {
     const { error } = await client.auth.resetPasswordForEmail(email.trim(), {

@@ -11,6 +11,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   authErrorMessage,
+  authErrorResult,
   NEUTRAL_EMAIL_SENT,
   NEUTRAL_SIGN_UP_SENT,
   revealsRegistration,
@@ -98,5 +99,65 @@ describe('authErrorMessage', () => {
   it('handles a missing error without throwing', () => {
     expect(authErrorMessage('sign-out', null)).toMatch(/something went wrong/i)
     expect(authErrorMessage('sign-out', undefined)).toMatch(/something went wrong/i)
+  })
+})
+
+describe('authErrorResult', () => {
+  // Issue #89: this file got the words right and still leaked, because the
+  // *tone* a caller rendered them in was computed separately and stayed
+  // 'error' even when the words were the neutral acknowledgement. These tests
+  // are what goes red if that gap reopens.
+  it('gives a masked password-reset failure the same tone the success path uses', () => {
+    const result = authErrorResult('password-reset-request', { code: 'user_not_found' })
+    expect(result.message).toBe(NEUTRAL_EMAIL_SENT)
+    expect(result.tone).toBe('notice')
+  })
+
+  it('gives a masked magic-link failure the same tone the success path uses', () => {
+    const result = authErrorResult('magic-link', { code: 'user_not_found' })
+    expect(result.message).toBe(NEUTRAL_EMAIL_SENT)
+    expect(result.tone).toBe('notice')
+  })
+
+  it('gives a masked sign-up failure the same tone the success path uses', () => {
+    // The exact shape GoTrue returns locally for an address that already has
+    // an account, with email confirmations off — see useAuthActions.ts signUp.
+    const result = authErrorResult('sign-up', {
+      message: 'User already registered',
+      code: 'user_already_exists',
+      status: 422,
+    })
+    expect(result.message).toBe(NEUTRAL_SIGN_UP_SENT)
+    expect(result.tone).toBe('notice')
+  })
+
+  it('does not neutralise the tone for an operation the masking never applies to', () => {
+    // sign-in's own conflation (rule at line 65 above) is a message concern,
+    // not a tone one — an invalid-credentials failure is still a failure.
+    const result = authErrorResult('sign-in', { code: 'invalid_credentials' })
+    expect(result.tone).toBe('error')
+  })
+
+  it('keeps rate limiting an error, on every operation the masking applies to', () => {
+    // The one deliberate exception, carried through from authErrorMessage: a
+    // fact about this browser, not about any account, so hiding it would be
+    // the wrong kind of quiet.
+    for (const operation of ['sign-up', 'magic-link', 'password-reset-request'] as const) {
+      const result = authErrorResult(operation, { code: 'over_email_send_rate_limit' })
+      expect(result.tone, `${operation} rate limit`).toBe('error')
+      expect(result.message, `${operation} rate limit`).toMatch(/too many/i)
+    }
+  })
+
+  it("does not neutralise a message this operation's masking never produces", () => {
+    // Guards the check itself: tone must follow what the message *is*, not
+    // what operation was asked for. sign-in never falls through to either
+    // neutral constant, so a coincidental match should not exist to test —
+    // asserted here so a future refactor that starts comparing operations
+    // instead of messages gets caught rather than silently over-matching.
+    const result = authErrorResult('sign-in', {})
+    expect(result.message).not.toBe(NEUTRAL_EMAIL_SENT)
+    expect(result.message).not.toBe(NEUTRAL_SIGN_UP_SENT)
+    expect(result.tone).toBe('error')
   })
 })

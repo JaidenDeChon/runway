@@ -7,7 +7,7 @@
  * `error.message` at a time. So the mapping lives here, in one pure function,
  * with a unit test that names the leak it is preventing.
  *
- * Three rules:
+ * Four rules:
  *
  * 1. **Never pass a provider message straight through.** GoTrue is helpful in
  *    ways we cannot afford: "User already registered" answers, for anybody with
@@ -17,6 +17,14 @@
  *    the *response* carries no signal either.
  * 3. **Say what to do next.** A message that reveals nothing and helps nobody
  *    is not a win; every string below ends with an action.
+ * 4. **The same words get the same tone.** Issue #89: this file got rules 1-3
+ *    right and still leaked — a registered address rendered its neutral words
+ *    in a destructive red box, an unregistered one in a plain notice, because
+ *    the tone was computed separately from the message and only the message
+ *    was neutralised. Identical copy in two different-looking boxes is still
+ *    two different outcomes to a screen or an eye. `authErrorResult` below is
+ *    what makes that impossible by construction: it is the one function that
+ *    decides both, so there is no second call site where they can disagree.
  */
 
 import { PASSWORD_RULE_TEXT } from './password'
@@ -131,4 +139,44 @@ export function authErrorMessage(
   // A message we did not anticipate is never shown verbatim: it might be the
   // one that names the account.
   return GENERIC[operation]
+}
+
+/** The message *and* the tone it is delivered in, decided together. */
+export interface AuthErrorResult {
+  readonly message: string
+  readonly tone: 'error' | 'notice'
+}
+
+/**
+ * The full outcome of a failed auth call — issue #89's fix, and rule 4 above
+ * made structural. `authErrorMessage` is this function's `message` half,
+ * still exported on its own because most of this file's tests, and every
+ * caller from before #89, only ever wanted the words; nothing about that
+ * changes here.
+ *
+ * The tone follows the message, not the error: whenever `message` turns out
+ * to be the operation's own neutral acknowledgement — `sign-up` masked to
+ * `NEUTRAL_SIGN_UP_SENT`, or `magic-link`/`password-reset-request` masked to
+ * `NEUTRAL_EMAIL_SENT` — the tone is `'notice'`, the same tone the success
+ * path already uses for that exact sentence. A caller showing this result
+ * cannot render a registered address in red and an unregistered one in grey,
+ * because there is no code path in which the two differ.
+ *
+ * Rate limiting keeps its `'error'` tone here, correctly: it is a safe-code
+ * message (`over_email_send_rate_limit`, …), never the neutral
+ * acknowledgement, so the check below never matches it — the same exception
+ * `authErrorMessage`'s own doc comment already names, applied consistently.
+ */
+export function authErrorResult(
+  operation: AuthOperation,
+  error: AuthErrorLike | null | undefined,
+): AuthErrorResult {
+  const message = authErrorMessage(operation, error)
+  const neutral =
+    operation === 'sign-up'
+      ? NEUTRAL_SIGN_UP_SENT
+      : operation === 'magic-link' || operation === 'password-reset-request'
+        ? NEUTRAL_EMAIL_SENT
+        : null
+  return { message, tone: neutral !== null && message === neutral ? 'notice' : 'error' }
 }
