@@ -14,6 +14,14 @@
  * What-if is owned by the parent, not by this component: the switch previews
  * against the same projection the chart draws, so the state has to live where
  * both can see it.
+ *
+ * Issue #15 made saving asynchronous and real: `saving`/`error` are props,
+ * driven by `index.vue` the way `UpdateBalancesEditor` already is, and this
+ * component only returns from the edit form to the item list once a save or
+ * revert actually finishes without an error — not the instant the button is
+ * pressed. `onSave` builds its payload from `editing.projectedDate` /
+ * `.projectedAmount`, never `.date`/`.amount`: those are post-override values,
+ * and keying a write on them would re-key it onto an already-moved date.
  */
 import { computed, reactive, ref, watch } from 'vue'
 import OccurrenceRow from '@/components/dashboard/OccurrenceRow.vue'
@@ -27,13 +35,15 @@ import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { formatDateLong } from '@/lib/format'
+import type { OccurrenceEdit, OccurrenceRevert } from '@/lib/occurrence-editor'
+import { overrideSummary, splitConsequence } from '@/lib/occurrence-editor'
 import { SEGMENTED_SEGMENT, SEGMENTED_TRACK } from '@/lib/segmented-control'
 import { cn } from '@/lib/utils'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
-import type { OccurrenceOverride, OverrideScope } from '~~/domain/overrides'
+import type { OverrideScope } from '~~/domain/overrides'
 import type { Occurrence } from '~~/domain/projection'
-import type { Account } from '~~/domain/types'
+import type { Account, RecurringItem } from '~~/domain/types'
 
 const props = defineProps<{
   open: boolean
@@ -42,13 +52,18 @@ const props = defineProps<{
   /** Every visible series' balance on this day, in legend order. */
   balances: readonly { key: string; name: string; balance: MinorUnits }[]
   accountsById: ReadonlyMap<string, Account>
+  /** Looked up for the apply-to-future consequence sentence — `Cadence` lives on the rule, not the `Occurrence`. */
+  recurringItemsById: ReadonlyMap<string, RecurringItem>
   whatIf: boolean
+  saving: boolean
+  error: string | null
 }>()
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
   'update:whatIf': [value: boolean]
-  save: [override: OccurrenceOverride]
+  save: [edit: OccurrenceEdit]
+  revert: [target: OccurrenceRevert]
 }>()
 
 const editing = ref<Occurrence | null>(null)
@@ -67,6 +82,20 @@ watch(
   },
 )
 
+// Return to the item list only once a save or revert actually finishes
+// without an error — not the instant the button is pressed, now that both
+// are real network calls that can fail. What-if has no such moment to wait
+// for (its "save" is a list append the parent makes synchronously and never
+// reports back through `saving`), so it closes from `onSave` instead; both
+// paths honour the design's "then returns to the item list"
+// (docs/design/dashboard/spec.md § Interactions).
+watch(
+  () => props.saving,
+  (saving, wasSaving) => {
+    if (wasSaving && !saving && !props.error) editing.value = null
+  },
+)
+
 function startEdit(occurrence: Occurrence): void {
   editing.value = occurrence
   form.amount = occurrence.amount
@@ -81,19 +110,62 @@ function setScope(value: unknown): void {
 function onSave(): void {
   const occurrence = editing.value
   if (!occurrence) return
-  const retimed = form.scope === 'once' && form.date !== occurrence.date
+  // Compared against projectedDate, not the (possibly already-retimed) date
+  // on screen — otherwise editing only the amount of an already-moved
+  // occurrence would look like "no retime" and silently reset it back to its
+  // rule date. Deliberately ignored for `future`: apply-to-future is
+  // amount-only (docs/database/schema.md § "Rule splitting"; the date input
+  // stays disabled below).
+  const retimed = form.scope === 'once' && form.date !== occurrence.projectedDate
   emit('save', {
     itemId: occurrence.itemId,
-    date: occurrence.date,
+    date: occurrence.projectedDate,
     scope: form.scope,
     amount: form.amount,
+    projectedAmount: occurrence.projectedAmount,
     ...(retimed ? { newDate: form.date } : {}),
   })
-  editing.value = null
+  // A preview never round-trips, so there is no `saving` edge for the watch
+  // above to close on.
+  if (props.whatIf) editing.value = null
+}
+
+function onRevert(): void {
+  const occurrence = editing.value
+  if (!occurrence) return
+  emit('revert', { itemId: occurrence.itemId, date: occurrence.projectedDate })
 }
 
 const title = computed(() => (editing.value ? 'Edit occurrence' : 'Day detail'))
 const subtitle = computed(() => (props.date ? formatDateLong(props.date) : ''))
+
+const editedSummary = computed(() => {
+  const occurrence = editing.value
+  if (!occurrence?.isOverridden) return null
+  return overrideSummary({
+    projectedAmount: occurrence.projectedAmount,
+    projectedDate: occurrence.projectedDate,
+  })
+})
+
+/** `null` when the item's cadence cannot be found (e.g. its rule no longer exists), which hides the block below rather than guessing a cadence. */
+const futureConsequence = computed(() => {
+  const occurrence = editing.value
+  if (!occurrence || form.scope !== 'future') return null
+  const cadence = props.recurringItemsById.get(occurrence.itemId)?.cadence
+  if (!cadence) return null
+  return splitConsequence({
+    label: occurrence.label,
+    cadence,
+    effectiveFrom: occurrence.projectedDate,
+    amount: form.amount,
+  })
+})
+
+const submitLabel = computed(() => {
+  if (props.whatIf) return 'Preview change'
+  return form.scope === 'future' ? 'Change all future' : 'Save change'
+})
 </script>
 
 <template>
@@ -163,6 +235,25 @@ const subtitle = computed(() => (props.date ? formatDateLong(props.date) : ''))
       <form v-else class="flex flex-col gap-4" @submit.prevent="onSave">
         <p class="text-sm font-medium">{{ editing?.label }}</p>
 
+        <div
+          v-if="editedSummary"
+          class="flex items-center justify-between gap-3 rounded-md border border-dashed p-3"
+        >
+          <div class="min-w-0">
+            <p class="text-sm font-medium">Edited</p>
+            <p class="mt-0.5 text-xs text-muted-foreground">{{ editedSummary }}</p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            :disabled="props.saving"
+            @click="onRevert"
+          >
+            Revert to rule value
+          </Button>
+        </div>
+
         <div class="grid grid-cols-2 gap-3">
           <div class="flex min-w-0 flex-col gap-2">
             <Label for="occurrence-amount">Amount</Label>
@@ -211,21 +302,33 @@ const subtitle = computed(() => (props.date ? formatDateLong(props.date) : ''))
             </ToggleGroupItem>
           </ToggleGroup>
           <p v-if="form.scope === 'future'" class="text-xs text-muted-foreground">
-            Rewrites the amount on every occurrence from this date onward. The date is left as it is.
+            {{
+              futureConsequence ??
+              'Rewrites the amount on every occurrence from this date onward. The date is left as it is.'
+            }}
           </p>
         </div>
 
+        <p v-if="props.error" role="alert" class="text-sm text-destructive">{{ props.error }}</p>
+
         <div class="flex gap-2">
-          <Button type="button" variant="outline" class="flex-1" @click="editing = null">
+          <Button
+            type="button"
+            variant="outline"
+            class="flex-1"
+            :disabled="props.saving"
+            @click="editing = null"
+          >
             Cancel
           </Button>
           <Button
             type="submit"
+            :disabled="props.saving"
             :class="
               cn('flex-1', props.whatIf && 'bg-chart-5 text-foreground hover:bg-chart-5/90 dark:text-background')
             "
           >
-            {{ props.whatIf ? 'Preview change' : 'Save change' }}
+            {{ submitLabel }}
           </Button>
         </div>
       </form>

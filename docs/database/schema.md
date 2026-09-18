@@ -493,6 +493,40 @@ hold again. Harmless for CI (`database` and `e2e` are separate jobs, each
 starting its own stack from empty); worth knowing when reusing one local
 stack across manual suite runs in the wrong order.
 
+**Issue #15 adds the two functions that actually create a protected row on
+purpose**, rather than merely respecting one `regenerate_occurrences` already
+protects: `public.override_occurrence` and `public.revert_occurrence`
+(`supabase/migrations/20260913090000_occurrence_overrides_and_rule_split.sql`).
+
+`override_occurrence(p_rule_id, p_projected_date, p_projected_amount_cents,
+p_actual_amount_cents, p_actual_date)` is keyed on the natural key
+`(rule_id, projected_date)`, never the row's own uuid — the identifier that
+survives materialization lag, since a first-time edit of a date the horizon
+top-up has not reached yet still has to land somewhere. If the row exists it
+updates `actual_amount_cents` / `actual_date` / `is_overridden = true`; if it
+does not, it inserts one with `on conflict on constraint
+occurrences_rule_projected_date_key do update`, which is also what makes two
+concurrent first-time overrides resolve to one row instead of a duplicate-key
+error. Either way it never writes `projected_date` or `projected_amount_cents`
+on an existing row, so `private.protect_materialized_occurrence()` never has
+occasion to object — including on a *second* edit of an already-overridden
+row. Rejects with `PT404` for a foreign or unknown `(rule_id, projected_date)`
+and `PT409` for a row whose `status <> 'projected'` (editing a settled
+occurrence is reconciliation's concern, #26).
+
+`revert_occurrence(p_rule_id, p_projected_date)` is the inverse: clears
+`actual_amount_cents` / `actual_date` to `null` and `is_overridden` to
+`false`, restoring the rule's own value as the effective one. Same `PT404`
+for not-found, and `PT409` for a settled row — clearing `actual_amount_cents`
+on a `confirmed` row would violate `occurrences_confirmed_has_actual_ck`, not
+merely be the wrong call.
+
+Both are `security invoker`, derive `user_id` from `(select auth.uid())` and
+never accept it as a parameter, and use PostgREST's `PTxyz` `sqlstate`
+convention (`raise sqlstate 'PT404' using message = '…'`) so a rejection
+carries a distinguishable HTTP status without risking a bare `raise
+exception`'s `P0002` → HTTP 500 mapping.
+
 ### Rule splitting
 
 Apply-to-future is implemented as a **rule split**: close the existing rule
@@ -514,6 +548,42 @@ exactly on-cadence, so no partial-month occurrence is produced at the seam.
 `[max(start, startsOn), min(end, endsOn)]` before expanding, so the two rules'
 outputs are contiguous and non-overlapping across the split date —
 `domain/cadence.test.ts` asserts the exact array on both sides.
+
+**Issue #15's occurrence editor is what actually performs a split**, through
+`public.split_recurring_rule(p_rule_id, p_effective_from, p_amount_cents)`
+(`supabase/migrations/20260913090000_occurrence_overrides_and_rule_split.sql`).
+Amount only — there is no date parameter. Retiming a successor would mean
+moving `anchor_date`, and for a rule carrying `days_of_month`/`days_of_week`
+the anchor is not what picks the day, so "move it to the 5th" would be
+silently ignored for a semi-monthly rule; retiming-forward, if it is ever
+wanted, is its own migration.
+
+The function has two branches. When `p_effective_from` falls at or before the
+rule's own effective start (`greatest(anchor_date, coalesce(starts_on,
+anchor_date))`), nothing precedes the change date, so there is no
+predecessor worth keeping: it updates `amount_cents` on the existing rule in
+place and returns no successor. Otherwise it closes the rule
+(`ends_on = p_effective_from - 1` — *minus one* because both bounds are
+inclusive, so `p_effective_from` itself would otherwise let both rules emit
+that day) and inserts a successor copying `account_id`, `name`, `kind`,
+`amount_source`, `is_variable`, `cadence`, `days_of_month`, `days_of_week`,
+and **the closed rule's original `ends_on`** (read before that column was
+overwritten), with `amount_cents = p_amount_cents` and
+`anchor_date = starts_on = p_effective_from`.
+
+**Occurrence rows are untouched by this function**, on purpose — the split
+commits the rule change atomically, and the client is responsible for
+`regenerate_occurrences`ing *both* returned rule ids in one call afterward
+(`app/composables/useRunwayData.ts` `splitRecurringItem`) so the closed
+rule's now-out-of-scope future rows are swept and the successor's rows are
+materialized. A protected (overridden) row on the closed rule at a date on or
+after the split stays behind as inert history — the engine never expands a
+rule past its own `ends_on`, so nothing reads it into a forecast; sweeping it
+is left to reconciliation (#26).
+
+Same `security invoker` / `user_id` / `PTxyz` posture as the two functions
+above: `PT400` for a non-positive amount, `PT404` for a foreign or unknown
+rule id, `PT409` when `p_effective_from` falls after the rule's own `ends_on`.
 
 ### Archiving, not deleting
 
@@ -599,8 +669,8 @@ The table `domain/*` code should consult when wiring a store to this schema:
 | `useRunwayData().defaultHorizonDays` | `user_settings.default_horizon_days` | a *stored preference*, not a field on `RunwayData` — the projection engine takes the window as a parameter and does not know a "default" exists |
 | `useRunwayData().hiddenAccountIds` | `dashboard_hidden_accounts.account_id` | presence in the table means hidden; `RunwayData` carries no field for it either, for the same reason — see [A hidden set, not a visible one](#a-hidden-set-not-a-visible-one) |
 | `Occurrence.date` / `.amount` | *derived* | `coalesce(actual_*, projected_*)` |
-| `OccurrenceOverride` scope `once` | `actual_*` + `is_overridden = true` | |
-| `OccurrenceOverride` scope `future` | **a rule split**, not an occurrence write | |
+| `RunwayData.occurrenceOverrides` (`StoredOccurrenceOverride[]`) | `occurrences` rows where `is_overridden = true and status = 'projected'`, written by `public.override_occurrence` / cleared by `public.revert_occurrence` | scope is `'once'` by construction — see [Rule splitting](#rule-splitting) for the other scope |
+| `OccurrenceOverride` scope `future` | **a rule split**, via `public.split_recurring_rule` — not an occurrence write | |
 
 ## Why `rls_fixture_items` stays
 

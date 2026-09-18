@@ -65,7 +65,16 @@ If a design artifact appears to use a value that doesn't exist in the token set,
 | Sign in / sign up / password reset | `auth` | Authentication | ☐ |
 
 The `occurrence-editor` row is unticked because that screen does not exist in the Claude Design
-project — there is no export to import.
+project — there is no export to import. Issue #15 shipped it anyway: `DayDetailEditor.vue`
+already existed from the dashboard's own design (`docs/design/dashboard/spec.md` lines ~197–252
+and ~278–285 cover the day editor's container, copy and interactions — its open questions #9
+"Save change has no home" and #10 "Apply to all future ignores the date field" are what #15
+answers), and #15 built persistence, marking and revert on top of it from this repo's own
+conventions rather than inventing an interface: `Badge` for the "Edited" telling, the chart's
+own existing "extra ring means special" vocabulary for the dashed halo, `shadcn-vue` primitives
+already installed, no new component. Same stance as `auth` below — if a
+`docs/design/occurrence-editor/` export ever lands, treat what shipped here as a placeholder to
+replace, not a decision to preserve.
 
 The `auth` row is unticked for a different reason, and it is worth stating plainly: **those screens
 shipped without a design.** Issue #6 (Authentication) landed sign-in, sign-up, password reset and

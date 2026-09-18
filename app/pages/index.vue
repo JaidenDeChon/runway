@@ -11,11 +11,15 @@
  * is entirely about *which* projection to ask for: the horizon, which accounts
  * are in it, and two override lists.
  *
- * The two lists are the design's, and they are not the same thing. Saved edits
- * survive the editor closing; what-if edits are a preview that exists only while
- * the switch is on and is dropped the moment it goes off or the sheet closes.
- * Neither writes back to `useRunwayData()` — an override is a lens on stored
- * records, never a mutation of them.
+ * Issue #15 moved the saved list off this page's own `useState`-in-a-ref and
+ * onto real rows: `data.value.occurrenceOverrides` (from `useRunwayData()`,
+ * ultimately `public.occurrences`) is what the engine now layers in
+ * automatically, unconditionally, every time it expands occurrences — a
+ * saved edit needs no `overrides` passed here at all. `whatIfOverrides`
+ * remains exactly what it was: an in-memory preview list, passed as
+ * `window.overrides` only while what-if is on, dropped the moment it goes
+ * off or the sheet closes, and never written back to `useRunwayData()` — a
+ * preview is a lens on stored records, never a mutation of them.
  */
 
 import AppPage from '@/components/AppPage.vue'
@@ -40,6 +44,7 @@ import {
 import { ARROW_LINK } from '@/lib/arrow-link'
 import type { LegendEntry } from '@/lib/burndown'
 import { chartLines } from '@/lib/burndown'
+import type { OccurrenceEdit, OccurrenceRevert } from '@/lib/occurrence-editor'
 import type { BalanceReading } from '~~/domain/accounts'
 import { balanceReadings } from '~~/domain/accounts'
 import type { IsoDate } from '~~/domain/dates'
@@ -58,6 +63,7 @@ const {
   data,
   accounts,
   accountsById,
+  recurringItems,
   safetyCushion,
   isEmpty,
   isLoading,
@@ -68,6 +74,9 @@ const {
   hiddenAccountIds,
   setAccountHidden,
   setDefaultHorizonDays,
+  overrideOccurrence,
+  revertOccurrence,
+  splitRecurringItem,
 } = useRunwayData()
 const today = useToday()
 const isDesktop = useIsDesktop()
@@ -83,12 +92,18 @@ const horizonDays = computed(() => defaultHorizonDays.value)
 const density = useChartDensity()
 const densityOpen = ref(false)
 
-const savedOverrides = ref<OccurrenceOverride[]>([])
 const whatIfOverrides = ref<OccurrenceOverride[]>([])
 const whatIf = ref(false)
 
 const editorOpen = ref(false)
 const activeDate = ref<IsoDate | null>(null)
+const savingEdit = ref(false)
+const editError = ref<string | null>(null)
+
+/** Looked up for the apply-to-future consequence sentence — `Cadence` lives on the rule, not the `Occurrence`. */
+const recurringItemsById = computed(
+  () => new Map(recurringItems.value.map((item) => [item.id, item])),
+)
 
 // Held as the *hidden* set rather than the shown one so an account added on
 // another screen appears on the chart instead of silently missing from it —
@@ -105,9 +120,13 @@ const showEmpty = computed(() => !isLoading.value && isEmpty.value)
 const windowStart = computed(() => addDays(today.value, -LOOKBACK_DAYS))
 const windowEnd = computed(() => addDays(today.value, horizonDays.value))
 
-/** Saved first, what-if second, so a preview lands on top of a saved edit. */
-const overrides = computed(() =>
-  whatIf.value ? [...savedOverrides.value, ...whatIfOverrides.value] : savedOverrides.value,
+// The saved list is no longer read here at all: `data.value.occurrenceOverrides`
+// is layered in unconditionally by `occurrencesIn` itself
+// (domain/projection.ts). What-if is still a preview passed through
+// `window.overrides` and lands on top of the saved edits the engine already
+// applied, exactly as `domain/overrides.ts`'s doc comment on `ProjectionWindow.overrides` says.
+const previewOverrides = computed<readonly OccurrenceOverride[]>(() =>
+  whatIf.value ? whatIfOverrides.value : [],
 )
 
 /**
@@ -142,7 +161,7 @@ const projection = computed(() =>
     start: windowStart.value,
     end: windowEnd.value,
     accountIds: selectedAccountIds.value,
-    overrides: overrides.value,
+    overrides: previewOverrides.value,
     // A dip that has already happened is history, not a forecast, so the
     // verdict starts the day after today even though the chart opens earlier.
     verdictFrom: addDays(today.value, 1),
@@ -160,7 +179,7 @@ const legendProjection = computed(() =>
   project(data.value, {
     start: windowStart.value,
     end: windowEnd.value,
-    overrides: overrides.value,
+    overrides: previewOverrides.value,
   }),
 )
 
@@ -246,6 +265,8 @@ const activeBalances = computed(() => {
 function openDay(date: IsoDate): void {
   activeDate.value = date
   editorOpen.value = true
+  // A stale failure from a previous edit must not bleed into the next one.
+  editError.value = null
 }
 
 /** Closing always discards the what-if list — the design offers no confirmation. */
@@ -259,12 +280,63 @@ function setWhatIf(on: boolean): void {
   if (!on) whatIfOverrides.value = []
 }
 
-function saveOverride(override: OccurrenceOverride): void {
+/**
+ * What-if previews still never touch the database — this is the one branch
+ * that keeps `saveOccurrenceEdit`'s name honest despite doing no saving at
+ * all when the switch is on. A real save dispatches on `edit.scope`:
+ * `overrideOccurrence` for "this occurrence only", `splitRecurringItem` for
+ * "apply to all future" — the amount there is converted to the positive
+ * magnitude `recurring_rules.amount_cents` expects, since `OccurrenceEdit.amount`
+ * is always signed like `Occurrence.amount`, regardless of scope.
+ */
+async function saveOccurrenceEdit(edit: OccurrenceEdit): Promise<void> {
   if (whatIf.value) {
-    whatIfOverrides.value = withOverride(whatIfOverrides.value, override)
+    whatIfOverrides.value = withOverride(whatIfOverrides.value, {
+      itemId: edit.itemId,
+      date: edit.date,
+      scope: edit.scope,
+      amount: edit.amount,
+      ...(edit.newDate ? { newDate: edit.newDate } : {}),
+    })
     return
   }
-  savedOverrides.value = withOverride(savedOverrides.value, override)
+
+  savingEdit.value = true
+  editError.value = null
+  try {
+    if (edit.scope === 'once') {
+      await overrideOccurrence({
+        itemId: edit.itemId,
+        date: edit.date,
+        amount: edit.amount,
+        projectedAmount: edit.projectedAmount,
+        ...(edit.newDate ? { newDate: edit.newDate } : {}),
+      })
+    } else {
+      await splitRecurringItem({
+        itemId: edit.itemId,
+        effectiveFrom: edit.date,
+        amount: Math.abs(edit.amount),
+        today: today.value,
+      })
+    }
+  } catch {
+    editError.value = 'Could not save that change. Check your connection and try again.'
+  } finally {
+    savingEdit.value = false
+  }
+}
+
+async function revertOccurrenceEdit(target: OccurrenceRevert): Promise<void> {
+  savingEdit.value = true
+  editError.value = null
+  try {
+    await revertOccurrence(target.itemId, target.date, today.value)
+  } catch {
+    editError.value = 'Could not revert that change. Check your connection and try again.'
+  } finally {
+    savingEdit.value = false
+  }
 }
 </script>
 
@@ -357,10 +429,14 @@ function saveOverride(override: OccurrenceOverride): void {
       :occurrences="activeOccurrences"
       :balances="activeBalances"
       :accounts-by-id="accountsById"
+      :recurring-items-by-id="recurringItemsById"
       :what-if="whatIf"
+      :saving="savingEdit"
+      :error="editError"
       @update:open="setEditorOpen"
       @update:what-if="setWhatIf"
-      @save="saveOverride"
+      @save="saveOccurrenceEdit"
+      @revert="revertOccurrenceEdit"
     />
   </AppPage>
 </template>

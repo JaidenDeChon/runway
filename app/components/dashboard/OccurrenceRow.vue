@@ -6,10 +6,17 @@
  * the target. Income is tinted, but the minus sign on a bill is what actually
  * distinguishes the two — colour is the second telling, never the only one —
  * and the `label` gives screen readers the direction the tint conveys visually.
+ *
+ * Issue #15: a hand-edited occurrence reads `occurrence.isOverridden` /
+ * `.projectedDate` directly — no new props — and gets an `Edited` badge (real
+ * text, so it is announced, not a colour-only telling) plus a "moved from"
+ * line when the edit also retimed the day. Used by both the Upcoming list and
+ * `DayDetailEditor`'s own item list, so both get the marking for free.
  */
 import { ChevronRight } from '@lucide/vue'
 import AccountSwatch from '@/components/AccountSwatch.vue'
 import MoneyText from '@/components/MoneyText.vue'
+import { Badge } from '@/components/ui/badge'
 import { formatDateShort } from '@/lib/format'
 import type { IsoDate } from '~~/domain/dates'
 import type { Occurrence } from '~~/domain/projection'
@@ -42,10 +49,21 @@ defineEmits<{ select: [] }>()
     </span>
 
     <span class="min-w-0 flex-1">
-      <span class="block truncate font-medium">{{ props.occurrence.label }}</span>
+      <span class="flex items-center gap-1.5">
+        <span class="truncate font-medium">{{ props.occurrence.label }}</span>
+        <Badge v-if="props.occurrence.isOverridden" variant="outline" class="shrink-0">
+          Edited
+        </Badge>
+      </span>
       <span class="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
         <AccountSwatch :color="props.accountColor" size="sm" />
         <span class="truncate">{{ props.accountName }}</span>
+      </span>
+      <span
+        v-if="props.occurrence.isOverridden && props.occurrence.date !== props.occurrence.projectedDate"
+        class="mt-0.5 block text-xs text-muted-foreground"
+      >
+        moved from {{ formatDateShort(props.occurrence.projectedDate) }}
       </span>
     </span>
 

@@ -11,6 +11,7 @@
 
 import type { IsoDate } from './dates'
 import type { MinorUnits } from './money'
+import type { StoredOccurrenceOverride } from './overrides'
 
 /**
  * The chart ramp slot an account's line is drawn in.
@@ -235,4 +236,18 @@ export interface RunwayData {
    * device it is running on — see `domain/dates.ts`.
    */
   readonly timeZone: string | null
+  /**
+   * Persisted single-occurrence edits — `occurrences.actual_*` plus
+   * `is_overridden = true` for rows the user has hand-edited
+   * (docs/database/schema.md § "The regeneration contract").
+   * `domain/projection.ts` `occurrencesIn` layers these onto the rule-expanded
+   * series before `ProjectionWindow.overrides`' what-if previews, so a saved
+   * edit moves every screen and survives reload — see issue #15.
+   *
+   * Required, not optional: a field that exists only in memory is a field
+   * that gets lost the day it stops being threaded through, so every
+   * `RunwayData` construction site has to say so, and `bun run typecheck`
+   * finds any that do not.
+   */
+  readonly occurrenceOverrides: readonly StoredOccurrenceOverride[]
 }

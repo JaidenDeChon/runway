@@ -349,6 +349,35 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      override_occurrence: {
+        Args: {
+          p_actual_amount_cents: number
+          p_actual_date: string
+          p_projected_amount_cents: number
+          p_projected_date: string
+          p_rule_id: string
+        }
+        Returns: {
+          account_id: string
+          actual_amount_cents: number | null
+          actual_date: string | null
+          created_at: string
+          id: string
+          is_overridden: boolean
+          projected_amount_cents: number
+          projected_date: string
+          rule_id: string
+          status: Database["public"]["Enums"]["occurrence_status"]
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "occurrences"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       regenerate_occurrences: {
         Args: {
           p_occurrence_amount_cents: number[]
@@ -362,6 +391,29 @@ export type Database = {
           deleted: number
           upserted: number
         }[]
+      }
+      revert_occurrence: {
+        Args: { p_projected_date: string; p_rule_id: string }
+        Returns: {
+          account_id: string
+          actual_amount_cents: number | null
+          actual_date: string | null
+          created_at: string
+          id: string
+          is_overridden: boolean
+          projected_amount_cents: number
+          projected_date: string
+          rule_id: string
+          status: Database["public"]["Enums"]["occurrence_status"]
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "occurrences"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       save_account: {
         Args: {
@@ -413,6 +465,17 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      split_recurring_rule: {
+        Args: {
+          p_amount_cents: number
+          p_effective_from: string
+          p_rule_id: string
+        }
+        Returns: {
+          closed_rule_id: string
+          successor_rule_id: string
+        }[]
       }
     }
     Enums: {

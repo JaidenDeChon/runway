@@ -42,6 +42,15 @@ Everything returns plain serializable data — no class instances, no live
 references — so a result can be memoized, cached, or moved to a worker later
 without changing a caller.
 
+`RunwayData.occurrenceOverrides` (`readonly StoredOccurrenceOverride[]`,
+`domain/overrides.ts`) is the one field on `RunwayData` this table has no
+function for, because nothing calls it directly — `occurrencesIn` reads it
+unconditionally while expanding. It holds persisted single-occurrence edits
+("this occurrence only"), scope `'once'` by construction: there is no
+persisted form of `'future'`, which remains `ProjectionWindow.overrides`'
+in-memory what-if preview. See [Rules worth knowing](#rules-worth-knowing-before-you-change-anything)
+below for how the two layer together.
+
 ## Worked example: a dashboard
 
 ```ts
@@ -304,6 +313,30 @@ the flat form was wrong in the one direction that matters.
 the low point is named on the day the money actually moved, not the day before.
 A renderer must step on that day rather than interpolate a diagonal into it — see
 `linePath` in `app/lib/burndown.ts`.
+
+**A stored override and a what-if preview layer, saved onto preview, not
+merge.** `occurrencesIn` concatenates `data.occurrenceOverrides` before
+`window.overrides` and hands the combined list to `applyOverrides`, whose
+`reduce` lets a later entry win — so a what-if edit on top of an
+already-saved one previews correctly rather than needing to know it exists.
+`Occurrence` carries the pre-override `projectedDate`/`projectedAmount`
+alongside the (possibly overridden) `date`/`amount`, and `id` is keyed on
+`projectedDate` specifically because it is the half of `occurrences`' natural
+key — `(rule_id, projected_date)` — that never moves, so a caller that
+retimed an occurrence can still identify it for a second edit or a revert.
+
+**Retiming an occurrence across a window's edge needed the expansion widened,
+not just the override applied.** `occurrenceDates` expands each rule over
+`[window.start, window.end]` *before* any override runs, so an occurrence
+whose rule-date sits outside the window was never generated in the first
+place — applying a retime-into-the-window override to a list that does not
+contain it does nothing. `occurrencesIn` widens the expansion range first, to
+the smallest span covering every override whose `newDate` lands *inside* the
+requested window, then filters the result back down to that window after
+applying. With no such override the widened range equals the requested one
+exactly, so the no-override case is untouched byte-for-byte — pinned in
+`domain/projection.overrides.test.ts` specifically so this cannot regress
+silently under a future refactor.
 
 **One walk, not two.** `project` produces the series, the running minimum and
 the closing balance in the same pass. `evaluate` takes that summary rather than

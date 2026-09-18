@@ -32,16 +32,33 @@ export const UPCOMING_BILL_HORIZON_DAYS = 120
 export const SHORTFALL_OUTLOOK_HORIZON_DAYS = 180
 
 export interface Occurrence {
-  /** Stable within one projection; composed of the item id and the date. */
+  /**
+   * Stable within one projection; composed of the item id and
+   * `projectedDate`, never `date` — a retimed occurrence must keep the same
+   * id under the identity that never moves.
+   */
   readonly id: string
   readonly itemId: string
+  /** The day this occurrence actually lands on — post-override, if any. */
   readonly date: IsoDate
   readonly label: string
   readonly accountId: string
-  /** Signed: income is positive, bills negative. */
+  /** Signed: income is positive, bills negative. Post-override, if any. */
   readonly amount: MinorUnits
   readonly isVariable: boolean
   readonly isPredicted: boolean
+  /**
+   * The day the recurring rule itself would land on, before any override.
+   * Half of `occurrences`' natural key (`rule_id, projected_date`) and the
+   * only stable identifier a write can use — an override rewrites `date`, so
+   * this is what survives a retime and what `app/lib/occurrence-editor.ts`
+   * builds a save payload from.
+   */
+  readonly projectedDate: IsoDate
+  /** The rule's own signed amount for this date, before any override. */
+  readonly projectedAmount: MinorUnits
+  /** True once a stored or what-if override has been applied to this occurrence. */
+  readonly isOverridden: boolean
 }
 
 /**
@@ -105,11 +122,15 @@ export interface ProjectionWindow {
   /** Limits the projection to these accounts. Omit for all of them. */
   readonly accountIds?: readonly string[]
   /**
-   * Occurrence-level edits to apply while expanding, later ones winning.
+   * Preview overrides, layered on top of the stored ones in
+   * `data.occurrenceOverrides` — later ones winning, so a preview on top of a
+   * saved edit is possible.
    *
-   * The dashboard passes its saved edits and its what-if previews through here
-   * rather than mutating stored data, so a preview is a different *window* onto
-   * the same records and can be dropped by simply not passing it again.
+   * The dashboard passes its what-if previews through here rather than
+   * mutating stored data, so a preview is a different *window* onto the same
+   * records and can be dropped by simply not passing it again. Saved edits no
+   * longer travel through this field — they live on `RunwayData` itself and
+   * `occurrencesIn` applies them unconditionally.
    */
   readonly overrides?: readonly OccurrenceOverride[]
   /**
@@ -158,32 +179,60 @@ function accountsFor(data: RunwayData, accountIds: readonly string[] | undefined
  */
 export function occurrencesIn(data: RunwayData, window: ProjectionWindow): Occurrence[] {
   const included = new Set(accountsFor(data, window.accountIds).map((account) => account.id))
-  const occurrences: Occurrence[] = []
+  const overrides = [...data.occurrenceOverrides, ...(window.overrides ?? [])]
 
+  // Only a retime can pull an occurrence across the window's edge, and only
+  // when it lands inside it. Everything else expands over the window itself.
+  // With no overrides this is a no-op — expandStart/expandEnd stay
+  // window.start/window.end byte-for-byte, so the no-override case produces
+  // exactly what it did before this change (pinned in
+  // domain/projection.overrides.test.ts).
+  let expandStart = window.start
+  let expandEnd = window.end
+  for (const override of overrides) {
+    if (!override.newDate) continue
+    if (compareDates(override.newDate, window.start) < 0) continue
+    if (compareDates(override.newDate, window.end) > 0) continue
+    expandStart = minDate(expandStart, override.date)
+    expandEnd = maxDate(expandEnd, override.date)
+  }
+
+  const occurrences: Occurrence[] = []
   for (const item of data.recurringItems) {
     if (!included.has(item.accountId)) continue
-    for (const date of occurrenceDates(item, window.start, window.end)) {
+    for (const date of occurrenceDates(item, expandStart, expandEnd)) {
+      const amount = signedAmount(item)
       occurrences.push({
         id: `${item.id}@${date}`,
         itemId: item.id,
         date,
         label: item.name,
         accountId: item.accountId,
-        amount: signedAmount(item),
+        amount,
         isVariable: item.kind === 'bill' && item.isVariable,
         isPredicted: item.kind === 'income' && item.amountSource === 'predicted',
+        projectedDate: date,
+        projectedAmount: amount,
+        isOverridden: false,
       })
     }
   }
 
   // Overrides land before the sort because one of them can retime an event,
   // and a list sorted on the pre-edit dates would be out of order afterwards.
-  const applied = window.overrides?.length
-    ? applyOverrides(occurrences, window.overrides)
-    : occurrences
+  const applied = overrides.length > 0 ? applyOverrides(occurrences, overrides) : occurrences
 
-  applied.sort((a, b) => compareDates(a.date, b.date) || a.label.localeCompare(b.label))
-  return applied
+  // The expansion range can be wider than the requested window (above); this
+  // is what puts it back — a retime landing outside [start, end] must not
+  // appear, and the base occurrence it moved from must not appear either.
+  const visible = applied.filter(
+    (occurrence) =>
+      compareDates(occurrence.date, window.start) >= 0 &&
+      compareDates(occurrence.date, window.end) <= 0,
+  )
+
+  visible.sort((a, b) => compareDates(a.date, b.date) || a.label.localeCompare(b.label))
+  return visible
 }
 
 /**

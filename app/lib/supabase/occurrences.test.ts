@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { DesiredOccurrence, MaterializationWindow } from '~~/domain/materialization'
-import { toRegenerationArgs } from './occurrences'
+import {
+  type SelectedOccurrenceRow,
+  toOccurrenceOverride,
+  toOverrideArgs,
+  toRegenerationArgs,
+  toRevertArgs,
+  toSplitArgs,
+} from './occurrences'
 
 const window: MaterializationWindow = { start: '2026-06-05', end: '2027-09-03' }
 
@@ -65,5 +72,99 @@ describe('toRegenerationArgs', () => {
     for (const date of args.p_occurrence_dates) {
       expect(date >= window.start && date <= window.end).toBe(true)
     }
+  })
+})
+
+const row = (over: Partial<SelectedOccurrenceRow> = {}): SelectedOccurrenceRow => ({
+  rule_id: 'rule-1',
+  projected_date: '2026-08-20',
+  projected_amount_cents: -90_000,
+  actual_date: null,
+  actual_amount_cents: -85_000,
+  status: 'projected',
+  is_overridden: true,
+  ...over,
+})
+
+describe('toOccurrenceOverride', () => {
+  it('maps rule_id to itemId and projected_date to date, scope always once', () => {
+    const override = toOccurrenceOverride(row())
+    expect(override.itemId).toBe('rule-1')
+    expect(override.date).toBe('2026-08-20')
+    expect(override.scope).toBe('once')
+  })
+
+  it('prefers actual_amount_cents over projected_amount_cents, with no arithmetic', () => {
+    const override = toOccurrenceOverride(row({ actual_amount_cents: -70_000 }))
+    expect(override.amount).toBe(-70_000)
+  })
+
+  it('falls back to projected_amount_cents when actual_amount_cents is null', () => {
+    const override = toOccurrenceOverride(row({ actual_amount_cents: null }))
+    expect(override.amount).toBe(-90_000)
+  })
+
+  it('omits newDate when actual_date is null — absent, not undefined', () => {
+    const override = toOccurrenceOverride(row({ actual_date: null }))
+    expect('newDate' in override).toBe(false)
+  })
+
+  it('carries actual_date through as newDate when set', () => {
+    const override = toOccurrenceOverride(row({ actual_date: '2026-08-22' }))
+    expect(override.newDate).toBe('2026-08-22')
+  })
+})
+
+describe('toOverrideArgs', () => {
+  it('keys the write on projectedDate, never the post-override date', () => {
+    const args = toOverrideArgs({
+      itemId: 'rule-1',
+      date: '2026-08-20',
+      amount: -85_000,
+      projectedAmount: -90_000,
+    })
+    expect(args.p_rule_id).toBe('rule-1')
+    expect(args.p_projected_date).toBe('2026-08-20')
+    expect(args.p_projected_amount_cents).toBe(-90_000)
+    expect(args.p_actual_amount_cents).toBe(-85_000)
+  })
+
+  it('passes null for p_actual_date when newDate is omitted — "on projected_date"', () => {
+    const args = toOverrideArgs({
+      itemId: 'rule-1',
+      date: '2026-08-20',
+      amount: -85_000,
+      projectedAmount: -90_000,
+    })
+    expect(args.p_actual_date).toBeNull()
+  })
+
+  it('carries newDate through as p_actual_date when given', () => {
+    const args = toOverrideArgs({
+      itemId: 'rule-1',
+      date: '2026-08-20',
+      amount: -85_000,
+      projectedAmount: -90_000,
+      newDate: '2026-08-22',
+    })
+    expect(args.p_actual_date).toBe('2026-08-22')
+  })
+})
+
+describe('toRevertArgs', () => {
+  it('carries the rule id and date straight through', () => {
+    const args = toRevertArgs('rule-1', '2026-08-20')
+    expect(args).toEqual({ p_rule_id: 'rule-1', p_projected_date: '2026-08-20' })
+  })
+})
+
+describe('toSplitArgs', () => {
+  it('carries itemId, effectiveFrom and a positive amount straight through', () => {
+    const args = toSplitArgs({ itemId: 'rule-1', effectiveFrom: '2026-09-01', amount: 175_000 })
+    expect(args).toEqual({
+      p_rule_id: 'rule-1',
+      p_effective_from: '2026-09-01',
+      p_amount_cents: 175_000,
+    })
   })
 })

@@ -38,12 +38,26 @@
  * therefore no hydration mismatch to design around: the first server render
  * already reads the stored horizon and hidden set.
  *
+ * Issue #15 gave the dashboard's day editor real persistence:
+ * `RunwayData.occurrenceOverrides` comes from a sixth query, reading only the
+ * `is_overridden = true, status = 'projected'` rows (a settled occurrence is
+ * reconciliation's concern, #26, and stays inert here). `overrideOccurrence`,
+ * `revertOccurrence` and `splitRecurringItem` are its three new mutations,
+ * calling `override_occurrence` / `revert_occurrence` / `split_recurring_rule`
+ * (`supabase/migrations/20260913090000_occurrence_overrides_and_rule_split.sql`).
+ * `app/pages/index.vue`'s `savedOverrides` ref is gone — a saved edit now
+ * lives in the database and survives reload, the same move #7/#8/#9 made for
+ * accounts, recurring items and their occurrences. What-if's preview list is
+ * untouched: nothing about issue #15 changes that a preview never persists.
+ *
  * This file is the seam. Every mutation lives here so a screen never reaches
  * around it to talk to Supabase directly, and RLS — not this file — is what
  * actually stops a cross-user read or write; see `docs/auth.md` and
- * `docs/database/rls.md`. `regenerateOccurrences` must stay the only thing in
- * `app/` that writes `public.occurrences` — `tests/guards/occurrence-write-sites.test.ts`
- * enforces that structurally.
+ * `docs/database/rls.md`. `regenerateOccurrences`, `overrideOccurrence`,
+ * `revertOccurrence` and `splitRecurringItem` must stay the only things in
+ * `app/` that write `public.occurrences` (directly or through a rule split),
+ * and this file's own overlay read must stay the only read —
+ * `tests/guards/occurrence-write-sites.test.ts` enforces both structurally.
  */
 
 import { useAuthUser, useSupabaseClient } from '@/composables/useAuth'
@@ -60,7 +74,14 @@ import {
   toHouseholdSettings,
   USER_SETTINGS_COLUMNS,
 } from '@/lib/supabase/accounts'
-import { toRegenerationArgs } from '@/lib/supabase/occurrences'
+import {
+  OVERRIDE_COLUMNS,
+  toOccurrenceOverride,
+  toOverrideArgs,
+  toRegenerationArgs,
+  toRevertArgs,
+  toSplitArgs,
+} from '@/lib/supabase/occurrences'
 import {
   RECURRING_RULE_COLUMNS,
   type RecurringItemDraft,
@@ -72,6 +93,7 @@ import { activeAccounts, archivedAccounts } from '~~/domain/accounts'
 import type { IsoDate } from '~~/domain/dates'
 import { desiredOccurrences, materializationWindow } from '~~/domain/materialization'
 import type { MinorUnits } from '~~/domain/money'
+import type { StoredOccurrenceOverride } from '~~/domain/overrides'
 import { resolveAmount } from '~~/domain/prediction'
 import type { Account, BalanceSnapshot, RecurringItem, RunwayData, Transfer } from '~~/domain/types'
 
@@ -85,6 +107,8 @@ interface RemoteHousehold {
   readonly hiddenAccountIds: readonly string[]
   /** Readings each account has since moved past. See `RunwayData.balanceHistory`. */
   readonly balanceHistory: readonly BalanceSnapshot[]
+  /** Persisted single-occurrence edits. See `RunwayData.occurrenceOverrides`. */
+  readonly occurrenceOverrides: readonly StoredOccurrenceOverride[]
 }
 
 /** What an anonymous visitor, or a request with no session, sees. */
@@ -94,6 +118,7 @@ const EMPTY_HOUSEHOLD: RemoteHousehold = {
   settings: toHouseholdSettings(null),
   hiddenAccountIds: [],
   balanceHistory: [],
+  occurrenceOverrides: [],
 }
 
 interface LocalRecords {
@@ -142,6 +167,7 @@ export function useRunwayData() {
         settingsResult,
         hiddenAccountsResult,
         balanceHistoryResult,
+        occurrenceOverridesResult,
       ] = await Promise.all([
         client
           .from('accounts')
@@ -176,6 +202,18 @@ export function useRunwayData() {
           .from('balance_readings')
           .select(BALANCE_READING_COLUMNS)
           .order('as_of', { ascending: true }),
+        // The overlay read (issue #15): only the hand-edited, still-projected
+        // rows — a settled occurrence (`confirmed`/`skipped`) is
+        // reconciliation's concern (#26) and must stay inert here. One row
+        // per overridden occurrence, so this is never the table `occurrences`
+        // reads in bulk — `regenerate_occurrences` remains the only bulk
+        // reader/writer, over its own RPC connection.
+        client
+          .from('occurrences')
+          .select(OVERRIDE_COLUMNS)
+          .eq('is_overridden', true)
+          .eq('status', 'projected')
+          .order('projected_date', { ascending: true }),
       ])
       // The database's own error message can name columns, constraints and
       // policies. It goes nowhere near the UI, and nothing but the code is
@@ -202,6 +240,12 @@ export function useRunwayData() {
         console.error('balance history read failed', { code: balanceHistoryResult.error.code })
         throw new Error('load-failed')
       }
+      if (occurrenceOverridesResult.error) {
+        console.error('occurrence overrides read failed', {
+          code: occurrenceOverridesResult.error.code,
+        })
+        throw new Error('load-failed')
+      }
       const settings = toHouseholdSettings(settingsResult.data)
       return {
         hiddenAccountIds: toHiddenAccountIds(hiddenAccountsResult.data),
@@ -210,6 +254,7 @@ export function useRunwayData() {
         ),
         recurringItems: (recurringRulesResult.data ?? []).map(toRecurringItem),
         balanceHistory: toBalanceHistory(balanceHistoryResult.data),
+        occurrenceOverrides: (occurrenceOverridesResult.data ?? []).map(toOccurrenceOverride),
         settings,
       }
     },
@@ -308,6 +353,7 @@ export function useRunwayData() {
 
   const recurringItems = computed(() => remote.value.recurringItems)
   const transfers = computed(() => localRecords.value.transfers)
+  const occurrenceOverrides = computed(() => remote.value.occurrenceOverrides)
 
   const safetyCushion = computed(
     () => settingsOverride.value.safetyCushion ?? remote.value.settings.safetyCushion,
@@ -373,6 +419,7 @@ export function useRunwayData() {
     monthlyDiscretionarySpend: monthlyDiscretionarySpend.value,
     safetyCushion: safetyCushion.value,
     timeZone: timeZoneOverride.value,
+    occurrenceOverrides: occurrenceOverrides.value,
   }))
 
   function accountName(accountId: string): string {
@@ -538,6 +585,118 @@ export function useRunwayData() {
       throw new Error('regenerate-failed')
     }
     return data?.[0] ?? { upserted: 0, deleted: 0 }
+  }
+
+  /**
+   * Never a database message on screen — see the read failures above, and
+   * CLAUDE.md on what must never reach a log, extended to the RPCs' own error
+   * text. `PT404` ("recurring rule not found" / "occurrence not found") is
+   * what `override_occurrence` / `revert_occurrence` / `split_recurring_rule`
+   * raise for a foreign id — RLS makes it invisible to the function's own
+   * `select`, so this is the one distinguishable code worth a different
+   * message than the generic save failure.
+   */
+  function throwForRpcError(code: string | undefined): never {
+    console.error('occurrence edit failed', { code })
+    if (code === 'PT404') throw new Error('save-failed-gone')
+    throw new Error('save-failed')
+  }
+
+  /**
+   * "This occurrence only." Writes `actual_amount_cents` / `actual_date` /
+   * `is_overridden = true` on the occurrence named by `(itemId, date)` — the
+   * `(rule_id, projected_date)` natural key, never the occurrence's own uuid,
+   * so a first-time edit works even before the horizon top-up has
+   * materialized that date (`override_occurrence`'s insert branch,
+   * `supabase/migrations/20260913090000_occurrence_overrides_and_rule_split.sql`).
+   *
+   * No regeneration follows: the row is protected the instant this RPC
+   * returns, so `regenerateOccurrences` would skip it anyway — see the
+   * migration's own comment on why the WHERE guard costs nothing here.
+   */
+  async function overrideOccurrence(edit: {
+    readonly itemId: string
+    readonly date: IsoDate
+    readonly amount: MinorUnits
+    readonly projectedAmount: MinorUnits
+    readonly newDate?: IsoDate
+  }): Promise<void> {
+    requireUserId()
+    const { error: overrideError } = await client.rpc('override_occurrence', toOverrideArgs(edit))
+    if (overrideError) throwForRpcError(overrideError.code)
+    await refresh()
+  }
+
+  /**
+   * Clears a single-occurrence override back to the rule's own value.
+   *
+   * `today` is a parameter for the same reason it is on `regenerateOccurrences`
+   * — `useToday` -> `useTimeZone` -> `useRunwayData` is a cycle, so it cannot
+   * be read here. The regeneration that follows is what brings the
+   * now-unprotected row's `projected_amount_cents` back in line with the
+   * rule, which may have changed while the row was protected; the display
+   * itself does not need it (the engine reads rules, not stored occurrences),
+   * but the stored row would otherwise stay stale for #18/#26. Best-effort,
+   * matching `saveRecurringItem`: the revert already committed, and failing
+   * the user's action because a background top-up hiccuped would be worse.
+   */
+  async function revertOccurrence(itemId: string, date: IsoDate, today: IsoDate): Promise<void> {
+    requireUserId()
+    const { error: revertError } = await client.rpc('revert_occurrence', toRevertArgs(itemId, date))
+    if (revertError) throwForRpcError(revertError.code)
+    await refresh()
+    try {
+      await regenerateOccurrences(today, [itemId])
+    } catch {
+      // Already logged inside regenerateOccurrences, with a code and nothing else.
+    }
+  }
+
+  /**
+   * "Apply to all future." Closes `itemId`'s rule the day before
+   * `effectiveFrom` and opens a successor from that day forward, through
+   * `split_recurring_rule` — never a bulk occurrence edit
+   * (docs/database/schema.md § "Rule splitting"). `amount` is a positive
+   * magnitude, matching `recurring_rules.amount_cents`; the date field stays
+   * out of this call by design (plan §4.4) — retiming a day-set rule would
+   * silently do nothing for a semi-monthly one.
+   *
+   * The RPC touches no `occurrences` row, so `refresh()` **must** run before
+   * regeneration: `regenerateOccurrences`'s desired set comes from
+   * `remote.value.recurringItems`, which — without the refresh — would still
+   * hold the pre-split rule (unbounded, old amount) and not the successor at
+   * all. Both ids are then regenerated in **one** call: passing only the
+   * closed id would never materialize the successor's rows, and passing only
+   * the successor would leave the closed rule's stale future rows alive
+   * until some later whole-household top-up swept them. Best-effort, like
+   * every regeneration call here — the split itself already committed.
+   */
+  async function splitRecurringItem(args: {
+    readonly itemId: string
+    readonly effectiveFrom: IsoDate
+    readonly amount: MinorUnits
+    readonly today: IsoDate
+  }): Promise<void> {
+    requireUserId()
+    const { data, error: splitError } = await client.rpc('split_recurring_rule', toSplitArgs(args))
+    if (splitError) throwForRpcError(splitError.code)
+
+    await refresh()
+
+    const row = data?.[0]
+    // `closed_rule_id` is `null::uuid` at runtime for the in-place branch
+    // (splitting on the rule's own first occurrence creates no successor),
+    // even though the generated Args type has no way to see that branch and
+    // marks it non-null — the same gap `saveAccount`'s `p_id` cast documents.
+    // A `typeof` filter, rather than a cast, is what actually drops it here.
+    const ruleIds = [row?.closed_rule_id, row?.successor_rule_id].filter(
+      (id): id is string => typeof id === 'string',
+    )
+    try {
+      await regenerateOccurrences(args.today, ruleIds)
+    } catch {
+      // Already logged inside regenerateOccurrences, with a code and nothing else.
+    }
   }
 
   /**
@@ -836,6 +995,7 @@ export function useRunwayData() {
     },
     recurringItems,
     transfers,
+    occurrenceOverrides,
     safetyCushion,
     monthlyDiscretionarySpend,
     timeZoneOverride,
@@ -850,6 +1010,9 @@ export function useRunwayData() {
     saveRecurringItem,
     removeRecurringItem,
     regenerateOccurrences,
+    overrideOccurrence,
+    revertOccurrence,
+    splitRecurringItem,
     addTransfer,
     setSafetyCushion,
     setTimeZoneOverride,
