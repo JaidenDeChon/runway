@@ -438,6 +438,7 @@ export async function gotoHydrated(page: import('@playwright/test').Page, path: 
   // After hydration, because the runtime config is read through the Nuxt app
   // instance and there is no app instance before it mounts.
   await assertAppTargetsLocalStack(page)
+  await assertBrowserZoneIsUtc(page)
   return response
 }
 
@@ -489,6 +490,36 @@ export async function expectTextToBe(
   expected: string,
 ): Promise<void> {
   await expect.poll(async () => (await locator.textContent())?.trim() === expected).toBe(true)
+}
+
+/**
+ * The browser is in UTC, and this proves it rather than assuming it.
+ *
+ * `playwright.config.ts` pins `timezoneId: 'UTC'` so the specs' UTC-framed date
+ * helpers and the app's browser-zone `useToday()` cannot drift apart. That pin
+ * is one line in a config a project-level `use` block could override, and the
+ * failure it prevents is silent and time-of-day dependent: dates land one day
+ * off, assertions about "yesterday" quietly become assertions about today, and
+ * the suite is green every morning and red every evening.
+ *
+ * So it is checked on every navigation, alongside `assertAppTargetsLocalStack`
+ * and for the same reason — a guard that runs once at startup says nothing
+ * about a value that can change under a long-lived run. Reading the zone back
+ * from the page is the only thing that can see what the browser actually did
+ * with the pin. Issue #64.
+ */
+export async function assertBrowserZoneIsUtc(page: import('@playwright/test').Page): Promise<void> {
+  const zone = await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)
+  // `UTC` is what Playwright's pin resolves to; `Etc/UTC` and `Etc/GMT` are the
+  // same instant under a different spelling and are accepted rather than
+  // failing a run over an ICU naming difference.
+  if (zone === 'UTC' || zone === 'Etc/UTC' || zone === 'Etc/GMT') return
+  throw new Error(
+    `Refusing to trust this E2E run: the browser reports the time zone "${zone}", not UTC. ` +
+      'The specs frame their dates in UTC and the app follows the browser, so the two disagree ' +
+      "whenever the local calendar date differs from UTC's — silently, and only at some hours " +
+      'of the day. Check that `use.timezoneId` in playwright.config.ts has not been overridden.',
+  )
 }
 
 /**
