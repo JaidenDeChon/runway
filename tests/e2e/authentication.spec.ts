@@ -295,37 +295,64 @@ test.describe('user_id comes from the session, never from the request', () => {
 
 test.describe('the password-reset entry points', () => {
   test('acknowledges a reset request identically for any address', async ({ page }) => {
-    // Scoped to the auth card, never to the page. `<NuxtRouteAnnouncer>` in
-    // app/app.vue mounts its own visually-hidden `role="status"` span on every
-    // route, holding the document title, and it is the *only* one on this page
-    // until `AuthMessage` renders. A page-wide `getByRole('status')` therefore
-    // read the announcer — this test compared "Reset your password · Runway"
-    // with itself and would have passed whatever the two acknowledgements
-    // said. It went red only when AuthMessage arrived fast enough to make the
-    // locator ambiguous, which is the "flake" in #84: the red runs were the
-    // honest ones. `data-slot` is the stable hook the primitives emit, the
-    // same one onboarding.spec.ts and shortfall.spec.ts reach for.
-    const acknowledgement = page.locator('[data-slot="card"]').getByRole('status')
+    // `AuthMessage`'s own node, scoped to the auth card, matched by neither
+    // role. Two separate reasons, and the locator has to survive both:
+    //
+    // 1. Not page-wide. `<NuxtRouteAnnouncer>` in app/app.vue mounts a
+    //    visually-hidden `role="status"` span on every route holding the
+    //    document title, and it is the *only* one here until `AuthMessage`
+    //    renders. A page-wide `getByRole('status')` read the announcer — so
+    //    this test compared "Reset your password · Runway" with itself and
+    //    would have passed whatever the two responses said. It went red only
+    //    when AuthMessage won the race and made the locator ambiguous; the red
+    //    runs in #84 were the honest ones.
+    //
+    // 2. Not by role at all. `AuthMessage` renders `role="status"` for a
+    //    notice and `role="alert"` for a failure, and *which one appears here
+    //    depends on the environment*: CI starts the stack with `-x mailpit`
+    //    (.github/workflows/ci.yml), so GoTrue cannot send and the request
+    //    fails, while a local `bun run db:start` brings mailpit up and the
+    //    same request succeeds. Pinning either role makes the test pass in one
+    //    place and fail in the other — the same class of defect as the one
+    //    above.
+    //
+    // What the property actually says is tone-agnostic: *whatever* the app
+    // answers, it must answer identically for both addresses. So this matches
+    // the Alert itself, through the `data-slot` hook the primitives emit —
+    // the same one onboarding.spec.ts and shortfall.spec.ts reach for.
+    const acknowledgement = page.locator('[data-slot="card"] [data-slot="alert"]')
 
     /**
      * One fresh load per request. `onSubmit` clears `result` and then awaits,
      * so a second submission on the same page briefly leaves the *previous*
-     * acknowledgement on screen — and since the two are identical by design,
-     * reading the stale one is precisely how a regression would slip through.
+     * response on screen — and since the two are identical by design, reading
+     * the stale one is precisely how a regression would slip through.
      */
-    async function acknowledgementFor(address: string): Promise<string> {
+    async function responseFor(address: string): Promise<{ text: string; role: string | null }> {
       await gotoHydrated(page, '/forgot-password')
       await page.getByLabel('Email').fill(address)
       await page.getByRole('button', { name: 'Email me a link' }).click()
       await expect(acknowledgement).toBeVisible()
-      return (await acknowledgement.textContent()) ?? ''
+      return {
+        text: (await acknowledgement.textContent())?.trim() ?? '',
+        // The tone is part of the answer, not decoration: `AuthMessage` renders
+        // the destructive variant for `alert` and the plain one for `status`.
+        // Identical words in a red box for one address and a neutral box for
+        // the other would still tell a visitor which address has an account.
+        role: await acknowledgement.getAttribute('role'),
+      }
     }
 
-    const registered = await acknowledgementFor(USER_A.email)
-    expect(registered).not.toBe('')
+    const registered = await responseFor(USER_A.email)
+    expect(registered.text).not.toBe('')
 
-    const unregistered = await acknowledgementFor('nobody-here@runway.test')
-    expect(unregistered).toBe(registered)
+    const unregistered = await responseFor('nobody-here@runway.test')
+
+    // The property, stated directly — the same assertions the sign-in
+    // enumeration test above makes, which this one was missing entirely.
+    expect(unregistered.text).toBe(registered.text)
+    expect(unregistered.role).toBe(registered.role)
+    expect(registered.text).not.toMatch(/registered|exists|not found|no account/i)
   })
 
   test('sends a used or invalid link to a page that explains nothing', async ({ page }) => {
