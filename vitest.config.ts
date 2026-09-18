@@ -32,6 +32,11 @@ export default defineConfig({
             // Source guards: no database, no Nuxt boot, no live stack — they
             // read `app/`'s own files rather than running against one.
             'tests/guards/**/*.test.ts',
+            // The harness's own pure helpers — the stack resolver's failure
+            // reporting (issue #68) is logic about a subprocess, not a test
+            // that needs one, and it is mocked rather than run. It belongs in
+            // the project that boots nothing, beside the guards.
+            'tests/support/**/*.test.ts',
           ],
         },
         resolve: {

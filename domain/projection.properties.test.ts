@@ -146,6 +146,49 @@ const lowest = (projection: Projection): number => {
 const projectOver = (data: RunwayData, length: number): Projection =>
   project(data, { start: WINDOW_START, end: addDays(WINDOW_START, length) })
 
+/**
+ * Whether these transfers actually displace some account's line somewhere
+ * inside the window — the exact condition under which the individual series
+ * are obliged to move.
+ *
+ * "A transfer lands in the window" is not that condition, which is what issue
+ * #78 was: a pair of equal, opposite legs dated the same day is in the window
+ * and moves nothing, because a transfer's effect on a line is cumulative from
+ * its own day onward and the two cancel before any day is drawn. Self-transfers
+ * are the other degenerate case, and the callers filter those out first.
+ *
+ * So this walks the in-window dates in order and asks, after each *whole* day
+ * has been applied, whether any account is currently away from where it would
+ * otherwise have been. The day boundary is the load-bearing part: legs that
+ * cancel within one day never show, while legs that cancel a week apart
+ * displace both accounts for that week and must.
+ *
+ * Transfers dated before the window opens are not considered, matching
+ * `occurrencesIn`'s own skip — though the generator never produces one.
+ */
+function displacesAnyLine(transfers: readonly Transfer[], lastDay: string): boolean {
+  const inWindow = transfers
+    .filter(
+      (transfer) =>
+        compareDates(transfer.date, WINDOW_START) >= 0 && compareDates(transfer.date, lastDay) <= 0,
+    )
+    .sort((left, right) => compareDates(left.date, right.date))
+
+  const net = new Map<string, number>()
+  const move = (accountId: string, by: number): void => {
+    net.set(accountId, (net.get(accountId) ?? 0) + by)
+  }
+
+  for (const [index, transfer] of inWindow.entries()) {
+    move(transfer.fromAccountId, -transfer.amount)
+    move(transfer.toAccountId, transfer.amount)
+    // Mid-day: the rest of this day's legs may still cancel what this one did.
+    if (inWindow[index + 1]?.date === transfer.date) continue
+    for (const displacement of net.values()) if (displacement !== 0) return true
+  }
+  return false
+}
+
 describe('the combined series is the sum of the individual series', () => {
   it('holds for any portfolio', () => {
     fc.assert(
@@ -195,6 +238,11 @@ describe('a transfer never moves the combined line', () => {
   it('still moves the individual lines it is between', () => {
     // The neutrality above must come from the two legs cancelling, not from the
     // engine quietly ignoring transfers.
+    //
+    // Asserted as an equivalence rather than a one-way implication, which is
+    // what makes it airtight in both directions: the lines move exactly when
+    // `displacesAnyLine` says they must, so neither a transfer the engine
+    // forgot to apply nor one it applied that nothing asked for can pass.
     fc.assert(
       fc.property(dataArb, windowLengthArb, (data, length) => {
         const moving = data.transfers.filter(
@@ -207,13 +255,69 @@ describe('a transfer never moves the combined line', () => {
           const original = before.byAccount[index]?.points ?? []
           return balances(series.points).some((value, day) => value !== original[day]?.balance)
         })
-        // A transfer dated past the window's end legitimately changes nothing
-        // that is visible, so only in-window ones are required to show.
-        const lastDay = after.days.at(-1) ?? WINDOW_START
-        const landsInWindow = moving.some((transfer) => transfer.date <= lastDay)
-        if (landsInWindow) expect(changed).toBe(true)
+        expect(changed).toBe(displacesAnyLine(moving, after.days.at(-1) ?? WINDOW_START))
       }),
     )
+  })
+
+  // The shrunk counterexample from issue #78, kept as an example so the
+  // degenerate shape stays covered whatever the generator happens to roll.
+  // Two legs of equal size in opposite directions on one day: in the window,
+  // between two different accounts, and yet nothing on either line moves.
+  it('leaves the individual lines alone when same-day legs cancel exactly', () => {
+    const data: RunwayData = {
+      accounts: [
+        {
+          id: 'a',
+          name: 'A',
+          balance: 3_101_917,
+          balanceAsOf: '2025-12-21',
+          color: 'chart-2',
+          isDiscretionarySource: true,
+        },
+        {
+          id: 'b',
+          name: 'B',
+          balance: 4_051_796,
+          balanceAsOf: '2025-12-19',
+          color: 'chart-2',
+          isDiscretionarySource: false,
+        },
+      ],
+      recurringItems: [],
+      transfers: [
+        {
+          id: 'transfer-1',
+          fromAccountId: 'a',
+          toAccountId: 'b',
+          amount: 7,
+          date: '2026-01-22',
+          createdAt: 1,
+        },
+        {
+          id: 'transfer-2',
+          fromAccountId: 'b',
+          toAccountId: 'a',
+          amount: 7,
+          date: '2026-01-22',
+          createdAt: 2,
+        },
+      ],
+      balanceHistory: [],
+      monthlyDiscretionarySpend: 0,
+      safetyCushion: 0,
+      timeZone: null,
+    }
+
+    const before = projectOver({ ...data, transfers: [] }, 30)
+    const after = projectOver(data, 30)
+
+    for (const [index, series] of after.byAccount.entries()) {
+      expect(balances(series.points)).toEqual(balances(before.byAccount[index]?.points ?? []))
+    }
+    // And the property's own expectation agrees that nothing was owed, which is
+    // the part that used to be wrong rather than the engine.
+    expect(displacesAnyLine(data.transfers, after.days.at(-1) ?? WINDOW_START)).toBe(false)
   })
 })
 
