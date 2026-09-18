@@ -16,10 +16,26 @@
  * everywhere, not one floating-point monetary value"); `formatUsd` is the
  * only place a dollar sign or a decimal point appears.
  *
- * Why a script and not a test: same reasoning as `scripts/simplefin-sandbox.ts`
- * — this is a report generator, not an assertion, and belongs beside it, run
- * the same way (`bun scripts/<name>.ts`, no `package.json` entry, precedent
- * `scripts/bakeoff-bundle.ts`).
+ * SUPERSEDED — historical, not live guidance. `docs/decisions/0002-bank-aggregator.md`
+ * records the outcome: **no bank aggregator is adopted.** Every candidate
+ * modelled below costs somebody real money on a recurring basis — Runway
+ * (Stripe FC, Teller) or the end user (SimpleFIN's $15/yr) — and Runway has
+ * no revenue mechanism to justify either. CSV/OFX import (#22) is the
+ * automation story instead.
+ *
+ * This file is kept anyway, and deliberately: it is vendor-neutral, and its
+ * unit prices are source-cited constants rather than a frozen table, so on
+ * any future revisit it is more useful than the numbers it printed — prices
+ * are the thing most likely to have changed. Running it is how you find out
+ * whether the economics that closed the door still hold. Its companion
+ * harness `scripts/simplefin-sandbox.ts` was deleted with that decision
+ * (commit `788e6a3` has it), because live integration code for a rejected
+ * vendor invites someone to mistake it for the plan; a cost model commits to
+ * nothing.
+ *
+ * Why a script and not a test: this is a report generator, not an assertion,
+ * and is run as `bun scripts/<name>.ts` with no `package.json` entry —
+ * precedent `scripts/bakeoff-bundle.ts`.
  *
  * `scripts/` is linted (`bun run lint`) but typechecked by nothing — no
  * tsconfig's `include` matches `scripts/**`. Accepted here, matching the

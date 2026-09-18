@@ -1,13 +1,37 @@
 # Bank aggregator evaluation
 
 Issue [#24](https://github.com/JaidenDeChon/runway/issues/24). Branch
-`spike/bank-aggregator-evaluation`. Disposition: **hold for review** — this
-spike is never self-merged; the deliverable is the decision recorded in
+`spike/bank-aggregator-evaluation`. The deliverable is the decision recorded in
 [`../decisions/0002-bank-aggregator.md`](../decisions/0002-bank-aggregator.md).
 
-This document is the evidence. The decision, the walk-away threshold, and the
-strongest argument against it live in the ADR — read that first if you only
-have five minutes.
+> ## ⚠ Superseded — historical evidence, not live guidance
+>
+> **The outcome is: no bank aggregator is adopted.** Not SimpleFIN, not
+> Stripe Financial Connections, not Teller. CSV/OFX import
+> ([#22](https://github.com/JaidenDeChon/runway/issues/22)) is the automation
+> story. The owner settled this on **2026-09-17**, on the grounds that every
+> viable candidate costs somebody real money on a recurring basis — Runway
+> (Stripe FC, Teller) or the end user (SimpleFIN's $15/yr) — and Runway has
+> no revenue mechanism to justify either.
+>
+> **Nothing below is a recommendation.** This document is retained because
+> the pricing, terms and compliance research is the evidence for *why* the
+> door was closed, and because re-deriving it would cost more than keeping
+> it. Read it as a record, not a plan.
+>
+> Where it names SimpleFIN as the winner or describes an adoption gated on
+> open questions, **the ADR overrides it.** Those questions are moot: no
+> candidate is being adopted regardless of how they resolve.
+>
+> `scripts/simplefin-sandbox.ts`, the live harness §5 describes, **was
+> deleted** with that decision — keeping runnable integration code for a
+> rejected vendor invites someone to mistake it for the plan. Its output
+> survives verbatim in §5, which is the part that was ever evidence. It last
+> existed at commit `788e6a3` if it is ever needed again.
+
+This document is the evidence. The decision, the threshold that closed the
+door, and the strongest argument against it live in the ADR — read that
+first if you only have five minutes.
 
 ---
 
@@ -190,8 +214,15 @@ axes bind independently — whichever fires first stops the feature.
 ## 5. The live sandbox connection
 
 This is the heart of the evidence: a real, signup-free, no-credit-card
-connection to SimpleFIN Bridge's public demo, made by `scripts/simplefin-sandbox.ts`
-on every run.
+connection to SimpleFIN Bridge's public demo, made by
+`scripts/simplefin-sandbox.ts` on every run.
+
+**The harness was deleted when the ADR closed the door on aggregators** (see
+the superseded banner at the top). Everything below is the record of what it
+did and what came back — the transcript is verbatim from a real run, and the
+schema and the two conversions it proved are still accurate and still apply
+to CSV/OFX import. Recover the harness from commit `788e6a3` if this is ever
+revisited.
 
 ### The flow, with real HTTP codes
 
@@ -506,17 +537,21 @@ Secondary (estimates and commentary only, never a matrix `[V]` cell):
 ## 10. Re-running this yourself
 
 ```sh
-bun scripts/simplefin-sandbox.ts       # live sandbox connection, ~3 requests, no signup
 bun scripts/aggregator-cost-model.ts   # regenerates §4's tables
 ```
 
-`SIMPLEFIN_ACCESS_URL`, an optional environment variable read only by
-`scripts/simplefin-sandbox.ts`, lets someone with a real SimpleFIN Bridge
-account skip the demo-token exchange. It is a developer-only variable, not
-one the running app reads, so it is deliberately absent from
-`.env.example`. Neither script prints a balance or a credential — the
-transcript is checked in code (`assertNoSecrets`) before anything is printed
-or written to disk.
+That is the only script left. It is offline, vendor-neutral, and its unit
+prices are source-cited constants, so it stays useful on any future revisit —
+prices are the thing most likely to have moved. It prints no balance and no
+credential.
+
+`bun scripts/simplefin-sandbox.ts` — the live sandbox connection, three
+requests, no signup — **no longer exists**. It was deleted when the ADR
+closed the door on aggregators, along with the `SIMPLEFIN_ACCESS_URL`
+variable it alone read (a developer-only variable, never read by the running
+app, so it was never in `.env.example` and nothing needs removing there).
+The §5 transcript is its surviving output. Commit `788e6a3` has it if it is
+ever needed.
 
 ---
 
@@ -534,9 +569,11 @@ or written to disk.
   behaviour, and what actually happens at Teller's connection 101 are all
   unmeasured.
 - **No adapter was written**, in `domain/`, `app/`, `server/` or anywhere
-  else. The two schema conversions are demonstrated inside
-  `scripts/simplefin-sandbox.ts` only, and documented as belonging beside
-  `applyBalanceReadings` when #25 builds them.
+  else. The two schema conversions were demonstrated inside
+  `scripts/simplefin-sandbox.ts` (since deleted), and documented as
+  belonging beside `applyBalanceReadings`. That analysis outlived the
+  aggregator decision: the same two conversions are what CSV/OFX import
+  (#22) will own.
 - **No database table, no RLS policy, no UI.** `docs/design/` has no
   bank-connection directory, so no screen or component was invented for this
   spike.

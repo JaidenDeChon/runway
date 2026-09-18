@@ -1,11 +1,14 @@
 # 0002 — Bank aggregator for automatic balances and transactions
 
-**Status:** decided, held for review. Never self-merged — see
-`docs/spikes/bank-aggregator-evaluation.md` for how this spike is shipped.
-**Date:** 2026-09-14
+**Status:** **decided — no aggregator adopted.** Settled by the owner on
+2026-09-17, superseding this document's earlier "adopt SimpleFIN, gated"
+outcome. The evidence behind it is
+`docs/spikes/bank-aggregator-evaluation.md`, retained as history.
+**Date:** 2026-09-14, decision revised 2026-09-17
 **Driven by:** [issue #24](https://github.com/JaidenDeChon/runway/issues/24)
-**Blocks:** [#25](https://github.com/JaidenDeChon/runway/issues/25) (Aggregator integration),
-[#26](https://github.com/JaidenDeChon/runway/issues/26) (Actuals reconciliation)
+**Bears on:** [#25](https://github.com/JaidenDeChon/runway/issues/25) (Aggregator integration),
+[#26](https://github.com/JaidenDeChon/runway/issues/26) (Actuals reconciliation),
+[#22](https://github.com/JaidenDeChon/runway/issues/22) (CSV and OFX import)
 
 ---
 
@@ -19,7 +22,9 @@ automatic balance source would call — its own doc comment already names
 of the same function. Issue #24 asked which non-Plaid aggregator, if any,
 supplies those readings, and said explicitly that "no aggregator is
 economically viable and CSV/OFX import remains the automation story" is a
-legitimate outcome. The full evidence is in
+legitimate outcome — "not a failure."
+
+That is the outcome. The full evidence is in
 `docs/spikes/bank-aggregator-evaluation.md`; this document is the decision
 drawn from it.
 
@@ -28,75 +33,83 @@ drawn from it.
 ## Options considered
 
 Numbers pulled from `scripts/aggregator-cost-model.ts`'s output (spike doc
-§4), not from memory.
+§4), not from memory. Evidence markers are the spike doc's: `[V]` verified
+primary source, `[S]` secondary estimate, `[U]` unverified.
 
-| Candidate | App-side cost at 1 user | App-side cost at 1,000 users | Sandbox demonstrated? | Credential custody | Headline blocker |
-|---|---|---|---|---|---|
-| SimpleFIN Bridge | $0.00 `[U]` (billed to end user) | $0.00 `[U]` | **Yes** — live, in this spike | None — app never sees bank credentials | Billing party and US coverage both `[U]` |
-| Stripe Financial Connections | $7.20 | $7,200.00 | No — needs a Stripe business account | Stripe API key, server-side | Sole-proprietor eligibility `[U]` |
-| Teller | $0.00 (under the 100-connection free tier) | $7,200.00 (conservative model) | No — sandbox likely needs a signed-up `applicationId` `[U]` | mTLS private key, server-side, production only | Redistribution prohibited; consent-UI condition precedent; terminable at will |
-| Sales-gated tier (Yodlee, MX, Finicity, Akoya) | Five- to six-figure minimums `[S]` | Same | No | Vendor-specific, per contract | Sales-gated; never in contention on price |
+| Candidate | App-side cost at 1 user | App-side cost at 1,000 users | Cost to the end user | Headline blocker |
+|---|---|---|---|---|
+| SimpleFIN Bridge | $0.00 `[U]` (billed to end user) | $0.00 `[U]` | **$15.00/yr** `[U]` | Charges a non-paying user real money |
+| Stripe Financial Connections | $7.20 | $7,200.00 | $0 | Recurring app-side cost with no revenue to cover it |
+| Teller | $0.00 (under the 100-connection free tier) | $7,200.00 (conservative model) | $0 | Same, past the free tier; plus mTLS key custody and a consent-UI condition precedent |
+| Sales-gated tier (Yodlee, MX, Finicity, Akoya) | Five- to six-figure minimums `[S]` | Same | $0 | Never in contention on price |
+
+**Every row costs somebody real money on a recurring basis.** That is the
+finding the decision turns on, and it is why the fourth option below wins.
 
 ---
 
 ## Decision
 
-**SimpleFIN Bridge, as a bring-your-own-token integration, is the
-aggregator Runway adopts — and it is adopted subject to a gate: issue #25
-does not start until human-todo items 1, 2 and 3 below come back.**
+**No bank aggregator is adopted at this time — not SimpleFIN, not Stripe
+Financial Connections, not Teller, and not the sales-gated tier.**
 
-**No per-connection paid aggregator is adopted at Runway's current scale.**
-Stripe Financial Connections is the runner-up and the named fallback;
-Teller is third; the sales-gated tier (Yodlee, MX, Finicity, Akoya) is
-excluded outright.
+**CSV/OFX import ([#22](https://github.com/JaidenDeChon/runway/issues/22))
+remains the automation story**, exactly as issue #24 anticipated when it
+named this a legitimate outcome rather than a failure.
 
-Four reasons, obligation surface first, cost second — that ordering is what
-survives the volume question:
+The reasoning is short, and it does not depend on any of the unknowns this
+spike left open:
 
-1. **It is the only candidate a working connection was actually made to.**
-   The issue's DoD requires "a working sandbox connection with the top
-   candidate before deciding", and `scripts/simplefin-sandbox.ts` makes one
-   on every run: no account, no credit card, no sales call, three HTTP
-   requests, `200` at every step. Stripe FC needs a Stripe business
-   account; Teller's sandbox very likely needs a signed-up `applicationId`
-   (`[U]`).
-2. **It carries the smallest obligation surface of any candidate.** The app
-   holds no vendor API key, no mTLS private key, and never sees bank
-   credentials; access is read-only by design; the user is the Bridge's
-   account holder and hands the app a token they can revoke at the source.
-   Revocation, which #25's DoD requires to "genuinely delete", reduces to
-   deleting one stored access URL. Teller, by contrast, requires custody of
-   an mTLS private key on the deploy target *and* a consent flow capturing
-   acceptance of a third party's End User ToS as a condition precedent.
-3. **App-side marginal cost is $0 at every modelled scale** — the $15/yr is
-   billed to the end user (`[U]`, revert trigger #1) — against $0.30/
-   enrollment/month for both paid alternatives, in a project with no
-   revenue mechanism anywhere in the repo or the issue tracker.
-4. **It fails safe when withdrawn.** Every candidate carries
-   vendor-withdrawal risk and §1033 is enjoined, so none has a legal
-   backstop. SimpleFIN's failure mode is one user's token going stale;
-   Teller's documented failure mode is the developer account being
-   terminated "at any time, with or without cause", taking every user's
-   connection at once.
+1. **Every viable candidate imposes a real recurring cost on someone.**
+   Stripe FC and Teller bill Runway per connection per month. SimpleFIN
+   does not bill Runway — it bills **the user**, $15/yr, to a service they
+   would have to sign up for separately.
+2. **Runway has no revenue mechanism.** There is no billing, no
+   subscription, and nothing anywhere in the repo or on the board that
+   charges anyone. A recurring per-connection bill has nothing to come out
+   of.
+3. **Pushing that cost onto the user is worse, not better.** SimpleFIN's
+   $0 app-side figure was only ever $0 because the cost moved to the person
+   the app is for — someone who is not paying for anything else in Runway.
+   Charging an unsold user $15/yr for a feature of a free app is not a
+   trade the owner is willing to make right now. The apparent cheapness of
+   the SimpleFIN option was an accounting artifact, not a saving.
+
+This is a direct decision by the owner, not a re-run of the spike's
+evidence. **The open unknowns are moot and are not reopened**: who is
+billed SimpleFIN's $15/yr, what SimpleFIN's institution coverage is, and
+whether the owner could open an eligible Stripe business account no longer
+need answering, because no candidate is being adopted regardless of how
+they resolve.
+
+### What this decision is not
+
+It is **not** a finding that the aggregators are bad, unsafe, or
+technically unsuitable. SimpleFIN's sandbox worked on the first attempt and
+every attempt after. Stripe FC is a well-documented product that names
+personal finance apps as a blessed use case. The blocker is economic and it
+sits on Runway's side of the line: **no revenue, therefore no recurring
+cost, therefore no aggregator** — for Runway or for its users.
 
 ---
 
-## The walk-away threshold — two axes
+## The threshold that closed the door
 
-**Axis 1 — cost. Default: $0/year of recurring app-side aggregator spend.**
-Runway has no billing, no subscription and no revenue mechanism; there is
-nothing in the repo or on the board that charges a user. So the default
-threshold is zero, and *any* aggregator with a nonzero recurring app-side
-per-user cost is walked away from until either a revenue mechanism exists
-or the owner sets a budget.
+The spike set a walk-away threshold on two axes. **Axis 1 fired**, at its
+default, and that is what this decision records.
 
-If the owner sets an annual budget **B**, the trigger on a
-30¢/enrollment/month aggregator at the model's 2 institutions per user is
-`floor(B / $7.20)` connected users:
+**Axis 1 — cost. Default: $0/year of recurring aggregator spend**, borne by
+Runway *or* by a user who is not otherwise paying. Runway has no billing,
+no subscription and no revenue mechanism, so the default threshold is zero
+and every candidate exceeds it.
+
+If a revenue mechanism ever exists and the owner sets an annual budget
+**B**, the trigger on a 30¢/enrollment/month aggregator at the model's 2
+institutions per user is `floor(B / $7.20)` connected users:
 
 | Annual budget B | Max connected users before B is exceeded |
 |---|---|
-| $0 (default) | 0 — any paid connection exceeds it |
+| $0 (today's default) | 0 — any paid connection exceeds it |
 | $120 | 16 |
 | $600 | 83 |
 | $1,200 | 166 |
@@ -105,142 +118,158 @@ If the owner sets an annual budget **B**, the trigger on a
 months × 2 institutions, and the institutions figure is a stated
 assumption, not a measurement.)
 
-**Axis 2 — compliance scope. Stop accepting new bank connections at 4,000
-connected users** unless the full nine-element Safeguards Rule program is
-in place by then. The FTC's threshold is **5,000** consumers, below which
-certain provisions are relieved — the written risk assessment, continuous
-monitoring / annual pen testing, the written incident response plan and
-the annual board report — but the Rule itself still applies. **4,000 is a
-policy buffer chosen here, not a legal figure**; 5,000 is the statutory
-line.
+**Axis 2 — compliance scope — never had to fire, and is recorded here
+because it constrains any future revisit.** The FTC Safeguards Rule's
+threshold is **5,000** consumers, below which certain provisions are
+relieved — the written risk assessment, continuous monitoring / annual pen
+testing, the written incident response plan and the annual board report —
+but the Rule itself still applies. A second gate sits at **500** connected
+users, above which a single incident becomes an FTC-notifiable event within
+30 days. Any future aggregator decision inherits both, and the spike doc's
+§7 has the detail. This is desk research, **not legal advice**.
 
-**A second gate at 500 connected users:** above it, a single incident
-becomes an FTC-notifiable event within 30 days (unauthorized acquisition
-of 500 consumers' unencrypted information). An incident-response runbook
-must exist before crossing 500, even though the sub-5,000 relief means it
-need not be the Rule's formal written plan.
-
-**The two axes bind independently. Whichever is hit first stops the
-feature.**
+An additional, quieter consequence of adopting nothing: ingesting bank data
+through an aggregator is the step most likely to pull Runway into GLBA
+"financial institution" scope. Declining it does not make that question
+disappear — CSV/OFX import maintains the same class of information — but it
+does stop Runway becoming the custodian of live, aggregator-issued
+credentials for other people's bank accounts.
 
 ---
 
 ## Consequences
 
-- What #25 may now assume: the adapter is a *caller* of
-  `applyBalanceReadings(accounts, readings, asOf)` producing
-  `BalanceReading[]` + an `IsoDate`; it owns exactly two conversions
-  (decimal string → integer cents via a string parser, unix instant →
-  `IsoDate` via `todayIn` with a timezone parameter); the stored secret per
-  user is a single access URL and must be treated as a credential
-  (encrypted at rest, server-only, never logged, never in a URL); sync
-  budget is 24 requests/day per access URL.
-- What #25 must **not** assume: that SimpleFIN covers the user's banks
-  (`[U]`); that the $15 is user-billed (`[U]`); that a connect screen's
-  design exists — `docs/design/` has no bank-connection directory and #25
-  needs one before any UI is built.
-- #22 (CSV/OFX import) ships first by priority and shares the boundary:
-  #25's DoD already requires aggregator data to flow through the same
-  functions import uses. The adapter is a second caller of one path, never
-  a parallel one.
-- No new dependency, no schema change, no route, nothing shipped to users
-  by this spike.
-- The `scripts/simplefin-sandbox.ts` harness stays in the tree as the
-  reproduction for anyone revisiting this.
+- **#25 (Aggregator integration) is blocked on this decision, not
+  unblocked by it.** It should not start. If it is ever revived, it starts
+  by re-opening this ADR, not by picking up where the spike left off.
+- **#22 (CSV/OFX import) is the automation story** and carries the whole
+  weight of "how does data get in without manual entry". It ships on its
+  own priority.
+- **#26 (Actuals reconciliation) is not blocked.** Its transaction-matching
+  work needs *a* source of transactions, and CSV/OFX is one. The field
+  names the spike observed are still recorded in the spike doc §5 for
+  whatever source #26 ends up matching against.
+- **`applyBalanceReadings` remains the right seam** and is unchanged. The
+  two conversions an importer owns are the same two an adapter would have:
+  decimal string → integer cents via a string parser (never truncation),
+  and unix instant → `IsoDate` via `todayIn` with an explicit timezone
+  parameter. That analysis survives this decision and applies directly to
+  #22 — see spike doc §5.
+- **No new dependency, no schema change, no route, nothing shipped to
+  users.**
+- **`scripts/simplefin-sandbox.ts` was deleted** when this decision landed.
+  It was a live integration harness against a vendor Runway is not
+  adopting, and keeping runnable integration code for a rejected option
+  invites someone to mistake it for the plan. Its output survives verbatim
+  in spike doc §5, which is the part that was ever evidence. Recover the
+  harness from git history if this is revisited: it last existed at
+  `788e6a3`.
+- **`scripts/aggregator-cost-model.ts` was kept**, marked superseded. It is
+  vendor-neutral and its unit prices are source-cited constants, so on any
+  future revisit it is more useful than the frozen tables — prices are the
+  thing most likely to have changed.
 
-### Reverting this decision
+### Revisiting this decision
 
-1. **The $15/yr turns out to be billed to the app.** Cost basis inverts:
-   $15/user/yr beats $7.20/user/yr only until it does not. Re-run the cost
-   model with `SIMPLEFIN_APP_SIDE_CENTS_PER_YEAR = 1500` and re-decide
-   between SimpleFIN and Stripe FC.
-2. **SimpleFIN coverage misses the owner's own banks.** At n=1 this is
-   fatal; fall back to the runner-up, Stripe FC, and resolve its
-   business-account eligibility question first.
-3. **SimpleFIN's terms turn out to prohibit third-party consumer apps or
-   the token flow.** Fall back to Stripe FC.
-4. **Connected users approach 500 or 4,000.** Axis 2 fires; stop accepting
-   new connections and reopen this decision with the compliance program as
-   the subject.
-5. **A revenue mechanism appears.** Axis 1's default of $0 was set by the
-   absence of one; with one, Stripe FC at 30¢ becomes genuinely affordable
-   and this decision should be re-argued on coverage rather than cost.
+There is one trigger, and it is not a technical one:
 
-The evidence lives at this branch's commits, `docs/spikes/bank-aggregator-evaluation.md`,
-and the two `scripts/` harnesses, all of which survive the decision.
+**A revenue mechanism appears, or the owner decides to absorb the cost
+knowingly.** Axis 1's $0 default was set by the absence of any way to pay
+for a recurring bill. With one, this decision should be re-argued — and the
+spike's evidence says to start with **Stripe Financial Connections**, not
+SimpleFIN: it costs Runway $7.20/user/yr rather than costing the user $15,
+has the broadest verified coverage (~97% of US bank accounts, ~12,000
+institutions `[V]`), and names personal finance apps as a supported use
+case `[V]`.
+
+Two secondary triggers worth naming:
+
+- **SimpleFIN's $15/yr turns out to be billed to the app, not the user, and
+  to be small enough to absorb.** That would remove objection 3 above,
+  though not objection 2.
+- **A free, non-Plaid aggregator with real US coverage appears.** None
+  exists today; GoCardless Bank Account Data has a free tier but is EU/UK
+  only, so it fails the US requirement outright.
+
+The evidence lives at this branch's commits,
+`docs/spikes/bank-aggregator-evaluation.md`, and
+`scripts/aggregator-cost-model.ts`.
 
 ---
 
 ## The strongest argument against this
 
-**Stripe Financial Connections should have won, and choosing SimpleFIN
-trades a real product for a real tax on the user.**
+**Runway just declined the entire feature over $7.20 a year, and the
+"no revenue mechanism" reasoning is circular.**
 
-At Runway's actual scale the "expensive" option is not expensive. One user
-with two institutions costs **$7.20 a year** — less than a sandwich, less
-than the $15 SimpleFIN charges that same user. Even a hundred connected
-users is **$720 a year**. The cost argument for SimpleFIN only becomes
-decisive at volumes Runway has no users for and no plan to reach, and at
-*those* volumes Axis 2's compliance cliff has already fired and cost is not
-the binding constraint anyway. Meanwhile Stripe FC claims ~97% of US bank
-accounts across ~12,000 institutions, with a documented testing
-environment, webhooks, a 180-day history pull and daily updates — and
-Stripe's own docs name "personal finance apps" as a blessed use case, so
-this is not a grey-area integration. SimpleFIN's coverage is a number
-nobody in this spike could produce.
+At the only scale Runway actually operates at — one user, the owner —
+Stripe Financial Connections costs **$7.20 per year**. That is not a
+business expense requiring a business model; it is a rounding error against
+the domain registration and the Supabase bill this project already pays for
+without a revenue mechanism to justify either. The argument "there is no
+revenue to cover it" proves too much: by that standard Runway should not
+have a hosted database. Invoking the absence of revenue to reject a
+seven-dollar annual cost, in a project the owner is already funding out of
+pocket, is a different decision than it presents itself as — it is "not
+worth it to me", which is a legitimate call, but it is a preference, not an
+economic constraint.
 
-And SimpleFIN's real cost is not $0, it is **friction**: before Runway can
-show a user a single automatic balance, that user must find SimpleFIN
-Bridge, create an account there, pay $15, connect their banks *in a second
-product*, generate a setup token, and paste it into Runway. That is a
-funnel most people will not finish, and the $0 app-side figure is $0
-precisely because the cost was pushed onto the person the app is for. A
-24-requests-per-day ceiling on top of it constrains the sync design
-forever.
+And the cost of declining is real. Manual balance entry is the single
+biggest source of friction in a cash-flow app, and it degrades exactly when
+the app matters most: the projection is only as good as the freshness of
+the balances behind it, and a user who has stopped updating balances is a
+user whose runway number is quietly wrong. CSV/OFX import narrows that gap
+but does not close it — it is still a manual export-download-upload cycle
+per institution, which people do once and then stop doing. The spike built
+a **working** SimpleFIN connection in three HTTP requests with no signup,
+no credit card and no sales call. Throwing that away leaves the automation
+story resting entirely on an issue (#22) that has not been built yet.
 
-**Why the decision still stands:** what distinguishes the two is not
-price, it is *what Runway becomes*. Stripe FC requires the owner to open a
-Stripe **business** account eligible for Financial Connections — an
-eligibility this spike explicitly could not confirm for a sole proprietor
-and refuses to assert — and it makes Runway the custodian of
-aggregator-issued access tokens for other people's bank accounts, with the
-FTC Safeguards Rule's nine-element program attached and, with §1033
-enjoined, no right-of-access backstop if the arrangement is withdrawn.
-SimpleFIN leaves the user as the account holder and Runway as a read-only
-consumer of a token the user controls and can revoke at the source. For a
-single-maintainer, no-revenue, MIT-licensed personal project, the
-obligation asymmetry is larger than the price asymmetry at every scenario
-in the cost model — and the price asymmetry is the only one that reverses
-as scale grows. The moment either premise changes, revert triggers 1, 2, 3
-and 5 above are the door out, and Stripe FC is the named destination.
+**Why the decision still stands:** the objection is right that $7.20 is
+affordable and wrong that affordability is the question. The cost that
+actually matters is not the first user's — it is the shape of the
+commitment. A per-connection bill is a recurring obligation that scales
+with adoption, arriving in a project with no mechanism to make adoption pay
+for itself, and the honest options at that point are to cap signups, eat a
+growing bill, or start charging — each of which is a product decision the
+owner has not made and should not be forced into as a side effect of a
+convenience feature. SimpleFIN's variant is worse on exactly this axis, not
+better: it does not scale a bill to Runway, it hands a $15 invoice to every
+individual user of a free app, which is the least defensible version of the
+trade. Declining now costs one deferred feature and is fully reversible
+from git history and this document; adopting now creates an obligation that
+is awkward to unwind once real users depend on it. **Given a reversible
+wrong answer and an irreversible one, this takes the reversible one.**
+
+That said, the objection's core point is recorded as the revisit trigger
+above precisely because it may well be correct later: if the owner decides
+he simply wants the feature and will pay $7.20 for it, that is a
+one-sentence amendment to this ADR, not a new spike.
 
 ---
 
 ## What still needs a human
 
-1. **Confirm who is billed SimpleFIN's $15/yr.** Create a Bridge account
-   at `https://beta-bridge.simplefin.org/` and observe the checkout, or
-   ask SimpleFIN directly. **Revert trigger #1**; the cost model turns on
-   it.
-2. **Confirm SimpleFIN's terms** permit a third-party consumer app to
-   consume a user-supplied token, and what they say about redistribution —
-   both were `UNVERIFIED` after this spike's fetches.
-3. **Set the annual aggregator budget B.** Default $0. This sets Axis 1's
-   trigger and is the gate on #25 starting.
-4. **Decide whether Runway accepts GLBA "financial institution" scope at
-   all**, and if yes, designate the "qualified individual" (element 1).
-   For a solo project that is the owner — but it has to be a conscious
-   designation, not an accident.
-5. **Have counsel confirm the GLBA scoping** and whether a published
-   privacy policy must ship before any bank connection does. This spike is
-   desk research; it is not legal advice and says so.
-6. **Only if this decision is revisited toward Stripe FC:** confirm the
-   owner can open a Stripe business account eligible for Financial
-   Connections as a sole proprietor. **This spike does not assert that he
-   qualifies.**
-7. **Check SimpleFIN's coverage against the banks the owner actually
-   uses.** At n=1, this is the only coverage test that matters.
-8. **Commission a `docs/design/` directory for the bank-connection flow**
-   before #25 builds any UI. None exists today.
-9. **Review and merge this PR by hand.** Spikes in this repo are held for
-   review and never self-merged.
+Most of the spike's original list is **moot** — the billing party, the
+coverage check, the Stripe eligibility question and the aggregator budget
+all existed to gate an adoption that is not happening.
+
+What remains:
+
+1. **Prioritize [#22](https://github.com/JaidenDeChon/runway/issues/22)
+   (CSV/OFX import).** It is now the whole automation story rather than one
+   of two paths, which is a stronger claim on the roadmap than it had when
+   it was filed.
+2. **Decide what to do with
+   [#25](https://github.com/JaidenDeChon/runway/issues/25) (Aggregator
+   integration).** It is blocked indefinitely by this decision. Close it as
+   "not now" with a pointer here, or leave it open and parked — but do not
+   leave it looking actionable.
+3. **Revisit only on the trigger above** — a revenue mechanism, or a
+   deliberate decision to absorb the cost. Start from Stripe FC, not
+   SimpleFIN.
+4. **GLBA scoping still deserves counsel eventually**, because CSV/OFX
+   import maintains the same class of consumer financial information that
+   an aggregator would. This spike is desk research and is **not legal
+   advice**. Declining an aggregator lowers the exposure; it does not
+   remove the question.

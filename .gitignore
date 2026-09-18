@@ -45,3 +45,10 @@ supabase-start.log
 # limit costs a resume rather than a re-plan. Run state, not source — the
 # durable copy lives on the issues and the project board.
 .claude/runway-runner/
+
+# Agent worktrees. Each carries its own `biome.json`, which `bun run lint`
+# (`biome ci .`) refuses to coexist with — "found a nested root configuration"
+# — failing the whole repo's lint on a scratch directory. Biome reads this file
+# (`vcs.useIgnoreFile`), so ignoring them here fixes that and keeps a worktree
+# from ever being committed by accident.
+.claude/worktrees/
