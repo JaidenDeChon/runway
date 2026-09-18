@@ -84,7 +84,11 @@ watch(
 
 // Return to the item list only once a save or revert actually finishes
 // without an error — not the instant the button is pressed, now that both
-// are real network calls that can fail.
+// are real network calls that can fail. What-if has no such moment to wait
+// for (its "save" is a list append the parent makes synchronously and never
+// reports back through `saving`), so it closes from `onSave` instead; both
+// paths honour the design's "then returns to the item list"
+// (docs/design/dashboard/spec.md § Interactions).
 watch(
   () => props.saving,
   (saving, wasSaving) => {
@@ -121,6 +125,9 @@ function onSave(): void {
     projectedAmount: occurrence.projectedAmount,
     ...(retimed ? { newDate: form.date } : {}),
   })
+  // A preview never round-trips, so there is no `saving` edge for the watch
+  // above to close on.
+  if (props.whatIf) editing.value = null
 }
 
 function onRevert(): void {

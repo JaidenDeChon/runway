@@ -20,6 +20,11 @@
  *
  * AC-F5 proves revert: the marking disappears and the forecast returns to
  * its pre-edit figure.
+ *
+ * The what-if test is not an acceptance criterion — issue #16 owns what-if
+ * mode — but the save path this issue rebuilt runs through the same button,
+ * and a preview has no network round trip to close the edit form on. That
+ * asymmetry is exactly the kind that rots silently, so it is pinned here.
  */
 
 import { assertBaseUrlIsLocal, clickUntil, expect, gotoHydrated, test } from './fixtures'
@@ -152,6 +157,53 @@ test.describe('saving an edit', () => {
     await expect
       .poll(async () => after.test((await chart.getAttribute('aria-label')) ?? ''), {
         message: 'expected the chart to report the edited low point with no reload',
+      })
+      .toBe(true)
+  })
+})
+
+test.describe('previewing an edit', () => {
+  test('a what-if preview returns to the item list, moves the chart, and is discarded on close', async ({
+    emptyHouseholdPage: page,
+  }) => {
+    await createAccount(page, 'E2E Occurrence Preview Checking', '500')
+    const dueDate = isoDaysFromToday(6)
+    await createBill(page, 'E2E Occurrence Preview Rent', '100', dueDate)
+
+    await gotoHydrated(page, '/')
+
+    const chart = page.getByRole('img', { name: /Balance forecast/ })
+    const unedited = new RegExp(`Lowest projected balance \\$400 on ${shortDate(dueDate)}`)
+    await expect
+      .poll(async () => unedited.test((await chart.getAttribute('aria-label')) ?? ''))
+      .toBe(true)
+
+    await page.locator(`[data-day="${dueDate}"]`).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('switch', { name: 'What-if mode' }).click()
+    await dialog.getByRole('button', { name: /E2E Occurrence Preview Rent/ }).click()
+    await dialog.locator('#occurrence-amount').fill('700')
+    await dialog.getByRole('button', { name: 'Preview change' }).click()
+
+    // The regression this test exists for: a preview never round-trips, so
+    // there is no `saving` edge to close the form on — it has to close from
+    // `onSave` itself, or the editor strands the user on the edit form.
+    // `Done` only renders in the item list, so its return *is* the assertion.
+    await expect(dialog.getByRole('button', { name: 'Done' })).toBeVisible()
+
+    const previewed = new RegExp(`Lowest projected balance ${MINUS}\\$200 on ${shortDate(dueDate)}`)
+    await expect
+      .poll(async () => previewed.test((await chart.getAttribute('aria-label')) ?? ''), {
+        message: 'expected the preview to move the chart without saving',
+      })
+      .toBe(true)
+
+    // Closing discards the what-if list — nothing was ever written, so the
+    // forecast returns to the rule's own figure.
+    await dialog.getByRole('button', { name: 'Done' }).click()
+    await expect
+      .poll(async () => unedited.test((await chart.getAttribute('aria-label')) ?? ''), {
+        message: 'expected the discarded preview to leave no trace on the forecast',
       })
       .toBe(true)
   })

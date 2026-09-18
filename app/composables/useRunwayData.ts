@@ -76,7 +76,6 @@ import {
 } from '@/lib/supabase/accounts'
 import {
   OVERRIDE_COLUMNS,
-  type SelectedOccurrenceRow,
   toOccurrenceOverride,
   toOverrideArgs,
   toRegenerationArgs,
