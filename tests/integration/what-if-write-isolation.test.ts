@@ -31,7 +31,12 @@ import { project } from '~~/domain/projection'
 import type { Account, RecurringItem, RunwayData } from '~~/domain/types'
 import { type AuthContext, secondUserContext } from '../support/auth'
 import { LOCAL_STACK } from '../support/database'
-import { removeFixtures, seedHousehold } from '../support/fixtures'
+import {
+  fixtureName,
+  removeFixtures,
+  type SeededHousehold,
+  seedHousehold,
+} from '../support/fixtures'
 
 const LABEL = 'what-if-isolation'
 const TODAY = '2026-09-03' as IsoDate
@@ -57,6 +62,15 @@ const WATCHED_TABLES = [
 ] as const
 
 type Snapshot = Record<string, unknown[]>
+
+/** The snapshot holds whole rows of seven different shapes; these read the two fields the counts need. */
+function asRow(row: unknown): { name?: unknown; rule_id?: unknown } {
+  return row as { name?: unknown; rule_id?: unknown }
+}
+
+function rowsNamed(rows: unknown[] | undefined, name: string): number {
+  return (rows ?? []).filter((row) => asRow(row).name === name).length
+}
 
 /**
  * Every watched row the signed-in user can see, ordered so the comparison is
@@ -121,11 +135,12 @@ const PREVIEW: OccurrenceEdit = {
 
 describe.skipIf(LOCAL_STACK === null)('a what-if session writes nothing', () => {
   let context: AuthContext
+  let household: SeededHousehold
 
   beforeAll(async () => {
     await removeFixtures(LABEL)
     context = await secondUserContext()
-    await seedHousehold(context, {
+    household = await seedHousehold(context, {
       label: LABEL,
       accounts: [ACCOUNT],
       recurringItems: [RENT],
@@ -139,10 +154,23 @@ describe.skipIf(LOCAL_STACK === null)('a what-if session writes nothing', () => 
   })
 
   it('has rows to leave alone, so an empty snapshot cannot pass for an unchanged one', async () => {
+    // Counted by name and by rule, not by table size. `secondUserContext()`
+    // is a shared fixture user: the snapshot legitimately holds whatever the
+    // local seed and neighbouring suites left under it, so "the accounts
+    // table has one row" is a claim about the harness rather than about this
+    // test's own fixture. CI proved that the hard way — five accounts, not
+    // one. What this needs to know is narrower and stays true either way:
+    // the household really landed, so the comparisons below are photographs
+    // of something.
     const before = await snapshot(context)
-    expect(before.accounts?.length).toBe(1)
-    expect(before.recurring_rules?.length).toBe(1)
-    expect((before.occurrences?.length ?? 0) > 0).toBe(true)
+    const ruleId = household.ruleIds.get(RENT.id)
+    expect(ruleId).toBeTruthy()
+    expect(rowsNamed(before.accounts, fixtureName(LABEL, ACCOUNT.name))).toBe(1)
+    expect(rowsNamed(before.recurring_rules, fixtureName(LABEL, RENT.name))).toBe(1)
+    expect(household.occurrenceCount).toBeGreaterThan(0)
+    expect((before.occurrences ?? []).filter((row) => asRow(row).rule_id === ruleId).length).toBe(
+      household.occurrenceCount,
+    )
   })
 
   it('changes the forecast and leaves every stored row byte-identical', async () => {
