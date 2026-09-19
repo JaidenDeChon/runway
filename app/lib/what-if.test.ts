@@ -14,6 +14,7 @@ import type { IsoDate } from '~~/domain/dates'
 import { toMinorUnits } from '~~/domain/money'
 import type { OccurrenceEdit } from './occurrence-editor'
 import {
+  discardPrompt,
   EMPTY_SCRATCH,
   hasScratchEdits,
   overridesInEffect,
@@ -109,6 +110,17 @@ describe('hasScratchEdits', () => {
 
   it('is true once something has been previewed', () => {
     expect(hasScratchEdits(withScratchEdit(EMPTY_SCRATCH, edit()))).toBe(true)
+  })
+})
+
+describe('discardPrompt', () => {
+  it('says "change" for one and "changes" for more', () => {
+    expect(discardPrompt(1)).toContain('1 previewed change will')
+    expect(discardPrompt(2)).toContain('2 previewed changes will')
+  })
+
+  it('reassures that nothing stored is at stake, which is what makes Discard safe to press', () => {
+    expect(discardPrompt(3)).toContain('saved data is untouched')
   })
 })
 

@@ -101,6 +101,25 @@ export function hasScratchEdits(scratch: WhatIfScratch): boolean {
  * it too, on the same transition — belt and braces, in the direction where a
  * mistake shows stored data rather than invented data.
  */
+/**
+ * What the discard confirmation says beneath its question (issue #16).
+ *
+ * Copy lives here rather than in the template for the reason
+ * `occurrence-editor.ts`'s `splitConsequence` gives: a sentence with a
+ * plural in it is logic, and logic in a template is logic no test covers.
+ *
+ * The second half matters more than the first. The thing a person actually
+ * fears at this prompt is having broken something real, and the honest
+ * answer is that they have not: a preview was never written, so discarding
+ * costs them only the preview. Saying so is what makes "Discard" safe to
+ * press — and what stops the confirmation from reading as a warning about
+ * data loss it is not.
+ */
+export function discardPrompt(count: number): string {
+  const changes = count === 1 ? 'change' : 'changes'
+  return `${count} previewed ${changes} will be lost. Your saved data is untouched either way.`
+}
+
 export function overridesInEffect(on: boolean, scratch: WhatIfScratch): WhatIfScratch {
   return on ? scratch : EMPTY_SCRATCH
 }

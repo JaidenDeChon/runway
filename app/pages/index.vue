@@ -283,7 +283,14 @@ function openDay(date: IsoDate): void {
   editError.value = null
 }
 
-/** Closing always discards the what-if list — the design offers no confirmation. */
+/**
+ * Closing always discards the what-if list.
+ *
+ * The confirmation issue #16 adds lives in `DayDetailEditor`, not here: by
+ * the time this runs the user has already answered it, and a second guard at
+ * this level would have to know which exit route asked. This stays the one
+ * place the list is emptied.
+ */
 function setEditorOpen(open: boolean): void {
   editorOpen.value = open
   if (!open) setWhatIf(false)
@@ -454,6 +461,7 @@ async function revertOccurrenceEdit(target: OccurrenceRevert): Promise<void> {
       :accounts-by-id="accountsById"
       :recurring-items-by-id="recurringItemsById"
       :what-if="whatIf"
+      :what-if-edit-count="whatIfOverrides.length"
       :saving="savingEdit"
       :error="editError"
       @update:open="setEditorOpen"

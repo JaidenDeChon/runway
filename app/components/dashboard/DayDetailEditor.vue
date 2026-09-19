@@ -15,6 +15,14 @@
  * against the same projection the chart draws, so the state has to live where
  * both can see it.
  *
+ * Issue #16 adds a third view — the discard confirmation — for the same
+ * reason there are two: the design's answer to "second surface or swapped
+ * body?" on this screen is a swapped body, and stacking an AlertDialog over
+ * a bottom sheet at 375px is exactly the nesting that decision avoids. The
+ * parent still owns the previews; this component only asks before letting an
+ * exit through, and it asks on every route out (Done, ✕, overlay tap, Escape
+ * and the switch itself), because the spec lists all of them as one action.
+ *
  * Issue #15 made saving asynchronous and real: `saving`/`error` are props,
  * driven by `index.vue` the way `UpdateBalancesEditor` already is, and this
  * component only returns from the edit form to the item list once a save or
@@ -39,6 +47,7 @@ import type { OccurrenceEdit, OccurrenceRevert } from '@/lib/occurrence-editor'
 import { overrideSummary, splitConsequence } from '@/lib/occurrence-editor'
 import { SEGMENTED_SEGMENT, SEGMENTED_TRACK } from '@/lib/segmented-control'
 import { cn } from '@/lib/utils'
+import { discardPrompt } from '@/lib/what-if'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
 import type { OverrideScope } from '~~/domain/overrides'
@@ -55,6 +64,14 @@ const props = defineProps<{
   /** Looked up for the apply-to-future consequence sentence — `Cadence` lives on the rule, not the `Occurrence`. */
   recurringItemsById: ReadonlyMap<string, RecurringItem>
   whatIf: boolean
+  /**
+   * How many previewed edits the what-if session is holding.
+   *
+   * A count rather than a boolean because the confirmation names it, and
+   * because "2 previewed changes will be lost" is the sentence that makes
+   * the prompt worth stopping for.
+   */
+  whatIfEditCount: number
   saving: boolean
   error: string | null
 }>()
@@ -68,6 +85,22 @@ const emit = defineEmits<{
 
 const editing = ref<Occurrence | null>(null)
 
+/**
+ * The exit the user asked for and has not yet confirmed.
+ *
+ * Two of them, because discarding is reachable two ways and they do not end
+ * in the same place: closing the editor takes the previews *and* the sheet,
+ * while turning the switch off takes only the previews and leaves the user
+ * looking at the day they were working on. Collapsing them into one flag
+ * would close the sheet out from under somebody who only meant to stop
+ * previewing.
+ */
+type PendingExit = 'close' | 'what-if-off'
+const pendingExit = ref<PendingExit | null>(null)
+
+/** Nothing previewed is nothing to lose — an untouched session must never stop to ask. */
+const hasPreviews = computed(() => props.whatIf && props.whatIfEditCount > 0)
+
 const form = reactive({
   amount: 0 as MinorUnits,
   date: '' as IsoDate,
@@ -79,6 +112,8 @@ watch(
   () => [props.open, props.date] as const,
   () => {
     editing.value = null
+    // A confirmation left standing would greet the next day the user opens.
+    pendingExit.value = null
   },
 )
 
@@ -95,6 +130,45 @@ watch(
     if (wasSaving && !saving && !props.error) editing.value = null
   },
 )
+
+/**
+ * Every way out of this editor, funnelled through one question.
+ *
+ * `ResponsiveEditor` is fully controlled, so refusing to emit `update:open`
+ * is what keeps the sheet on screen when somebody taps the overlay — there
+ * is no internal open state to fight. That is the whole mechanism: the four
+ * routes the spec calls one action (Done, ✕, overlay tap, Escape) all arrive
+ * here as `update:open(false)`, and the switch arrives at its twin below.
+ */
+function requestOpen(value: boolean): void {
+  if (value || !hasPreviews.value) {
+    emit('update:open', value)
+    return
+  }
+  pendingExit.value = 'close'
+}
+
+function requestWhatIf(on: boolean): void {
+  if (on || !hasPreviews.value) {
+    emit('update:whatIf', on)
+    return
+  }
+  pendingExit.value = 'what-if-off'
+}
+
+function confirmDiscard(): void {
+  const intent = pendingExit.value
+  pendingExit.value = null
+  // The parent discards in both cases — closing the editor turns what-if off
+  // on its way out, which is what empties the list. This only decides how far
+  // out the user meant to go.
+  if (intent === 'close') emit('update:open', false)
+  else if (intent === 'what-if-off') emit('update:whatIf', false)
+}
+
+function keepPreviewing(): void {
+  pendingExit.value = null
+}
 
 function startEdit(occurrence: Occurrence): void {
   editing.value = occurrence
@@ -136,8 +210,13 @@ function onRevert(): void {
   emit('revert', { itemId: occurrence.itemId, date: occurrence.projectedDate })
 }
 
-const title = computed(() => (editing.value ? 'Edit occurrence' : 'Day detail'))
+const title = computed(() => {
+  if (pendingExit.value) return 'Discard what-if changes?'
+  return editing.value ? 'Edit occurrence' : 'Day detail'
+})
 const subtitle = computed(() => (props.date ? formatDateLong(props.date) : ''))
+
+const discardMessage = computed(() => discardPrompt(props.whatIfEditCount))
 
 const editedSummary = computed(() => {
   const occurrence = editing.value
@@ -173,9 +252,37 @@ const submitLabel = computed(() => {
     :open="props.open"
     :title="title"
     :description="subtitle"
-    @update:open="(value) => emit('update:open', value)"
+    @update:open="requestOpen"
   >
-    <div class="flex flex-col gap-4">
+    <!-- The confirmation replaces the body rather than covering it: this
+         editor's own pattern (see the note at the top), and the only one that
+         behaves at 375px, where a second overlay over a bottom sheet leaves
+         neither fully readable. -->
+    <div v-if="pendingExit" class="flex flex-col gap-4">
+      <p
+        class="flex items-start gap-2 rounded-md border border-dashed border-chart-5 bg-chart-5/10 px-3 py-2 text-sm font-medium text-chart-5"
+      >
+        <span aria-hidden="true">◑</span>
+        {{ discardMessage }}
+      </p>
+
+      <p class="text-sm text-muted-foreground">
+        {{
+          pendingExit === 'close'
+            ? 'Closing turns what-if off and drops the previews.'
+            : 'Turning what-if off drops the previews and puts the chart back to your saved numbers.'
+        }}
+      </p>
+
+      <div class="flex flex-col gap-2 lg:flex-row-reverse">
+        <Button type="button" class="lg:flex-1" @click="keepPreviewing">Keep previewing</Button>
+        <Button type="button" variant="outline" class="lg:flex-1" @click="confirmDiscard">
+          Discard changes
+        </Button>
+      </div>
+    </div>
+
+    <div v-else class="flex flex-col gap-4">
       <!-- --chart-5 is the what-if token everywhere on this screen; dark text
            on it in both themes because the ramp lightens for dark surfaces. -->
       <p
@@ -197,7 +304,7 @@ const submitLabel = computed(() => {
           :model-value="props.whatIf"
           aria-labelledby="what-if-label"
           :class="cn('mt-1 shrink-0', props.whatIf && 'data-checked:bg-chart-5')"
-          @update:model-value="(value) => emit('update:whatIf', value === true)"
+          @update:model-value="(value) => requestWhatIf(value === true)"
         />
       </div>
 
@@ -229,7 +336,7 @@ const submitLabel = computed(() => {
           />
         </div>
 
-        <Button class="w-full" @click="emit('update:open', false)">Done</Button>
+        <Button class="w-full" @click="requestOpen(false)">Done</Button>
       </template>
 
       <form v-else class="flex flex-col gap-4" @submit.prevent="onSave">
