@@ -401,7 +401,14 @@ function projectedAmountFor(itemId: string, date: IsoDate): MinorUnits | null {
  * silently dropping it. The writes already made stand — they are real edits,
  * and rolling them back would need a transaction this seam does not have.
  */
+const PROMOTION_STALE =
+  'That day is no longer in the forecast, so it could not be saved. Reopen the day and try again.'
+const PROMOTION_FAILED = 'Could not save those changes. Check your connection and try again.'
+
 async function promoteWhatIf(): Promise<void> {
+  // The button disables itself on `saving`, but that is a prop round trip;
+  // a double press inside it would run the whole plan twice.
+  if (promoting.value) return
   promoting.value = true
   promoteError.value = null
   try {
@@ -416,7 +423,13 @@ async function promoteWhatIf(): Promise<void> {
       } else {
         const projectedAmount = projectedAmountFor(step.itemId, step.date)
         if (projectedAmount === null) {
-          throw new Error('the previewed occurrence is no longer in the projection')
+          // Distinct from the failure below on purpose: this one is not a
+          // connection problem, and telling somebody to check their network
+          // when the horizon moved under them sends them after the wrong
+          // thing. Reachable when an earlier split in this same run pushed
+          // the day out of the projected window.
+          promoteError.value = PROMOTION_STALE
+          return
         }
         await overrideOccurrence({
           itemId: step.itemId,
@@ -436,7 +449,7 @@ async function promoteWhatIf(): Promise<void> {
     }
     setWhatIf(false)
   } catch {
-    promoteError.value = 'Could not save those changes. Check your connection and try again.'
+    promoteError.value = PROMOTION_FAILED
   } finally {
     promoting.value = false
   }
