@@ -200,14 +200,49 @@ test.describe('previewing an edit', () => {
     // the engine, not just the form.
     await expect(dialog.getByText(`${MINUS}$200`)).toBeVisible()
 
-    // Closing discards the what-if list — nothing was ever written, so the
+    // Closing discards the what-if list — but no longer silently. Issue #16
+    // answers the dashboard spec's open question #12, so a session holding
+    // previews asks once before dropping them, and `Done` is one of the five
+    // routes that has to ask (the others are ✕, the overlay, Escape and the
+    // switch itself).
+    await dialog.getByRole('button', { name: 'Done' }).click()
+    await expect(dialog.getByText('1 previewed change will be lost')).toBeVisible()
+
+    // Backing out leaves the session exactly as it was — the preview is still
+    // in the projection, which is the half of a confirmation that actually
+    // protects anything.
+    await dialog.getByRole('button', { name: 'Keep previewing' }).click()
+    await expect(dialog.getByText(`${MINUS}$200`)).toBeVisible()
+
+    // And confirming discards, as before: nothing was ever written, so the
     // forecast returns to the rule's own figure.
     await dialog.getByRole('button', { name: 'Done' }).click()
+    await dialog.getByRole('button', { name: 'Discard changes' }).click()
     await expect
       .poll(async () => unedited.test((await chart.getAttribute('aria-label')) ?? ''), {
         message: 'expected the discarded preview to leave no trace on the forecast',
       })
       .toBe(true)
+  })
+
+  test('an untouched what-if session closes without stopping to ask', async ({
+    emptyHouseholdPage: page,
+  }) => {
+    // The other half of the confirmation's contract, and the easier one to
+    // get wrong: a prompt that fires when there is nothing to lose is a
+    // prompt people learn to dismiss without reading.
+    await createAccount(page, 'E2E What-If Untouched Checking', '500')
+    const dueDate = isoDaysFromToday(6)
+    await createBill(page, 'E2E What-If Untouched Rent', '100', dueDate)
+
+    await gotoHydrated(page, '/')
+
+    await page.locator(`[data-day="${dueDate}"]`).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('switch', { name: 'What-if mode' }).click()
+    await dialog.getByRole('button', { name: 'Done' }).click()
+
+    await expect(dialog).toBeHidden()
   })
 })
 
