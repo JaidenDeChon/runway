@@ -18,10 +18,12 @@
  * Issue #16 adds a third view — the discard confirmation — for the same
  * reason there are two: the design's answer to "second surface or swapped
  * body?" on this screen is a swapped body, and stacking an AlertDialog over
- * a bottom sheet at 375px is exactly the nesting that decision avoids. The
- * parent still owns the previews; this component only asks before letting an
- * exit through, and it asks on every route out (Done, ✕, overlay tap, Escape
- * and the switch itself), because the spec lists all of them as one action.
+ * a bottom sheet at 375px is exactly the nesting that decision avoids.
+ *
+ * It guards the switch and nothing else. Closing no longer discards
+ * anything, because the mode now outlives this sheet — `index.vue`'s
+ * `setEditorOpen` carries that change and the spec deviation behind it. The
+ * parent still owns the previews; this only asks before destroying them.
  *
  * Issue #15 made saving asynchronous and real: `saving`/`error` are props,
  * driven by `index.vue` the way `UpdateBalancesEditor` already is, and this
@@ -86,17 +88,16 @@ const emit = defineEmits<{
 const editing = ref<Occurrence | null>(null)
 
 /**
- * The exit the user asked for and has not yet confirmed.
+ * Whether the user has asked to leave what-if and not yet confirmed.
  *
- * Two of them, because discarding is reachable two ways and they do not end
- * in the same place: closing the editor takes the previews *and* the sheet,
- * while turning the switch off takes only the previews and leaves the user
- * looking at the day they were working on. Collapsing them into one flag
- * would close the sheet out from under somebody who only meant to stop
- * previewing.
+ * Only the switch asks. Closing the editor used to discard the previews and
+ * so used to ask too, but the mode now outlives the sheet (see
+ * `setEditorOpen` in `index.vue` and the deviation it records): closing
+ * costs nothing, so stopping to confirm it would be a prompt about nothing —
+ * exactly the kind people learn to dismiss unread. The bar that appears
+ * behind the closed sheet carries the other exit, and its own confirmation.
  */
-type PendingExit = 'close' | 'what-if-off'
-const pendingExit = ref<PendingExit | null>(null)
+const pendingExit = ref(false)
 
 /** Nothing previewed is nothing to lose — an untouched session must never stop to ask. */
 const hasPreviews = computed(() => props.whatIf && props.whatIfEditCount > 0)
@@ -113,7 +114,7 @@ watch(
   () => {
     editing.value = null
     // A confirmation left standing would greet the next day the user opens.
-    pendingExit.value = null
+    pendingExit.value = false
   },
 )
 
@@ -132,42 +133,28 @@ watch(
 )
 
 /**
- * Every way out of this editor, funnelled through one question.
+ * Turning the switch off is the one exit from here that destroys something.
  *
- * `ResponsiveEditor` is fully controlled, so refusing to emit `update:open`
- * is what keeps the sheet on screen when somebody taps the overlay — there
- * is no internal open state to fight. That is the whole mechanism: the four
- * routes the spec calls one action (Done, ✕, overlay tap, Escape) all arrive
- * here as `update:open(false)`, and the switch arrives at its twin below.
+ * `ResponsiveEditor` is fully controlled, so refusing to emit would be how
+ * this holds the sheet open — but it no longer needs to for closing, only
+ * for the switch, which the swapped body below handles without touching
+ * `update:open` at all.
  */
-function requestOpen(value: boolean): void {
-  if (value || !hasPreviews.value) {
-    emit('update:open', value)
-    return
-  }
-  pendingExit.value = 'close'
-}
-
 function requestWhatIf(on: boolean): void {
   if (on || !hasPreviews.value) {
     emit('update:whatIf', on)
     return
   }
-  pendingExit.value = 'what-if-off'
+  pendingExit.value = true
 }
 
 function confirmDiscard(): void {
-  const intent = pendingExit.value
-  pendingExit.value = null
-  // The parent discards in both cases — closing the editor turns what-if off
-  // on its way out, which is what empties the list. This only decides how far
-  // out the user meant to go.
-  if (intent === 'close') emit('update:open', false)
-  else if (intent === 'what-if-off') emit('update:whatIf', false)
+  pendingExit.value = false
+  emit('update:whatIf', false)
 }
 
 function keepPreviewing(): void {
-  pendingExit.value = null
+  pendingExit.value = false
 }
 
 function startEdit(occurrence: Occurrence): void {
@@ -252,7 +239,7 @@ const submitLabel = computed(() => {
     :open="props.open"
     :title="title"
     :description="subtitle"
-    @update:open="requestOpen"
+    @update:open="(value) => emit('update:open', value)"
   >
     <!-- The confirmation replaces the body rather than covering it: this
          editor's own pattern (see the note at the top), and the only one that
@@ -267,11 +254,7 @@ const submitLabel = computed(() => {
       </p>
 
       <p class="text-sm text-muted-foreground">
-        {{
-          pendingExit === 'close'
-            ? 'Closing turns what-if off and drops the previews.'
-            : 'Turning what-if off drops the previews and puts the chart back to your saved numbers.'
-        }}
+        Turning what-if off drops the previews and puts the chart back to your saved numbers.
       </p>
 
       <div class="flex flex-col gap-2 lg:flex-row-reverse">
@@ -283,15 +266,26 @@ const submitLabel = computed(() => {
     </div>
 
     <div v-else class="flex flex-col gap-4">
-      <!-- --chart-5 is the what-if token everywhere on this screen; dark text
-           on it in both themes because the ramp lightens for dark surfaces. -->
-      <p
-        v-if="props.whatIf"
-        class="flex items-center gap-2 rounded-md border border-dashed border-chart-5 bg-chart-5/10 px-3 py-2 text-sm font-medium text-chart-5"
-      >
-        <span aria-hidden="true">◑</span>
-        What-if — changes here won't be saved
-      </p>
+      <!-- Sticky because `SheetContent` scrolls its own body at
+           `max-h-[88vh]`: on a busy day at 375px this banner was the first
+           thing to leave the screen, which is the scroll position issue #16
+           cares about most — the one where you are reading amounts.
+
+           The wrapper carries `bg-card` and the sticking; the banner keeps
+           the tokens it already had. Putting an opaque layer behind the 10%
+           tint rather than changing the tint is what stops the rows from
+           showing through without inventing a colour the design never
+           specified. --chart-5 is the what-if token everywhere on this
+           screen; dark text on it in both themes because the ramp lightens
+           for dark surfaces. -->
+      <div v-if="props.whatIf" class="sticky top-0 z-10 -mt-1 bg-card pt-1">
+        <p
+          class="flex items-center gap-2 rounded-md border border-dashed border-chart-5 bg-chart-5/10 px-3 py-2 text-sm font-medium text-chart-5"
+        >
+          <span aria-hidden="true">◑</span>
+          What-if — changes here won't be saved
+        </p>
+      </div>
 
       <div class="flex items-start justify-between gap-4">
         <div class="min-w-0">
@@ -336,7 +330,7 @@ const submitLabel = computed(() => {
           />
         </div>
 
-        <Button class="w-full" @click="requestOpen(false)">Done</Button>
+        <Button class="w-full" @click="emit('update:open', false)">Done</Button>
       </template>
 
       <form v-else class="flex flex-col gap-4" @submit.prevent="onSave">

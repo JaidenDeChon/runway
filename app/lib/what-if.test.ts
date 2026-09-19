@@ -18,6 +18,7 @@ import {
   EMPTY_SCRATCH,
   hasScratchEdits,
   overridesInEffect,
+  previewSummary,
   scratchEntry,
   withScratchEdit,
 } from './what-if'
@@ -110,6 +111,19 @@ describe('hasScratchEdits', () => {
 
   it('is true once something has been previewed', () => {
     expect(hasScratchEdits(withScratchEdit(EMPTY_SCRATCH, edit()))).toBe(true)
+  })
+})
+
+describe('previewSummary', () => {
+  it('names a state rather than a count when nothing has been previewed', () => {
+    // The bar appears the moment the mode is switched on, before anything is
+    // previewed; "0 previewed changes" there reads as a bug.
+    expect(previewSummary(0)).toBe('Nothing previewed yet')
+  })
+
+  it('agrees with itself on the plural', () => {
+    expect(previewSummary(1)).toBe('1 previewed change')
+    expect(previewSummary(2)).toBe('2 previewed changes')
   })
 })
 

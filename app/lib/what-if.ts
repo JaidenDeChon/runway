@@ -115,6 +115,18 @@ export function hasScratchEdits(scratch: WhatIfScratch): boolean {
  * press — and what stops the confirmation from reading as a warning about
  * data loss it is not.
  */
+/**
+ * How much a what-if session is holding, for the persistent bar (issue #16).
+ *
+ * Zero has its own sentence rather than "0 previewed changes", because the
+ * bar appears the moment the mode is switched on — before anything has been
+ * previewed — and a zero count reads as a bug rather than as a state.
+ */
+export function previewSummary(count: number): string {
+  if (count === 0) return 'Nothing previewed yet'
+  return `${count} previewed ${count === 1 ? 'change' : 'changes'}`
+}
+
 export function discardPrompt(count: number): string {
   const changes = count === 1 ? 'change' : 'changes'
   return `${count} previewed ${changes} will be lost. Your saved data is untouched either way.`

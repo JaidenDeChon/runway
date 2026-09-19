@@ -163,7 +163,7 @@ test.describe('saving an edit', () => {
 })
 
 test.describe('previewing an edit', () => {
-  test('a what-if preview returns to the item list, moves the forecast, and is discarded on close', async ({
+  test('a what-if preview returns to the item list, moves the forecast, and survives closing the editor', async ({
     emptyHouseholdPage: page,
   }) => {
     await createAccount(page, 'E2E Occurrence Preview Checking', '500')
@@ -200,24 +200,46 @@ test.describe('previewing an edit', () => {
     // the engine, not just the form.
     await expect(dialog.getByText(`${MINUS}$200`)).toBeVisible()
 
-    // Closing discards the what-if list — but no longer silently. Issue #16
-    // answers the dashboard spec's open question #12, so a session holding
-    // previews asks once before dropping them, and `Done` is one of the five
-    // routes that has to ask (the others are ✕, the overlay, Escape and the
-    // switch itself).
+    // Closing the editor no longer ends the mode — issue #16 made what-if a
+    // property of the page, so the preview survives the sheet and the chart
+    // keeps showing it. Closing therefore discards nothing and asks nothing.
     await dialog.getByRole('button', { name: 'Done' }).click()
-    await expect(dialog.getByText('1 previewed change will be lost')).toBeVisible()
+    await expect(dialog).toBeHidden()
+
+    const bar = page.locator('[data-slot="what-if-bar"]')
+    await expect(bar).toBeVisible()
+    await expect(bar.getByText('1 previewed change')).toBeVisible()
+
+    // The preview is still in the forecast with the sheet gone — which is the
+    // whole point of the mode outliving the editor, and is now readable off
+    // the chart again because nothing modal is covering it.
+    const previewed = new RegExp(`Lowest projected balance ${MINUS}\\$200 on ${shortDate(dueDate)}`)
+    await expect
+      .poll(async () => previewed.test((await chart.getAttribute('aria-label')) ?? ''), {
+        message: 'expected the preview to survive closing the editor',
+      })
+      .toBe(true)
+
+    // Leaving the mode is what destroys something, so that is what asks.
+    await bar.getByRole('button', { name: 'Exit what-if' }).click()
+    const confirm = page.getByRole('dialog')
+    await expect(confirm.getByText('1 previewed change will be lost')).toBeVisible()
 
     // Backing out leaves the session exactly as it was — the preview is still
     // in the projection, which is the half of a confirmation that actually
-    // protects anything.
-    await dialog.getByRole('button', { name: 'Keep previewing' }).click()
-    await expect(dialog.getByText(`${MINUS}$200`)).toBeVisible()
+    // protects anything, and the half that would still pass if "Keep" quietly
+    // discarded.
+    await confirm.getByRole('button', { name: 'Keep previewing' }).click()
+    await expect(bar).toBeVisible()
+    await expect
+      .poll(async () => previewed.test((await chart.getAttribute('aria-label')) ?? ''))
+      .toBe(true)
 
-    // And confirming discards, as before: nothing was ever written, so the
-    // forecast returns to the rule's own figure.
-    await dialog.getByRole('button', { name: 'Done' }).click()
-    await dialog.getByRole('button', { name: 'Discard changes' }).click()
+    // And confirming discards: nothing was ever written, so the forecast
+    // returns to the rule's own figure and the bar goes with it.
+    await bar.getByRole('button', { name: 'Exit what-if' }).click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Discard changes' }).click()
+    await expect(bar).toBeHidden()
     await expect
       .poll(async () => unedited.test((await chart.getAttribute('aria-label')) ?? ''), {
         message: 'expected the discarded preview to leave no trace on the forecast',
@@ -225,7 +247,7 @@ test.describe('previewing an edit', () => {
       .toBe(true)
   })
 
-  test('an untouched what-if session closes without stopping to ask', async ({
+  test('an untouched what-if session leaves without stopping to ask', async ({
     emptyHouseholdPage: page,
   }) => {
     // The other half of the confirmation's contract, and the easier one to
@@ -241,8 +263,46 @@ test.describe('previewing an edit', () => {
     const dialog = page.getByRole('dialog')
     await dialog.getByRole('switch', { name: 'What-if mode' }).click()
     await dialog.getByRole('button', { name: 'Done' }).click()
-
     await expect(dialog).toBeHidden()
+
+    const bar = page.locator('[data-slot="what-if-bar"]')
+    await expect(bar.getByText('Nothing previewed yet')).toBeVisible()
+    await bar.getByRole('button', { name: 'Exit what-if' }).click()
+    await expect(bar).toBeHidden()
+  })
+
+  test('a reload during what-if drops the previews', async ({ emptyHouseholdPage: page }) => {
+    // The issue asks that navigating away, reloading or an expired session
+    // discard cleanly. The scratch list is page-local state and nothing
+    // persists it, so this passes by construction — which is exactly why it
+    // needs a test: the day someone "helpfully" adds sessionStorage, nothing
+    // else here would notice.
+    await createAccount(page, 'E2E What-If Reload Checking', '500')
+    const dueDate = isoDaysFromToday(6)
+    await createBill(page, 'E2E What-If Reload Rent', '100', dueDate)
+
+    await gotoHydrated(page, '/')
+
+    await page.locator(`[data-day="${dueDate}"]`).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('switch', { name: 'What-if mode' }).click()
+    await dialog.getByRole('button', { name: /E2E What-If Reload Rent/ }).click()
+    await dialog.locator('#occurrence-amount').fill('700')
+    await dialog.getByRole('button', { name: 'Preview change' }).click()
+    await dialog.getByRole('button', { name: 'Done' }).click()
+
+    await expect(page.locator('[data-slot="what-if-bar"]')).toBeVisible()
+
+    await gotoHydrated(page, '/')
+
+    await expect(page.locator('[data-slot="what-if-bar"]')).toBeHidden()
+    const chart = page.getByRole('img', { name: /Balance forecast/ })
+    const unedited = new RegExp(`Lowest projected balance \\$400 on ${shortDate(dueDate)}`)
+    await expect
+      .poll(async () => unedited.test((await chart.getAttribute('aria-label')) ?? ''), {
+        message: 'expected a reload to leave no previewed value behind',
+      })
+      .toBe(true)
   })
 })
 

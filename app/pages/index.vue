@@ -15,15 +15,19 @@
  * onto real rows: `data.value.occurrenceOverrides` (from `useRunwayData()`,
  * ultimately `public.occurrences`) is what the engine now layers in
  * automatically, unconditionally, every time it expands occurrences — a
- * saved edit needs no `overrides` passed here at all. `whatIfOverrides`
- * remains exactly what it was: an in-memory preview list, passed as
- * `window.overrides` only while what-if is on, dropped the moment it goes
- * off or the sheet closes, and never written back to `useRunwayData()` — a
- * preview is a lens on stored records, never a mutation of them.
+ * saved edit needs no `overrides` passed here at all. `whatIfOverrides` is
+ * still an in-memory preview list, passed as `window.overrides` only while
+ * what-if is on and never written back to `useRunwayData()` — a preview is a
+ * lens on stored records, never a mutation of them.
  *
  * Issue #16 moved that list's rules into `app/lib/what-if.ts`, where they are
  * under unit test, and made the isolation enforceable rather than merely
- * true: `tests/guards/what-if-write-isolation.test.ts` reads this file.
+ * true: `tests/guards/what-if-write-isolation.test.ts` reads this file. It
+ * also made what-if a property of *this page* rather than of the day editor
+ * — see `setEditorOpen` below for why, and for the spec deviation that
+ * carries. The mode now ends in exactly three ways: the switch, the bar's
+ * exit, or this component going away (reload, navigation, an expired
+ * session), which is the clean discard the issue asks for and costs no code.
  */
 
 import AppPage from '@/components/AppPage.vue'
@@ -32,6 +36,8 @@ import DayDetailEditor from '@/components/dashboard/DayDetailEditor.vue'
 import LowestBalanceCard from '@/components/dashboard/LowestBalanceCard.vue'
 import UpcomingCard from '@/components/dashboard/UpcomingCard.vue'
 import UpdateBalancesEditor from '@/components/dashboard/UpdateBalancesEditor.vue'
+import WhatIfBar from '@/components/dashboard/WhatIfBar.vue'
+import ResponsiveEditor from '@/components/ResponsiveEditor.vue'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -50,7 +56,9 @@ import type { LegendEntry } from '@/lib/burndown'
 import { chartLines } from '@/lib/burndown'
 import type { OccurrenceEdit, OccurrenceRevert } from '@/lib/occurrence-editor'
 import {
+  discardPrompt,
   EMPTY_SCRATCH,
+  hasScratchEdits,
   overridesInEffect,
   type WhatIfScratch,
   withScratchEdit,
@@ -284,21 +292,61 @@ function openDay(date: IsoDate): void {
 }
 
 /**
- * Closing always discards the what-if list.
+ * Closing the editor leaves what-if running.
  *
- * The confirmation issue #16 adds lives in `DayDetailEditor`, not here: by
- * the time this runs the user has already answered it, and a second guard at
- * this level would have to know which exit route asked. This stays the one
- * place the list is emptied.
+ * **This is a deliberate deviation from `docs/design/dashboard/spec.md`
+ * (~line 251), raised in the PR rather than resolved quietly.** The spec has
+ * Done / ✕ / overlay tap close the editor *and* turn what-if off. But issue
+ * #16 asks for a mode that is unmistakable at every scroll position and that
+ * discards cleanly on navigate-away and reload — and under the spec's
+ * behaviour none of that can mean anything, because the editor is a modal:
+ * while it is open the page behind it is inert and scroll-locked, and the
+ * moment it closes the mode is gone. There is no scroll position at which
+ * the mode both exists and is visible.
+ *
+ * So the mode outlives the editor. You preview a change, close the sheet,
+ * and read the whole dashboard — chart, Upcoming, verdict — under it. That
+ * is what "mode" means, and it is what makes the persistent bar, the exit
+ * confirmation and promotion worth having at all.
+ *
+ * Closing therefore discards nothing and asks nothing. The two ways out that
+ * *do* discard both confirm first: the switch inside the editor, and the
+ * bar's "Exit what-if".
  */
 function setEditorOpen(open: boolean): void {
   editorOpen.value = open
-  if (!open) setWhatIf(false)
 }
 
 function setWhatIf(on: boolean): void {
   whatIf.value = on
   if (!on) whatIfOverrides.value = EMPTY_SCRATCH
+}
+
+/**
+ * The bar's own exit confirmation.
+ *
+ * A second implementation of the same question, and the duplication is the
+ * point rather than an oversight: the two routes out are never reachable at
+ * the same time. The switch lives inside a modal, where the answer has to be
+ * a swapped body (`DayDetailEditor` — nesting a dialog over a bottom sheet
+ * at 375px leaves neither readable); the bar is only reachable once that
+ * modal is closed, where a dialog is the ordinary answer and a swapped body
+ * has nothing to swap. They share the sentence (`discardPrompt`) and the
+ * condition, which is the part worth having in one place.
+ */
+const exitConfirmOpen = ref(false)
+
+function requestWhatIfExit(): void {
+  if (!hasScratchEdits(whatIfOverrides.value)) {
+    setWhatIf(false)
+    return
+  }
+  exitConfirmOpen.value = true
+}
+
+function confirmWhatIfExit(): void {
+  exitConfirmOpen.value = false
+  setWhatIf(false)
 }
 
 /**
@@ -469,5 +517,26 @@ async function revertOccurrenceEdit(target: OccurrenceRevert): Promise<void> {
       @save="saveOccurrenceEdit"
       @revert="revertOccurrenceEdit"
     />
+
+    <!-- Keeps the last card scrollable clear of the fixed bar. Rendered only
+         while the bar is, so the page has no dead space the rest of the time. -->
+    <div v-if="whatIf" class="h-20" aria-hidden="true" />
+    <WhatIfBar v-if="whatIf" :edit-count="whatIfOverrides.length" @exit="requestWhatIfExit" />
+
+    <ResponsiveEditor
+      :open="exitConfirmOpen"
+      title="Discard what-if changes?"
+      :description="discardPrompt(whatIfOverrides.length)"
+      @update:open="(value) => (exitConfirmOpen = value)"
+    >
+      <div class="flex flex-col gap-2 lg:flex-row-reverse">
+        <Button type="button" class="lg:flex-1" @click="exitConfirmOpen = false">
+          Keep previewing
+        </Button>
+        <Button type="button" variant="outline" class="lg:flex-1" @click="confirmWhatIfExit">
+          Discard changes
+        </Button>
+      </div>
+    </ResponsiveEditor>
   </AppPage>
 </template>
