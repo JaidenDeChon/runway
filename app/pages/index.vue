@@ -20,6 +20,10 @@
  * `window.overrides` only while what-if is on, dropped the moment it goes
  * off or the sheet closes, and never written back to `useRunwayData()` — a
  * preview is a lens on stored records, never a mutation of them.
+ *
+ * Issue #16 moved that list's rules into `app/lib/what-if.ts`, where they are
+ * under unit test, and made the isolation enforceable rather than merely
+ * true: `tests/guards/what-if-write-isolation.test.ts` reads this file.
  */
 
 import AppPage from '@/components/AppPage.vue'
@@ -45,12 +49,17 @@ import { ARROW_LINK } from '@/lib/arrow-link'
 import type { LegendEntry } from '@/lib/burndown'
 import { chartLines } from '@/lib/burndown'
 import type { OccurrenceEdit, OccurrenceRevert } from '@/lib/occurrence-editor'
+import {
+  EMPTY_SCRATCH,
+  overridesInEffect,
+  type WhatIfScratch,
+  withScratchEdit,
+} from '@/lib/what-if'
 import type { BalanceReading } from '~~/domain/accounts'
 import { balanceReadings } from '~~/domain/accounts'
 import type { IsoDate } from '~~/domain/dates'
 import { addDays, compareDates, daysBetween } from '~~/domain/dates'
 import type { OccurrenceOverride } from '~~/domain/overrides'
-import { withOverride } from '~~/domain/overrides'
 import type { Occurrence } from '~~/domain/projection'
 import { evaluate, project } from '~~/domain/projection'
 
@@ -92,7 +101,12 @@ const horizonDays = computed(() => defaultHorizonDays.value)
 const density = useChartDensity()
 const densityOpen = ref(false)
 
-const whatIfOverrides = ref<OccurrenceOverride[]>([])
+// The scratch list a what-if session accumulates. Page-local by design and
+// held nowhere else: no `useState`, no storage, no round trip. A reload,
+// a navigation or an expired session takes this component down and the
+// previews with it, which is the discard behaviour issue #16 asks for rather
+// than something built on top. `app/lib/what-if.ts` owns the rules it follows.
+const whatIfOverrides = ref<WhatIfScratch>(EMPTY_SCRATCH)
 const whatIf = ref(false)
 
 const editorOpen = ref(false)
@@ -126,7 +140,7 @@ const windowEnd = computed(() => addDays(today.value, horizonDays.value))
 // `window.overrides` and lands on top of the saved edits the engine already
 // applied, exactly as `domain/overrides.ts`'s doc comment on `ProjectionWindow.overrides` says.
 const previewOverrides = computed<readonly OccurrenceOverride[]>(() =>
-  whatIf.value ? whatIfOverrides.value : [],
+  overridesInEffect(whatIf.value, whatIfOverrides.value),
 )
 
 /**
@@ -277,7 +291,22 @@ function setEditorOpen(open: boolean): void {
 
 function setWhatIf(on: boolean): void {
   whatIf.value = on
-  if (!on) whatIfOverrides.value = []
+  if (!on) whatIfOverrides.value = EMPTY_SCRATCH
+}
+
+/**
+ * A previewed edit, which is the entirety of what-if's write story: it lands
+ * in an in-memory list and stops there.
+ *
+ * Split out of `saveOccurrenceEdit` below so the claim is checkable rather
+ * than merely true — `tests/guards/what-if-write-isolation.test.ts` reads this
+ * function's body and fails the build if any mutation from the
+ * `useRunwayData()` seam ever appears inside it. Keep it that way: promotion,
+ * when it arrives, is a separate deliberate act with a name of its own, not a
+ * line added here.
+ */
+function previewOccurrenceEdit(edit: OccurrenceEdit): void {
+  whatIfOverrides.value = withScratchEdit(whatIfOverrides.value, edit)
 }
 
 /**
@@ -291,13 +320,7 @@ function setWhatIf(on: boolean): void {
  */
 async function saveOccurrenceEdit(edit: OccurrenceEdit): Promise<void> {
   if (whatIf.value) {
-    whatIfOverrides.value = withOverride(whatIfOverrides.value, {
-      itemId: edit.itemId,
-      date: edit.date,
-      scope: edit.scope,
-      amount: edit.amount,
-      ...(edit.newDate ? { newDate: edit.newDate } : {}),
-    })
+    previewOccurrenceEdit(edit)
     return
   }
 
