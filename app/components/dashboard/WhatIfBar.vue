@@ -31,10 +31,12 @@
 import { Button } from '@/components/ui/button'
 import { previewSummary } from '@/lib/what-if'
 
-const props = defineProps<{ editCount: number }>()
-const emit = defineEmits<{ exit: [] }>()
+const props = defineProps<{ editCount: number; saving: boolean; error: string | null }>()
+const emit = defineEmits<{ exit: []; promote: [] }>()
 
 const summary = computed(() => previewSummary(props.editCount))
+/** Nothing to promote is not a disabled button but no button: an action that cannot do anything is noise. */
+const canPromote = computed(() => props.editCount > 0)
 </script>
 
 <template>
@@ -43,16 +45,42 @@ const summary = computed(() => previewSummary(props.editCount))
     data-slot="what-if-bar"
   >
     <div
-      class="pointer-events-auto flex w-full max-w-[560px] items-center gap-3 rounded-lg border border-dashed border-chart-5 bg-chart-5/10 px-3 py-2 shadow-lg backdrop-blur-sm"
+      class="pointer-events-auto w-full max-w-[560px] rounded-lg border border-dashed border-chart-5 bg-card px-3 py-2 shadow-lg"
     >
-      <span aria-hidden="true" class="text-chart-5">◑</span>
-      <div class="min-w-0 flex-1">
-        <p class="truncate text-sm font-medium text-chart-5">What-if preview — not saved</p>
-        <p class="truncate text-xs text-muted-foreground">{{ summary }}</p>
+      <div class="flex items-center gap-3">
+        <span aria-hidden="true" class="text-chart-5">◑</span>
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm font-medium text-chart-5">What-if preview — not saved</p>
+          <p class="truncate text-xs text-muted-foreground">{{ summary }}</p>
+        </div>
+        <div class="flex shrink-0 items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            :disabled="props.saving"
+            @click="emit('exit')"
+          >
+            Exit what-if
+          </Button>
+          <!-- The amber is the mode's colour, so the button that *leaves* the
+               mode by saving wears it, matching the editor's own
+               "Preview change". -->
+          <Button
+            v-if="canPromote"
+            type="button"
+            size="sm"
+            :disabled="props.saving"
+            class="bg-chart-5 text-foreground hover:bg-chart-5/90 dark:text-background"
+            @click="emit('promote')"
+          >
+            {{ props.saving ? 'Saving…' : 'Save changes' }}
+          </Button>
+        </div>
       </div>
-      <Button type="button" variant="outline" size="sm" class="shrink-0" @click="emit('exit')">
-        Exit what-if
-      </Button>
+      <p v-if="props.error" role="alert" class="mt-2 text-sm text-destructive">
+        {{ props.error }}
+      </p>
     </div>
   </div>
 </template>

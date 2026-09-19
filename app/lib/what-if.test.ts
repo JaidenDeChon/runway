@@ -19,6 +19,7 @@ import {
   hasScratchEdits,
   overridesInEffect,
   previewSummary,
+  promotionPlan,
   scratchEntry,
   withScratchEdit,
 } from './what-if'
@@ -75,12 +76,24 @@ describe('withScratchEdit', () => {
     expect(twice[0]?.amount).toBe(toMinorUnits(-1500))
   })
 
-  it('treats the same day at a different scope as a different preview', () => {
-    // "This occurrence only" and "all future" are different edits that happen
-    // to share a date; collapsing them would silently drop one.
+  it('replaces across scopes too, so nothing invisible survives to be promoted', () => {
+    // The domain's `withOverride` keeps these apart, and is right to: for the
+    // engine, "later wins" makes the superseded entry harmless. For a list
+    // that can be saved it is not harmless — the `once` here is already
+    // invisible on the chart, and promoting it would write an occurrence
+    // override the user was never shown.
     const once = withScratchEdit(EMPTY_SCRATCH, edit({ scope: 'once' }))
-    const both = withScratchEdit(once, edit({ scope: 'future' }))
-    expect(both.map((entry) => entry.scope)).toEqual(['once', 'future'])
+    const then = withScratchEdit(once, edit({ scope: 'future' }))
+    expect(then).toHaveLength(1)
+    expect(then[0]?.scope).toBe('future')
+  })
+
+  it('keeps previews of different days apart even at the same scope', () => {
+    const list = withScratchEdit(
+      withScratchEdit(EMPTY_SCRATCH, edit({ date: '2026-09-20' as IsoDate })),
+      edit({ date: '2026-10-20' as IsoDate }),
+    )
+    expect(list.map((entry) => entry.date)).toEqual(['2026-09-20', '2026-10-20'])
   })
 
   it('appends rather than prepends, so the newest preview wins under applyOverrides', () => {
@@ -135,6 +148,70 @@ describe('discardPrompt', () => {
 
   it('reassures that nothing stored is at stake, which is what makes Discard safe to press', () => {
     expect(discardPrompt(3)).toContain('saved data is untouched')
+  })
+})
+
+describe('promotionPlan', () => {
+  const plan = (...edits: OccurrenceEdit[]) =>
+    promotionPlan(edits.reduce<ReturnType<typeof withScratchEdit>>(withScratchEdit, []))
+
+  it('maps "this occurrence only" to an occurrence override, signed as stored', () => {
+    expect(plan(edit({ amount: toMinorUnits(-1200) }))).toEqual([
+      { kind: 'override', itemId: 'rent', date: '2026-09-20', amount: toMinorUnits(-1200) },
+    ])
+  })
+
+  it('maps "apply to all future" to a rule split at the positive magnitude', () => {
+    // `recurring_rules.amount_cents` is unsigned — the rule's `kind` carries
+    // the direction — while an occurrence's amount is signed. Getting this
+    // backwards would turn a bill into income on every future date.
+    expect(plan(edit({ scope: 'future', amount: toMinorUnits(-1200) }))).toEqual([
+      {
+        kind: 'split',
+        itemId: 'rent',
+        effectiveFrom: '2026-09-20',
+        amount: toMinorUnits(1200),
+      },
+    ])
+  })
+
+  it('carries a retime on an override', () => {
+    const [step] = plan(edit({ newDate: '2026-09-25' as IsoDate }))
+    expect(step).toMatchObject({ kind: 'override', newDate: '2026-09-25' })
+  })
+
+  it('drops a retime on a split, as the engine does', () => {
+    // Apply-to-future is an amount rule; a rule split cannot express retiming
+    // an unbounded series, and the editor disables the date field for it.
+    const [step] = plan(edit({ scope: 'future', newDate: '2026-09-25' as IsoDate }))
+    expect(step).not.toHaveProperty('newDate')
+  })
+
+  it('keeps the order the user made the edits in', () => {
+    // Not grouped by kind: a split regenerates its rule's occurrences, so the
+    // sequence decides the result, and replaying the user's own sequence is
+    // what makes a promotion identical to the same edits made directly.
+    const steps = plan(
+      edit({ itemId: 'rent', scope: 'future' }),
+      edit({ itemId: 'salary', scope: 'once' }),
+      edit({ itemId: 'gym', scope: 'future' }),
+    )
+    expect(steps.map((step) => [step.kind, step.itemId])).toEqual([
+      ['split', 'rent'],
+      ['override', 'salary'],
+      ['split', 'gym'],
+    ])
+  })
+
+  it('plans nothing for an untouched session', () => {
+    expect(promotionPlan(EMPTY_SCRATCH)).toEqual([])
+  })
+
+  it('carries no projectedAmount, which the page must supply at write time', () => {
+    // The field exists only for `override_occurrence`'s insert branch and is
+    // dropped on the way into the scratch list; a stale copy here would be
+    // written to the row.
+    expect(plan(edit())[0]).not.toHaveProperty('projectedAmount')
   })
 })
 

@@ -31,8 +31,9 @@
  * That is the property the guard test checks.
  */
 
+import type { IsoDate } from '~~/domain/dates'
+import type { MinorUnits } from '~~/domain/money'
 import type { OccurrenceOverride } from '~~/domain/overrides'
-import { withOverride } from '~~/domain/overrides'
 import type { OccurrenceEdit } from './occurrence-editor'
 
 /**
@@ -69,17 +70,34 @@ export function scratchEntry(edit: OccurrenceEdit): OccurrenceOverride {
 
 /**
  * Adds an editor payload to the scratch list, replacing any earlier preview of
- * the same occurrence at the same scope.
+ * **the same occurrence** — at either scope.
  *
- * Delegates the replacement rule to the domain's `withOverride` rather than
- * repeating it: editing one day twice is one override, and the reason is the
- * same whether the list is a preview or a saved one.
+ * Deliberately stricter than the domain's `withOverride`, which keys on
+ * `(itemId, date, scope)` and so keeps a `once` and a `future` preview of the
+ * same day side by side. That is right for the engine, where "later wins" is
+ * a display rule and a superseded entry costs nothing. It is wrong for a list
+ * that can be *promoted*.
+ *
+ * Preview rent on Sep 20 at 700 "this occurrence only", then preview it again
+ * at 800 "apply to all future". The chart shows 800, because the later
+ * override wins — the 700 is already invisible. Keep both and promotion
+ * writes a 700 occurrence override the user was never shown, on top of the
+ * split. Collapsing them means what gets saved is what was on screen, which
+ * is the acceptance criterion promotion has to meet.
+ *
+ * Scope still belongs on the entry: it decides which *write* a promotion
+ * makes. It just cannot be part of the identity of the thing being edited,
+ * because the user is editing one occurrence either way.
  */
 export function withScratchEdit(
   scratch: WhatIfScratch,
   edit: OccurrenceEdit,
 ): OccurrenceOverride[] {
-  return withOverride(scratch, scratchEntry(edit))
+  const entry = scratchEntry(edit)
+  const kept = scratch.filter(
+    (existing) => existing.itemId !== entry.itemId || existing.date !== entry.date,
+  )
+  return [...kept, entry]
 }
 
 /**
@@ -93,14 +111,17 @@ export function hasScratchEdits(scratch: WhatIfScratch): boolean {
 }
 
 /**
- * The overrides the projection should see right now.
+ * How much a what-if session is holding, for the persistent bar (issue #16).
  *
- * Switching the mode off hides the list without needing to clear it, which is
- * what makes "off" a safe state to reach from anywhere: a caller that forgets
- * to empty the list still shows the user their real numbers. The page clears
- * it too, on the same transition — belt and braces, in the direction where a
- * mistake shows stored data rather than invented data.
+ * Zero has its own sentence rather than "0 previewed changes", because the
+ * bar appears the moment the mode is switched on — before anything has been
+ * previewed — and a zero count reads as a bug rather than as a state.
  */
+export function previewSummary(count: number): string {
+  if (count === 0) return 'Nothing previewed yet'
+  return `${count} previewed ${count === 1 ? 'change' : 'changes'}`
+}
+
 /**
  * What the discard confirmation says beneath its question (issue #16).
  *
@@ -115,23 +136,86 @@ export function hasScratchEdits(scratch: WhatIfScratch): boolean {
  * press — and what stops the confirmation from reading as a warning about
  * data loss it is not.
  */
-/**
- * How much a what-if session is holding, for the persistent bar (issue #16).
- *
- * Zero has its own sentence rather than "0 previewed changes", because the
- * bar appears the moment the mode is switched on — before anything has been
- * previewed — and a zero count reads as a bug rather than as a state.
- */
-export function previewSummary(count: number): string {
-  if (count === 0) return 'Nothing previewed yet'
-  return `${count} previewed ${count === 1 ? 'change' : 'changes'}`
-}
-
 export function discardPrompt(count: number): string {
   const changes = count === 1 ? 'change' : 'changes'
   return `${count} previewed ${changes} will be lost. Your saved data is untouched either way.`
 }
 
+/**
+ * One write a promotion will make.
+ *
+ * `override` needs a `projectedAmount` that this module cannot know — see
+ * `scratchEntry`, which drops it on the way in — so the plan deliberately
+ * stops short of a complete RPC payload. The page fills that field in as it
+ * executes, reading the rule's own figure out of the projection at the
+ * moment of the write rather than from a snapshot taken before the earlier
+ * writes in the plan moved it.
+ */
+export type PromotionStep =
+  | {
+      readonly kind: 'override'
+      readonly itemId: string
+      readonly date: IsoDate
+      /** Signed, as stored: `override_occurrence` takes the occurrence's own sign. */
+      readonly amount: MinorUnits
+      readonly newDate?: IsoDate
+    }
+  | {
+      readonly kind: 'split'
+      readonly itemId: string
+      readonly effectiveFrom: IsoDate
+      /** Positive magnitude: `recurring_rules.amount_cents` is unsigned, the rule's `kind` carries direction. */
+      readonly amount: MinorUnits
+    }
+
+/**
+ * What promoting this session would write, in the order it would write it
+ * (issue #16).
+ *
+ * Separated from the page so the decisions are testable: which RPC each
+ * scope maps to, the sign conversion a split needs, and the order. Only the
+ * I/O is left in `index.vue`.
+ *
+ * **Order is the list's order, which is the order the user made the edits.**
+ * Not grouped by kind and not parallel. Two edits can touch one rule and a
+ * split regenerates that rule's occurrences, so the sequence is what decides
+ * the result — and replaying the user's own sequence is precisely what makes
+ * a promoted outcome identical to having made those same edits directly with
+ * the mode off, which is the issue's acceptance criterion.
+ *
+ * A `future` preview ignores `newDate` here exactly as the engine does:
+ * apply-to-future is an amount rule, and retiming an unbounded series is not
+ * something a rule split can express (`domain/overrides.ts`,
+ * docs/database/schema.md § "Rule splitting").
+ */
+export function promotionPlan(scratch: WhatIfScratch): PromotionStep[] {
+  return scratch.map((override) =>
+    override.scope === 'future'
+      ? {
+          kind: 'split',
+          itemId: override.itemId,
+          effectiveFrom: override.date,
+          amount: Math.abs(override.amount) as MinorUnits,
+        }
+      : {
+          kind: 'override',
+          itemId: override.itemId,
+          date: override.date,
+          amount: override.amount,
+          ...(override.newDate ? { newDate: override.newDate } : {}),
+        },
+  )
+}
+
+/**
+ * The overrides the projection should see right now.
+ *
+ * Switching the mode off hides the list without needing to clear it, which is
+ * what makes "off" a safe state to reach from anywhere: a caller that forgets
+ * to empty the list still shows the user their real numbers. The page clears
+ * it too, on the same transition — belt and braces, in the direction where a
+ * mistake shows stored data rather than invented data.
+ */
 export function overridesInEffect(on: boolean, scratch: WhatIfScratch): WhatIfScratch {
   return on ? scratch : EMPTY_SCRATCH
 }

@@ -271,6 +271,62 @@ test.describe('previewing an edit', () => {
     await expect(bar).toBeHidden()
   })
 
+  test('promoting a preview saves it as a real edit and ends the mode', async ({
+    emptyHouseholdPage: page,
+  }) => {
+    // The issue's acceptance criterion for promotion is that the result is
+    // indistinguishable from making the edit directly, so this asserts the
+    // two things a direct save produces: the "Edited" marking on the
+    // occurrence, and a forecast that survives a reload. A promotion that
+    // only updated the page's own state would pass neither.
+    await createAccount(page, 'E2E What-If Promote Checking', '500')
+    const dueDate = isoDaysFromToday(6)
+    await createBill(page, 'E2E What-If Promote Rent', '100', dueDate)
+
+    await gotoHydrated(page, '/')
+
+    const chart = page.getByRole('img', { name: /Balance forecast/ })
+
+    await page.locator(`[data-day="${dueDate}"]`).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('switch', { name: 'What-if mode' }).click()
+    await dialog.getByRole('button', { name: /E2E What-If Promote Rent/ }).click()
+    await dialog.locator('#occurrence-amount').fill('700')
+    await dialog.getByRole('button', { name: 'Preview change' }).click()
+    await dialog.getByRole('button', { name: 'Done' }).click()
+
+    const bar = page.locator('[data-slot="what-if-bar"]')
+    await bar.getByRole('button', { name: 'Save changes' }).click()
+
+    // The mode ends on success — the previews became real, so there is
+    // nothing left to preview.
+    await expect(bar).toBeHidden({ timeout: 10_000 })
+
+    const saved = new RegExp(
+      `Lowest projected balance ${MINUS}\\$200 on ${shortDate(dueDate)}.*balance goes negative`,
+    )
+    await expect
+      .poll(async () => saved.test((await chart.getAttribute('aria-label')) ?? ''), {
+        message: 'expected the promoted edit to move the forecast like a direct save',
+      })
+      .toBe(true)
+
+    // The half that separates a promotion from a preview: it survives a
+    // reload, because it is a row now.
+    await gotoHydrated(page, '/')
+    await expect(page.locator('[data-slot="what-if-bar"]')).toBeHidden()
+    await expect
+      .poll(async () => saved.test((await chart.getAttribute('aria-label')) ?? ''), {
+        message: 'expected the promoted edit to survive a reload',
+      })
+      .toBe(true)
+
+    // And it is marked as an edit, exactly as a direct save is (AC-F5's
+    // marking, asserted by the saving test above).
+    await page.locator(`[data-day="${dueDate}"]`).click()
+    await expect(page.getByRole('dialog').getByText('Edited')).toBeVisible()
+  })
+
   test('a reload during what-if drops the previews', async ({ emptyHouseholdPage: page }) => {
     // The issue asks that navigating away, reloading or an expired session
     // discard cleanly. The scratch list is page-local state and nothing

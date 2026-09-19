@@ -60,6 +60,7 @@ import {
   EMPTY_SCRATCH,
   hasScratchEdits,
   overridesInEffect,
+  promotionPlan,
   type WhatIfScratch,
   withScratchEdit,
 } from '@/lib/what-if'
@@ -67,6 +68,7 @@ import type { BalanceReading } from '~~/domain/accounts'
 import { balanceReadings } from '~~/domain/accounts'
 import type { IsoDate } from '~~/domain/dates'
 import { addDays, compareDates, daysBetween } from '~~/domain/dates'
+import type { MinorUnits } from '~~/domain/money'
 import type { OccurrenceOverride } from '~~/domain/overrides'
 import type { Occurrence } from '~~/domain/projection'
 import { evaluate, project } from '~~/domain/projection'
@@ -349,6 +351,97 @@ function confirmWhatIfExit(): void {
   setWhatIf(false)
 }
 
+const promoting = ref(false)
+const promoteError = ref<string | null>(null)
+
+/**
+ * The rule's own amount for an occurrence, read out of the projection the
+ * engine has already computed.
+ *
+ * `scratchEntry` drops `projectedAmount` on the way in, because a preview has
+ * no business carrying a field that exists only for a write
+ * (`app/lib/what-if.ts` says why). Promotion therefore has to re-derive it.
+ *
+ * Reading it off `projection` is safe even though that projection has the
+ * previews layered into it: `applyOne` rewrites `amount`, `date`,
+ * `isOverridden` and `id`, and never touches `projectedAmount` or
+ * `projectedDate` (`domain/overrides.ts`). Those two stay the occurrence's
+ * identity and the rule's own figure — which is exactly what
+ * `override_occurrence`'s insert branch wants for a date that is not
+ * materialized yet. A previewed value here would corrupt the stored row.
+ */
+function projectedAmountFor(itemId: string, date: IsoDate): MinorUnits | null {
+  const match = projection.value.occurrences.find(
+    (occurrence) => occurrence.itemId === itemId && occurrence.projectedDate === date,
+  )
+  return match ? match.projectedAmount : null
+}
+
+/**
+ * Turns the previews into real saved edits (issue #16).
+ *
+ * Routed through the same `overrideOccurrence` / `splitRecurringItem` the
+ * editor uses with what-if off — that is the acceptance criterion, and it is
+ * also what keeps `tests/guards/occurrence-write-sites.test.ts` true: there
+ * is still exactly one write path per RPC.
+ *
+ * **Sequential, in the order the user made them.** Not `Promise.all`: two
+ * edits can touch the same rule, and a split regenerates that rule's
+ * occurrences, so overlapping writes would race. List order is also what
+ * makes a promoted result identical to making the same edits directly with
+ * the mode off, which is the criterion as written.
+ *
+ * `projectedAmountFor` is called inside the loop rather than once up front,
+ * because a split earlier in the list changes the rule's own amounts for
+ * every date after it; reading the projection again after each await picks
+ * that up instead of writing a figure that was true before the split.
+ *
+ * On any failure it stops and keeps the remaining previews, so a partial
+ * promotion leaves the user with the rest of their session rather than
+ * silently dropping it. The writes already made stand — they are real edits,
+ * and rolling them back would need a transaction this seam does not have.
+ */
+async function promoteWhatIf(): Promise<void> {
+  promoting.value = true
+  promoteError.value = null
+  try {
+    for (const step of promotionPlan(whatIfOverrides.value)) {
+      if (step.kind === 'split') {
+        await splitRecurringItem({
+          itemId: step.itemId,
+          effectiveFrom: step.effectiveFrom,
+          amount: step.amount,
+          today: today.value,
+        })
+      } else {
+        const projectedAmount = projectedAmountFor(step.itemId, step.date)
+        if (projectedAmount === null) {
+          throw new Error('the previewed occurrence is no longer in the projection')
+        }
+        await overrideOccurrence({
+          itemId: step.itemId,
+          date: step.date,
+          amount: step.amount,
+          projectedAmount,
+          ...(step.newDate ? { newDate: step.newDate } : {}),
+        })
+      }
+      // Dropped one at a time, so a failure halfway leaves exactly the
+      // previews that have not been written yet — and the chart keeps
+      // showing them, now layered over the edits that did land.
+      const previewedDate = step.kind === 'split' ? step.effectiveFrom : step.date
+      whatIfOverrides.value = whatIfOverrides.value.filter(
+        (entry) => entry.itemId !== step.itemId || entry.date !== previewedDate,
+      )
+    }
+    setWhatIf(false)
+  } catch {
+    promoteError.value = 'Could not save those changes. Check your connection and try again.'
+  } finally {
+    promoting.value = false
+  }
+}
+
 /**
  * A previewed edit, which is the entirety of what-if's write story: it lands
  * in an in-memory list and stops there.
@@ -521,7 +614,14 @@ async function revertOccurrenceEdit(target: OccurrenceRevert): Promise<void> {
     <!-- Keeps the last card scrollable clear of the fixed bar. Rendered only
          while the bar is, so the page has no dead space the rest of the time. -->
     <div v-if="whatIf" class="h-20" aria-hidden="true" />
-    <WhatIfBar v-if="whatIf" :edit-count="whatIfOverrides.length" @exit="requestWhatIfExit" />
+    <WhatIfBar
+      v-if="whatIf"
+      :edit-count="whatIfOverrides.length"
+      :saving="promoting"
+      :error="promoteError"
+      @exit="requestWhatIfExit"
+      @promote="promoteWhatIf"
+    />
 
     <ResponsiveEditor
       :open="exitConfirmOpen"
