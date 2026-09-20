@@ -60,6 +60,8 @@ import {
   EMPTY_SCRATCH,
   hasScratchEdits,
   overridesInEffect,
+  PROMOTION_STALE,
+  promotionFailureMessage,
   promotionPlan,
   type WhatIfScratch,
   withScratchEdit,
@@ -401,10 +403,6 @@ function projectedAmountFor(itemId: string, date: IsoDate): MinorUnits | null {
  * silently dropping it. The writes already made stand — they are real edits,
  * and rolling them back would need a transaction this seam does not have.
  */
-const PROMOTION_STALE =
-  'That day is no longer in the forecast, so it could not be saved. Reopen the day and try again.'
-const PROMOTION_FAILED = 'Could not save those changes. Check your connection and try again.'
-
 async function promoteWhatIf(): Promise<void> {
   // The button disables itself on `saving`, but that is a prop round trip;
   // a double press inside it would run the whole plan twice.
@@ -448,8 +446,14 @@ async function promoteWhatIf(): Promise<void> {
       )
     }
     setWhatIf(false)
-  } catch {
-    promoteError.value = PROMOTION_FAILED
+  } catch (error) {
+    // The seam has already logged the RPC's own code; this adds which of the
+    // two occurrence writes was running, which `occurrence edit failed` alone
+    // does not say. A marker, never an amount — see CLAUDE.md on logging.
+    console.error('what-if promotion failed', {
+      marker: error instanceof Error ? error.message : 'unknown',
+    })
+    promoteError.value = promotionFailureMessage(error)
   } finally {
     promoting.value = false
   }

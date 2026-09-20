@@ -219,3 +219,34 @@ export function promotionPlan(scratch: WhatIfScratch): PromotionStep[] {
 export function overridesInEffect(on: boolean, scratch: WhatIfScratch): WhatIfScratch {
   return on ? scratch : EMPTY_SCRATCH
 }
+
+/**
+ * What a promotion says when the day it was about has left the forecast.
+ *
+ * Distinct from `PROMOTION_FAILED` on purpose: this is not a connection
+ * problem, and telling somebody to check their network when the horizon moved
+ * under them sends them after the wrong thing.
+ */
+export const PROMOTION_STALE =
+  'That day is no longer in the forecast, so it could not be saved. Reopen the day and try again.'
+
+/** What a promotion says when the write itself did not land. */
+export const PROMOTION_FAILED = 'Could not save those changes. Check your connection and try again.'
+
+/**
+ * Which of the two a failed promotion should show (issue #16).
+ *
+ * `useRunwayData()` already distinguishes these: `throwForRpcError` turns the
+ * RPC's `PT404` — the occurrence is gone — into `save-failed-gone`, and
+ * everything else into `save-failed`. Nothing consumed that distinction until
+ * now, so an occurrence that had vanished was reported as a network problem.
+ *
+ * Out here rather than in the page's `catch` for this file's usual reason:
+ * there is no component test project, so a mapping left in `index.vue` is a
+ * mapping no unit test can reach.
+ */
+export function promotionFailureMessage(error: unknown): string {
+  return error instanceof Error && error.message === 'save-failed-gone'
+    ? PROMOTION_STALE
+    : PROMOTION_FAILED
+}

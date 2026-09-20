@@ -18,7 +18,10 @@ import {
   EMPTY_SCRATCH,
   hasScratchEdits,
   overridesInEffect,
+  PROMOTION_FAILED,
+  PROMOTION_STALE,
   previewSummary,
+  promotionFailureMessage,
   promotionPlan,
   scratchEntry,
   withScratchEdit,
@@ -231,5 +234,32 @@ describe('overridesInEffect', () => {
   it('is empty either way when nothing has been previewed', () => {
     expect(overridesInEffect(true, EMPTY_SCRATCH)).toHaveLength(0)
     expect(overridesInEffect(false, EMPTY_SCRATCH)).toHaveLength(0)
+  })
+})
+
+describe('promotionFailureMessage', () => {
+  it('names the real cause when the occurrence is gone, rather than blaming the network', () => {
+    // `useRunwayData`'s `throwForRpcError` turns the RPC's PT404 into this
+    // marker. Nothing consumed it before issue #16's promotion path, so a
+    // vanished occurrence was reported as a connection problem and sent the
+    // user to check their wifi over a stale forecast.
+    expect(promotionFailureMessage(new Error('save-failed-gone'))).toBe(PROMOTION_STALE)
+  })
+
+  it('falls back to the write failure for any other error', () => {
+    expect(promotionFailureMessage(new Error('save-failed'))).toBe(PROMOTION_FAILED)
+  })
+
+  it('does not mistake a non-Error rejection for a stale day', () => {
+    // A thrown string or a rejected `undefined` must not reach the branch
+    // that tells somebody their day left the forecast.
+    expect(promotionFailureMessage('save-failed-gone')).toBe(PROMOTION_FAILED)
+    expect(promotionFailureMessage(undefined)).toBe(PROMOTION_FAILED)
+  })
+
+  it('keeps the two messages distinguishable', () => {
+    // They are two different instructions to the user; collapsing them into
+    // one string would make this mapping pointless.
+    expect(PROMOTION_STALE).not.toBe(PROMOTION_FAILED)
   })
 })
