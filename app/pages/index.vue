@@ -15,11 +15,19 @@
  * onto real rows: `data.value.occurrenceOverrides` (from `useRunwayData()`,
  * ultimately `public.occurrences`) is what the engine now layers in
  * automatically, unconditionally, every time it expands occurrences — a
- * saved edit needs no `overrides` passed here at all. `whatIfOverrides`
- * remains exactly what it was: an in-memory preview list, passed as
- * `window.overrides` only while what-if is on, dropped the moment it goes
- * off or the sheet closes, and never written back to `useRunwayData()` — a
- * preview is a lens on stored records, never a mutation of them.
+ * saved edit needs no `overrides` passed here at all. `whatIfOverrides` is
+ * still an in-memory preview list, passed as `window.overrides` only while
+ * what-if is on and never written back to `useRunwayData()` — a preview is a
+ * lens on stored records, never a mutation of them.
+ *
+ * Issue #16 moved that list's rules into `app/lib/what-if.ts`, where they are
+ * under unit test, and made the isolation enforceable rather than merely
+ * true: `tests/guards/what-if-write-isolation.test.ts` reads this file. It
+ * also made what-if a property of *this page* rather than of the day editor
+ * — see `setEditorOpen` below for why, and for the spec deviation that
+ * carries. The mode now ends in exactly three ways: the switch, the bar's
+ * exit, or this component going away (reload, navigation, an expired
+ * session), which is the clean discard the issue asks for and costs no code.
  */
 
 import AppPage from '@/components/AppPage.vue'
@@ -28,6 +36,8 @@ import DayDetailEditor from '@/components/dashboard/DayDetailEditor.vue'
 import LowestBalanceCard from '@/components/dashboard/LowestBalanceCard.vue'
 import UpcomingCard from '@/components/dashboard/UpcomingCard.vue'
 import UpdateBalancesEditor from '@/components/dashboard/UpdateBalancesEditor.vue'
+import WhatIfBar from '@/components/dashboard/WhatIfBar.vue'
+import ResponsiveEditor from '@/components/ResponsiveEditor.vue'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -45,12 +55,23 @@ import { ARROW_LINK } from '@/lib/arrow-link'
 import type { LegendEntry } from '@/lib/burndown'
 import { chartLines } from '@/lib/burndown'
 import type { OccurrenceEdit, OccurrenceRevert } from '@/lib/occurrence-editor'
+import {
+  discardPrompt,
+  EMPTY_SCRATCH,
+  hasScratchEdits,
+  overridesInEffect,
+  PROMOTION_STALE,
+  promotionFailureMessage,
+  promotionPlan,
+  type WhatIfScratch,
+  withScratchEdit,
+} from '@/lib/what-if'
 import type { BalanceReading } from '~~/domain/accounts'
 import { balanceReadings } from '~~/domain/accounts'
 import type { IsoDate } from '~~/domain/dates'
 import { addDays, compareDates, daysBetween } from '~~/domain/dates'
+import type { MinorUnits } from '~~/domain/money'
 import type { OccurrenceOverride } from '~~/domain/overrides'
-import { withOverride } from '~~/domain/overrides'
 import type { Occurrence } from '~~/domain/projection'
 import { evaluate, project } from '~~/domain/projection'
 
@@ -92,7 +113,12 @@ const horizonDays = computed(() => defaultHorizonDays.value)
 const density = useChartDensity()
 const densityOpen = ref(false)
 
-const whatIfOverrides = ref<OccurrenceOverride[]>([])
+// The scratch list a what-if session accumulates. Page-local by design and
+// held nowhere else: no `useState`, no storage, no round trip. A reload,
+// a navigation or an expired session takes this component down and the
+// previews with it, which is the discard behaviour issue #16 asks for rather
+// than something built on top. `app/lib/what-if.ts` owns the rules it follows.
+const whatIfOverrides = ref<WhatIfScratch>(EMPTY_SCRATCH)
 const whatIf = ref(false)
 
 const editorOpen = ref(false)
@@ -126,7 +152,7 @@ const windowEnd = computed(() => addDays(today.value, horizonDays.value))
 // `window.overrides` and lands on top of the saved edits the engine already
 // applied, exactly as `domain/overrides.ts`'s doc comment on `ProjectionWindow.overrides` says.
 const previewOverrides = computed<readonly OccurrenceOverride[]>(() =>
-  whatIf.value ? whatIfOverrides.value : [],
+  overridesInEffect(whatIf.value, whatIfOverrides.value),
 )
 
 /**
@@ -269,15 +295,183 @@ function openDay(date: IsoDate): void {
   editError.value = null
 }
 
-/** Closing always discards the what-if list — the design offers no confirmation. */
+/**
+ * Closing the editor leaves what-if running.
+ *
+ * **This is a deliberate deviation from `docs/design/dashboard/spec.md`
+ * (~line 251), raised in the PR rather than resolved quietly.** The spec has
+ * Done / ✕ / overlay tap close the editor *and* turn what-if off. But issue
+ * #16 asks for a mode that is unmistakable at every scroll position and that
+ * discards cleanly on navigate-away and reload — and under the spec's
+ * behaviour none of that can mean anything, because the editor is a modal:
+ * while it is open the page behind it is inert and scroll-locked, and the
+ * moment it closes the mode is gone. There is no scroll position at which
+ * the mode both exists and is visible.
+ *
+ * So the mode outlives the editor. You preview a change, close the sheet,
+ * and read the whole dashboard — chart, Upcoming, verdict — under it. That
+ * is what "mode" means, and it is what makes the persistent bar, the exit
+ * confirmation and promotion worth having at all.
+ *
+ * Closing therefore discards nothing and asks nothing. The two ways out that
+ * *do* discard both confirm first: the switch inside the editor, and the
+ * bar's "Exit what-if".
+ */
 function setEditorOpen(open: boolean): void {
   editorOpen.value = open
-  if (!open) setWhatIf(false)
 }
 
 function setWhatIf(on: boolean): void {
   whatIf.value = on
-  if (!on) whatIfOverrides.value = []
+  if (!on) whatIfOverrides.value = EMPTY_SCRATCH
+}
+
+/**
+ * The bar's own exit confirmation.
+ *
+ * A second implementation of the same question, and the duplication is the
+ * point rather than an oversight: the two routes out are never reachable at
+ * the same time. The switch lives inside a modal, where the answer has to be
+ * a swapped body (`DayDetailEditor` — nesting a dialog over a bottom sheet
+ * at 375px leaves neither readable); the bar is only reachable once that
+ * modal is closed, where a dialog is the ordinary answer and a swapped body
+ * has nothing to swap. They share the sentence (`discardPrompt`) and the
+ * condition, which is the part worth having in one place.
+ */
+const exitConfirmOpen = ref(false)
+
+function requestWhatIfExit(): void {
+  if (!hasScratchEdits(whatIfOverrides.value)) {
+    setWhatIf(false)
+    return
+  }
+  exitConfirmOpen.value = true
+}
+
+function confirmWhatIfExit(): void {
+  exitConfirmOpen.value = false
+  setWhatIf(false)
+}
+
+const promoting = ref(false)
+const promoteError = ref<string | null>(null)
+
+/**
+ * The rule's own amount for an occurrence, read out of the projection the
+ * engine has already computed.
+ *
+ * `scratchEntry` drops `projectedAmount` on the way in, because a preview has
+ * no business carrying a field that exists only for a write
+ * (`app/lib/what-if.ts` says why). Promotion therefore has to re-derive it.
+ *
+ * Reading it off `projection` is safe even though that projection has the
+ * previews layered into it: `applyOne` rewrites `amount`, `date`,
+ * `isOverridden` and `id`, and never touches `projectedAmount` or
+ * `projectedDate` (`domain/overrides.ts`). Those two stay the occurrence's
+ * identity and the rule's own figure — which is exactly what
+ * `override_occurrence`'s insert branch wants for a date that is not
+ * materialized yet. A previewed value here would corrupt the stored row.
+ */
+function projectedAmountFor(itemId: string, date: IsoDate): MinorUnits | null {
+  const match = projection.value.occurrences.find(
+    (occurrence) => occurrence.itemId === itemId && occurrence.projectedDate === date,
+  )
+  return match ? match.projectedAmount : null
+}
+
+/**
+ * Turns the previews into real saved edits (issue #16).
+ *
+ * Routed through the same `overrideOccurrence` / `splitRecurringItem` the
+ * editor uses with what-if off — that is the acceptance criterion, and it is
+ * also what keeps `tests/guards/occurrence-write-sites.test.ts` true: there
+ * is still exactly one write path per RPC.
+ *
+ * **Sequential, in the order the user made them.** Not `Promise.all`: two
+ * edits can touch the same rule, and a split regenerates that rule's
+ * occurrences, so overlapping writes would race. List order is also what
+ * makes a promoted result identical to making the same edits directly with
+ * the mode off, which is the criterion as written.
+ *
+ * `projectedAmountFor` is called inside the loop rather than once up front,
+ * because a split earlier in the list changes the rule's own amounts for
+ * every date after it; reading the projection again after each await picks
+ * that up instead of writing a figure that was true before the split.
+ *
+ * On any failure it stops and keeps the remaining previews, so a partial
+ * promotion leaves the user with the rest of their session rather than
+ * silently dropping it. The writes already made stand — they are real edits,
+ * and rolling them back would need a transaction this seam does not have.
+ */
+async function promoteWhatIf(): Promise<void> {
+  // The button disables itself on `saving`, but that is a prop round trip;
+  // a double press inside it would run the whole plan twice.
+  if (promoting.value) return
+  promoting.value = true
+  promoteError.value = null
+  try {
+    for (const step of promotionPlan(whatIfOverrides.value)) {
+      if (step.kind === 'split') {
+        await splitRecurringItem({
+          itemId: step.itemId,
+          effectiveFrom: step.effectiveFrom,
+          amount: step.amount,
+          today: today.value,
+        })
+      } else {
+        const projectedAmount = projectedAmountFor(step.itemId, step.date)
+        if (projectedAmount === null) {
+          // Distinct from the failure below on purpose: this one is not a
+          // connection problem, and telling somebody to check their network
+          // when the horizon moved under them sends them after the wrong
+          // thing. Reachable when an earlier split in this same run pushed
+          // the day out of the projected window.
+          promoteError.value = PROMOTION_STALE
+          return
+        }
+        await overrideOccurrence({
+          itemId: step.itemId,
+          date: step.date,
+          amount: step.amount,
+          projectedAmount,
+          ...(step.newDate ? { newDate: step.newDate } : {}),
+        })
+      }
+      // Dropped one at a time, so a failure halfway leaves exactly the
+      // previews that have not been written yet — and the chart keeps
+      // showing them, now layered over the edits that did land.
+      const previewedDate = step.kind === 'split' ? step.effectiveFrom : step.date
+      whatIfOverrides.value = whatIfOverrides.value.filter(
+        (entry) => entry.itemId !== step.itemId || entry.date !== previewedDate,
+      )
+    }
+    setWhatIf(false)
+  } catch (error) {
+    // The seam has already logged the RPC's own code; this adds which of the
+    // two occurrence writes was running, which `occurrence edit failed` alone
+    // does not say. A marker, never an amount — see CLAUDE.md on logging.
+    console.error('what-if promotion failed', {
+      marker: error instanceof Error ? error.message : 'unknown',
+    })
+    promoteError.value = promotionFailureMessage(error)
+  } finally {
+    promoting.value = false
+  }
+}
+
+/**
+ * A previewed edit, which is the entirety of what-if's write story: it lands
+ * in an in-memory list and stops there.
+ *
+ * Split out of `saveOccurrenceEdit` below so the claim is checkable rather
+ * than merely true — `tests/guards/what-if-write-isolation.test.ts` reads this
+ * function's body and fails the build if any mutation from the
+ * `useRunwayData()` seam ever appears inside it. Keep it that way: promotion,
+ * when it arrives, is a separate deliberate act with a name of its own, not a
+ * line added here.
+ */
+function previewOccurrenceEdit(edit: OccurrenceEdit): void {
+  whatIfOverrides.value = withScratchEdit(whatIfOverrides.value, edit)
 }
 
 /**
@@ -291,13 +485,7 @@ function setWhatIf(on: boolean): void {
  */
 async function saveOccurrenceEdit(edit: OccurrenceEdit): Promise<void> {
   if (whatIf.value) {
-    whatIfOverrides.value = withOverride(whatIfOverrides.value, {
-      itemId: edit.itemId,
-      date: edit.date,
-      scope: edit.scope,
-      amount: edit.amount,
-      ...(edit.newDate ? { newDate: edit.newDate } : {}),
-    })
+    previewOccurrenceEdit(edit)
     return
   }
 
@@ -431,6 +619,7 @@ async function revertOccurrenceEdit(target: OccurrenceRevert): Promise<void> {
       :accounts-by-id="accountsById"
       :recurring-items-by-id="recurringItemsById"
       :what-if="whatIf"
+      :what-if-edit-count="whatIfOverrides.length"
       :saving="savingEdit"
       :error="editError"
       @update:open="setEditorOpen"
@@ -438,5 +627,33 @@ async function revertOccurrenceEdit(target: OccurrenceRevert): Promise<void> {
       @save="saveOccurrenceEdit"
       @revert="revertOccurrenceEdit"
     />
+
+    <!-- Keeps the last card scrollable clear of the fixed bar. Rendered only
+         while the bar is, so the page has no dead space the rest of the time. -->
+    <div v-if="whatIf" class="h-20" aria-hidden="true" />
+    <WhatIfBar
+      v-if="whatIf"
+      :edit-count="whatIfOverrides.length"
+      :saving="promoting"
+      :error="promoteError"
+      @exit="requestWhatIfExit"
+      @promote="promoteWhatIf"
+    />
+
+    <ResponsiveEditor
+      :open="exitConfirmOpen"
+      title="Discard what-if changes?"
+      :description="discardPrompt(whatIfOverrides.length)"
+      @update:open="(value) => (exitConfirmOpen = value)"
+    >
+      <div class="flex flex-col gap-2 lg:flex-row-reverse">
+        <Button type="button" class="lg:flex-1" @click="exitConfirmOpen = false">
+          Keep previewing
+        </Button>
+        <Button type="button" variant="outline" class="lg:flex-1" @click="confirmWhatIfExit">
+          Discard changes
+        </Button>
+      </div>
+    </ResponsiveEditor>
   </AppPage>
 </template>

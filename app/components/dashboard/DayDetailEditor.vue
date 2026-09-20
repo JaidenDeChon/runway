@@ -15,6 +15,16 @@
  * against the same projection the chart draws, so the state has to live where
  * both can see it.
  *
+ * Issue #16 adds a third view — the discard confirmation — for the same
+ * reason there are two: the design's answer to "second surface or swapped
+ * body?" on this screen is a swapped body, and stacking an AlertDialog over
+ * a bottom sheet at 375px is exactly the nesting that decision avoids.
+ *
+ * It guards the switch and nothing else. Closing no longer discards
+ * anything, because the mode now outlives this sheet — `index.vue`'s
+ * `setEditorOpen` carries that change and the spec deviation behind it. The
+ * parent still owns the previews; this only asks before destroying them.
+ *
  * Issue #15 made saving asynchronous and real: `saving`/`error` are props,
  * driven by `index.vue` the way `UpdateBalancesEditor` already is, and this
  * component only returns from the edit form to the item list once a save or
@@ -39,6 +49,7 @@ import type { OccurrenceEdit, OccurrenceRevert } from '@/lib/occurrence-editor'
 import { overrideSummary, splitConsequence } from '@/lib/occurrence-editor'
 import { SEGMENTED_SEGMENT, SEGMENTED_TRACK } from '@/lib/segmented-control'
 import { cn } from '@/lib/utils'
+import { discardPrompt } from '@/lib/what-if'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
 import type { OverrideScope } from '~~/domain/overrides'
@@ -55,6 +66,14 @@ const props = defineProps<{
   /** Looked up for the apply-to-future consequence sentence — `Cadence` lives on the rule, not the `Occurrence`. */
   recurringItemsById: ReadonlyMap<string, RecurringItem>
   whatIf: boolean
+  /**
+   * How many previewed edits the what-if session is holding.
+   *
+   * A count rather than a boolean because the confirmation names it, and
+   * because "2 previewed changes will be lost" is the sentence that makes
+   * the prompt worth stopping for.
+   */
+  whatIfEditCount: number
   saving: boolean
   error: string | null
 }>()
@@ -68,6 +87,21 @@ const emit = defineEmits<{
 
 const editing = ref<Occurrence | null>(null)
 
+/**
+ * Whether the user has asked to leave what-if and not yet confirmed.
+ *
+ * Only the switch asks. Closing the editor used to discard the previews and
+ * so used to ask too, but the mode now outlives the sheet (see
+ * `setEditorOpen` in `index.vue` and the deviation it records): closing
+ * costs nothing, so stopping to confirm it would be a prompt about nothing —
+ * exactly the kind people learn to dismiss unread. The bar that appears
+ * behind the closed sheet carries the other exit, and its own confirmation.
+ */
+const pendingExit = ref(false)
+
+/** Nothing previewed is nothing to lose — an untouched session must never stop to ask. */
+const hasPreviews = computed(() => props.whatIf && props.whatIfEditCount > 0)
+
 const form = reactive({
   amount: 0 as MinorUnits,
   date: '' as IsoDate,
@@ -79,6 +113,8 @@ watch(
   () => [props.open, props.date] as const,
   () => {
     editing.value = null
+    // A confirmation left standing would greet the next day the user opens.
+    pendingExit.value = false
   },
 )
 
@@ -95,6 +131,31 @@ watch(
     if (wasSaving && !saving && !props.error) editing.value = null
   },
 )
+
+/**
+ * Turning the switch off is the one exit from here that destroys something.
+ *
+ * `ResponsiveEditor` is fully controlled, so refusing to emit would be how
+ * this holds the sheet open — but it no longer needs to for closing, only
+ * for the switch, which the swapped body below handles without touching
+ * `update:open` at all.
+ */
+function requestWhatIf(on: boolean): void {
+  if (on || !hasPreviews.value) {
+    emit('update:whatIf', on)
+    return
+  }
+  pendingExit.value = true
+}
+
+function confirmDiscard(): void {
+  pendingExit.value = false
+  emit('update:whatIf', false)
+}
+
+function keepPreviewing(): void {
+  pendingExit.value = false
+}
 
 function startEdit(occurrence: Occurrence): void {
   editing.value = occurrence
@@ -136,8 +197,13 @@ function onRevert(): void {
   emit('revert', { itemId: occurrence.itemId, date: occurrence.projectedDate })
 }
 
-const title = computed(() => (editing.value ? 'Edit occurrence' : 'Day detail'))
+const title = computed(() => {
+  if (pendingExit.value) return 'Discard what-if changes?'
+  return editing.value ? 'Edit occurrence' : 'Day detail'
+})
 const subtitle = computed(() => (props.date ? formatDateLong(props.date) : ''))
+
+const discardMessage = computed(() => discardPrompt(props.whatIfEditCount))
 
 const editedSummary = computed(() => {
   const occurrence = editing.value
@@ -175,16 +241,51 @@ const submitLabel = computed(() => {
     :description="subtitle"
     @update:open="(value) => emit('update:open', value)"
   >
-    <div class="flex flex-col gap-4">
-      <!-- --chart-5 is the what-if token everywhere on this screen; dark text
-           on it in both themes because the ramp lightens for dark surfaces. -->
+    <!-- The confirmation replaces the body rather than covering it: this
+         editor's own pattern (see the note at the top), and the only one that
+         behaves at 375px, where a second overlay over a bottom sheet leaves
+         neither fully readable. -->
+    <div v-if="pendingExit" class="flex flex-col gap-4">
       <p
-        v-if="props.whatIf"
-        class="flex items-center gap-2 rounded-md border border-dashed border-chart-5 bg-chart-5/10 px-3 py-2 text-sm font-medium text-chart-5"
+        class="flex items-start gap-2 rounded-md border border-dashed border-chart-5 bg-chart-5/10 px-3 py-2 text-sm font-medium text-chart-5"
       >
         <span aria-hidden="true">◑</span>
-        What-if — changes here won't be saved
+        {{ discardMessage }}
       </p>
+
+      <p class="text-sm text-muted-foreground">
+        Turning what-if off drops the previews and puts the chart back to your saved numbers.
+      </p>
+
+      <div class="flex flex-col gap-2 lg:flex-row-reverse">
+        <Button type="button" class="lg:flex-1" @click="keepPreviewing">Keep previewing</Button>
+        <Button type="button" variant="outline" class="lg:flex-1" @click="confirmDiscard">
+          Discard changes
+        </Button>
+      </div>
+    </div>
+
+    <div v-else class="flex flex-col gap-4">
+      <!-- Sticky because `SheetContent` scrolls its own body at
+           `max-h-[88vh]`: on a busy day at 375px this banner was the first
+           thing to leave the screen, which is the scroll position issue #16
+           cares about most — the one where you are reading amounts.
+
+           The wrapper carries `bg-card` and the sticking; the banner keeps
+           the tokens it already had. Putting an opaque layer behind the 10%
+           tint rather than changing the tint is what stops the rows from
+           showing through without inventing a colour the design never
+           specified. --chart-5 is the what-if token everywhere on this
+           screen; dark text on it in both themes because the ramp lightens
+           for dark surfaces. -->
+      <div v-if="props.whatIf" class="sticky top-0 z-10 -mt-1 bg-card pt-1">
+        <p
+          class="flex items-center gap-2 rounded-md border border-dashed border-chart-5 bg-chart-5/10 px-3 py-2 text-sm font-medium text-chart-5"
+        >
+          <span aria-hidden="true">◑</span>
+          What-if — changes here won't be saved
+        </p>
+      </div>
 
       <div class="flex items-start justify-between gap-4">
         <div class="min-w-0">
@@ -197,7 +298,7 @@ const submitLabel = computed(() => {
           :model-value="props.whatIf"
           aria-labelledby="what-if-label"
           :class="cn('mt-1 shrink-0', props.whatIf && 'data-checked:bg-chart-5')"
-          @update:model-value="(value) => emit('update:whatIf', value === true)"
+          @update:model-value="(value) => requestWhatIf(value === true)"
         />
       </div>
 
