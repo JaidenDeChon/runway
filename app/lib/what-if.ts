@@ -129,16 +129,13 @@ export function previewSummary(count: number): string {
  * `occurrence-editor.ts`'s `splitConsequence` gives: a sentence with a
  * plural in it is logic, and logic in a template is logic no test covers.
  *
- * The second half matters more than the first. The thing a person actually
- * fears at this prompt is having broken something real, and the honest
- * answer is that they have not: a preview was never written, so discarding
- * costs them only the preview. Saying so is what makes "Discard" safe to
- * press — and what stops the confirmation from reading as a warning about
- * data loss it is not.
+ * It carried a second sentence — "Your saved data is untouched either way" —
+ * removed at the user's request (2026-09-20). The count is the whole message
+ * now: it names what is lost and nothing else.
  */
 export function discardPrompt(count: number): string {
   const changes = count === 1 ? 'change' : 'changes'
-  return `${count} previewed ${changes} will be lost. Your saved data is untouched either way.`
+  return `${count} previewed ${changes} will be lost.`
 }
 
 /**

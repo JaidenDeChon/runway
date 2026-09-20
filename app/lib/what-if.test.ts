@@ -149,8 +149,11 @@ describe('discardPrompt', () => {
     expect(discardPrompt(2)).toContain('2 previewed changes will')
   })
 
-  it('reassures that nothing stored is at stake, which is what makes Discard safe to press', () => {
-    expect(discardPrompt(3)).toContain('saved data is untouched')
+  it('says what is lost and stops there', () => {
+    // The reassurance sentence was removed at the user's request
+    // (2026-09-20); this pins the prompt to the count so it does not drift
+    // back in.
+    expect(discardPrompt(3)).toBe('3 previewed changes will be lost.')
   })
 })
 
