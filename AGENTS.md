@@ -178,6 +178,38 @@ Full guide: `docs/testing.md`. What an agent must not get wrong:
 
 ---
 
+## Opening a PR
+
+Every pull request carries a **"How to test"** section. Not optional, and not
+satisfied by naming the test files — a reviewer should be able to act on it
+without reading the diff first.
+
+It has two halves:
+
+- **The commands**, exactly as they would be typed. Which suites cover this
+  change, and any setup they need (`bun run db:start` before the database
+  suites, a seeded account and recurring item before the dashboard means
+  anything).
+- **A manual walkthrough, for anything user-facing.** Numbered or tabulated
+  steps with the expected result beside each one, including the states that
+  are easy to miss: 375px, both themes, the empty case, and whatever the
+  change makes *not* happen. Tests prove the mechanics; the walkthrough is
+  how somebody judges whether it feels right, which is the part they cannot
+  delegate.
+
+**Say what you could not run, and why.** An agent's environment is not the
+reviewer's: no Docker means `test:integration`, `test:rls` and `test:e2e`
+never ran, and a blocked egress proxy means a CLI that fetches a registry
+never ran either. List those commands under the same heading so the reviewer
+knows exactly which claims are CI's and which are nobody's yet. "A skipped
+suite is not a passing one" applies to the write-up as much as to the run.
+
+Also in every PR: what changed and why, the evidence (including anything you
+broke on purpose to prove a test bites), deviations raised rather than
+quietly resolved, and a **"Still for a human"** list.
+
+---
+
 ## Watching a PR
 
 **Event-based wakeups only — never timer-based polling.** Subscribing to a
