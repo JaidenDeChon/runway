@@ -25,9 +25,23 @@
  * true: `tests/guards/what-if-write-isolation.test.ts` reads this file. It
  * also made what-if a property of *this page* rather than of the day editor
  * — see `setEditorOpen` below for why, and for the spec deviation that
- * carries. The mode now ends in exactly three ways: the switch, the bar's
- * exit, or this component going away (reload, navigation, an expired
- * session), which is the clean discard the issue asks for and costs no code.
+ * carries.
+ *
+ * The session has since moved one level further out, into `useWhatIf()`, so
+ * the switch in the app header can drive it: the header is rendered by
+ * `app/layouts/default.vue`, which is this page's parent, and a ref declared
+ * here is not something a parent can reach. Its lifetime is unchanged — the
+ * mode still ends in exactly three ways (a switch, the bar's exit, or this
+ * component going away on reload, navigation or an expired session), the last
+ * of which is now the explicit `onUnmounted` below rather than a ref falling
+ * out of scope.
+ *
+ * The Upcoming list's amounts are fields now too, and they route through this
+ * page's `quickEditOccurrence` / `quickResetOccurrence` rather than through
+ * the day editor — the same two writes and the same preview branch, reported
+ * per row instead of per form. `OccurrenceAmountRow.vue` holds what each of
+ * its three buttons means; `app/lib/occurrence-amount.ts` holds the rules
+ * behind them.
  */
 
 import AppPage from '@/components/AppPage.vue'
@@ -45,6 +59,7 @@ import { useChartDensity } from '@/composables/useChartDensity'
 import { useIsDesktop } from '@/composables/useIsDesktop'
 import { useRunwayData } from '@/composables/useRunwayData'
 import { useToday } from '@/composables/useToday'
+import { useWhatIf } from '@/composables/useWhatIf'
 import {
   endingBalances,
   legendEntries,
@@ -55,15 +70,14 @@ import { ARROW_LINK } from '@/lib/arrow-link'
 import type { LegendEntry } from '@/lib/burndown'
 import { chartLines } from '@/lib/burndown'
 import type { OccurrenceEdit, OccurrenceRevert } from '@/lib/occurrence-editor'
+import { occurrenceKey } from '@/lib/occurrence-editor'
 import {
   discardPrompt,
-  EMPTY_SCRATCH,
-  hasScratchEdits,
   overridesInEffect,
   PROMOTION_STALE,
   promotionFailureMessage,
   promotionPlan,
-  type WhatIfScratch,
+  withoutScratchEdit,
   withScratchEdit,
 } from '@/lib/what-if'
 import type { BalanceReading } from '~~/domain/accounts'
@@ -113,13 +127,26 @@ const horizonDays = computed(() => defaultHorizonDays.value)
 const density = useChartDensity()
 const densityOpen = ref(false)
 
-// The scratch list a what-if session accumulates. Page-local by design and
-// held nowhere else: no `useState`, no storage, no round trip. A reload,
-// a navigation or an expired session takes this component down and the
-// previews with it, which is the discard behaviour issue #16 asks for rather
-// than something built on top. `app/lib/what-if.ts` owns the rules it follows.
-const whatIfOverrides = ref<WhatIfScratch>(EMPTY_SCRATCH)
-const whatIf = ref(false)
+// The what-if session. It moved out of this page's own two refs and into
+// `useWhatIf()` so the header's switch — rendered by `app/layouts/default.vue`,
+// this page's parent — can read and set the same state the day editor's
+// switch does. Nothing about its lifetime changed: it still persists nowhere,
+// and `onUnmounted` below still ends it when the dashboard goes away, so a
+// navigation or a reload is the same clean discard it has always been.
+// `app/lib/what-if.ts` still owns the rules the scratch list follows.
+const whatIfSession = useWhatIf()
+const whatIf = whatIfSession.on
+const whatIfOverrides = whatIfSession.scratch
+// Held at the top level so the template unwraps it; the Upcoming rows ask it
+// once each, per projection, which is why it is a Set rather than a search.
+const previewedKeys = whatIfSession.previewedKeys
+
+// Leaving the dashboard ends the session. Without this the previews would be
+// waiting on return — stale hypotheticals presented as a live forecast, which
+// is the one thing this mode must never do.
+onUnmounted(() => {
+  whatIfSession.reset()
+})
 
 const editorOpen = ref(false)
 const activeDate = ref<IsoDate | null>(null)
@@ -322,8 +349,7 @@ function setEditorOpen(open: boolean): void {
 }
 
 function setWhatIf(on: boolean): void {
-  whatIf.value = on
-  if (!on) whatIfOverrides.value = EMPTY_SCRATCH
+  whatIfSession.set(on)
 }
 
 /**
@@ -338,19 +364,14 @@ function setWhatIf(on: boolean): void {
  * has nothing to swap. They share the sentence (`discardPrompt`) and the
  * condition, which is the part worth having in one place.
  */
-const exitConfirmOpen = ref(false)
+const exitConfirmOpen = whatIfSession.exitConfirmOpen
 
 function requestWhatIfExit(): void {
-  if (!hasScratchEdits(whatIfOverrides.value)) {
-    setWhatIf(false)
-    return
-  }
-  exitConfirmOpen.value = true
+  whatIfSession.requestExit()
 }
 
 function confirmWhatIfExit(): void {
-  exitConfirmOpen.value = false
-  setWhatIf(false)
+  whatIfSession.confirmExit()
 }
 
 const promoting = ref(false)
@@ -475,13 +496,63 @@ function previewOccurrenceEdit(edit: OccurrenceEdit): void {
 }
 
 /**
+ * A previewed revert: the Upcoming row's Reset with the mode on.
+ *
+ * The mirror of `previewOccurrenceEdit`, and split out for the same reason —
+ * so `tests/guards/what-if-write-isolation.test.ts` can read this function's
+ * body and fail the build if a seam mutation ever appears in it. Reset is the
+ * one row control whose off-mode behaviour *is* a write
+ * (`revertOccurrence`), so the branch that must not write is the one worth
+ * naming.
+ *
+ * It drops the preview rather than previewing a revert of a stored override:
+ * a scratch entry has no way to express "delete the override row", so
+ * promoting one would be impossible. `withoutScratchEdit` says the same thing
+ * where it is defined.
+ */
+function previewOccurrenceRevert(target: OccurrenceRevert): void {
+  whatIfOverrides.value = withoutScratchEdit(whatIfOverrides.value, target.itemId, target.date)
+}
+
+/**
+ * The write itself, with no error handling and no state of its own.
+ *
+ * Two callers now need it — the day editor's form and the Upcoming rows'
+ * inline buttons — and they report failure in different places: the editor has
+ * one message under its form, a list has fourteen rows and has to say which
+ * one. Sharing the dispatch rather than the reporting is what keeps
+ * `tests/guards/occurrence-write-sites.test.ts` true (still exactly one call
+ * site per RPC, on the seam) without either caller inheriting the other's UI.
+ *
+ * Dispatches on `edit.scope`: `overrideOccurrence` for "this occurrence
+ * only", `splitRecurringItem` for "apply to all future" — the amount there is
+ * converted to the positive magnitude `recurring_rules.amount_cents` expects,
+ * since `OccurrenceEdit.amount` is always signed like `Occurrence.amount`,
+ * regardless of scope.
+ */
+async function writeOccurrenceEdit(edit: OccurrenceEdit): Promise<void> {
+  if (edit.scope === 'once') {
+    await overrideOccurrence({
+      itemId: edit.itemId,
+      date: edit.date,
+      amount: edit.amount,
+      projectedAmount: edit.projectedAmount,
+      ...(edit.newDate ? { newDate: edit.newDate } : {}),
+    })
+  } else {
+    await splitRecurringItem({
+      itemId: edit.itemId,
+      effectiveFrom: edit.date,
+      amount: Math.abs(edit.amount),
+      today: today.value,
+    })
+  }
+}
+
+/**
  * What-if previews still never touch the database — this is the one branch
  * that keeps `saveOccurrenceEdit`'s name honest despite doing no saving at
- * all when the switch is on. A real save dispatches on `edit.scope`:
- * `overrideOccurrence` for "this occurrence only", `splitRecurringItem` for
- * "apply to all future" — the amount there is converted to the positive
- * magnitude `recurring_rules.amount_cents` expects, since `OccurrenceEdit.amount`
- * is always signed like `Occurrence.amount`, regardless of scope.
+ * all when the switch is on.
  */
 async function saveOccurrenceEdit(edit: OccurrenceEdit): Promise<void> {
   if (whatIf.value) {
@@ -492,22 +563,7 @@ async function saveOccurrenceEdit(edit: OccurrenceEdit): Promise<void> {
   savingEdit.value = true
   editError.value = null
   try {
-    if (edit.scope === 'once') {
-      await overrideOccurrence({
-        itemId: edit.itemId,
-        date: edit.date,
-        amount: edit.amount,
-        projectedAmount: edit.projectedAmount,
-        ...(edit.newDate ? { newDate: edit.newDate } : {}),
-      })
-    } else {
-      await splitRecurringItem({
-        itemId: edit.itemId,
-        effectiveFrom: edit.date,
-        amount: Math.abs(edit.amount),
-        today: today.value,
-      })
-    }
+    await writeOccurrenceEdit(edit)
   } catch {
     editError.value = 'Could not save that change. Check your connection and try again.'
   } finally {
@@ -516,6 +572,11 @@ async function saveOccurrenceEdit(edit: OccurrenceEdit): Promise<void> {
 }
 
 async function revertOccurrenceEdit(target: OccurrenceRevert): Promise<void> {
+  if (whatIf.value) {
+    previewOccurrenceRevert(target)
+    return
+  }
+
   savingEdit.value = true
   editError.value = null
   try {
@@ -524,6 +585,58 @@ async function revertOccurrenceEdit(target: OccurrenceRevert): Promise<void> {
     editError.value = 'Could not revert that change. Check your connection and try again.'
   } finally {
     savingEdit.value = false
+  }
+}
+
+// The Upcoming list's inline edits report separately from the day editor's
+// form: which row failed is the whole message when there are fourteen of
+// them, and a single shared string would put "could not save" under a row
+// nobody touched. One row at a time, because each of these awaits a refresh
+// and overlapping writes to the same rule would race — the same reason
+// promotion runs its plan sequentially.
+const quickEditKey = ref<string | null>(null)
+const quickFailedKey = ref<string | null>(null)
+const quickError = ref<string | null>(null)
+
+async function quickEditOccurrence(edit: OccurrenceEdit): Promise<void> {
+  if (whatIf.value) {
+    previewOccurrenceEdit(edit)
+    return
+  }
+  if (quickEditKey.value) return
+
+  const key = occurrenceKey(edit.itemId, edit.date)
+  quickEditKey.value = key
+  quickFailedKey.value = null
+  quickError.value = null
+  try {
+    await writeOccurrenceEdit(edit)
+  } catch {
+    quickFailedKey.value = key
+    quickError.value = 'Could not save that change. Check your connection and try again.'
+  } finally {
+    quickEditKey.value = null
+  }
+}
+
+async function quickResetOccurrence(target: OccurrenceRevert): Promise<void> {
+  if (whatIf.value) {
+    previewOccurrenceRevert(target)
+    return
+  }
+  if (quickEditKey.value) return
+
+  const key = occurrenceKey(target.itemId, target.date)
+  quickEditKey.value = key
+  quickFailedKey.value = null
+  quickError.value = null
+  try {
+    await revertOccurrence(target.itemId, target.date, today.value)
+  } catch {
+    quickFailedKey.value = key
+    quickError.value = 'Could not revert that change. Check your connection and try again.'
+  } finally {
+    quickEditKey.value = null
   }
 }
 </script>
@@ -593,9 +706,17 @@ async function revertOccurrenceEdit(target: OccurrenceRevert): Promise<void> {
           class="lg:col-span-2"
           :occurrences="upcoming"
           :accounts-by-id="accountsById"
+          :recurring-items-by-id="recurringItemsById"
           :horizon-days="horizonDays"
           :today="today"
+          :what-if="whatIf"
+          :previewed-keys="previewedKeys"
+          :pending-key="quickEditKey"
+          :failed-key="quickFailedKey"
+          :error="quickError"
           @select-day="openDay"
+          @update="quickEditOccurrence"
+          @reset="quickResetOccurrence"
         />
       </div>
 

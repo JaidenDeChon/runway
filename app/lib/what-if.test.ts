@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IsoDate } from '~~/domain/dates'
 import { toMinorUnits } from '~~/domain/money'
-import type { OccurrenceEdit } from './occurrence-editor'
+import { type OccurrenceEdit, occurrenceKey } from './occurrence-editor'
 import {
   discardPrompt,
   EMPTY_SCRATCH,
@@ -24,6 +24,8 @@ import {
   promotionFailureMessage,
   promotionPlan,
   scratchEntry,
+  scratchKeys,
+  withoutScratchEdit,
   withScratchEdit,
 } from './what-if'
 
@@ -264,5 +266,50 @@ describe('promotionFailureMessage', () => {
     // They are two different instructions to the user; collapsing them into
     // one string would make this mapping pointless.
     expect(PROMOTION_STALE).not.toBe(PROMOTION_FAILED)
+  })
+})
+
+describe('withoutScratchEdit', () => {
+  it('drops the preview of one occurrence and leaves the rest standing', () => {
+    const scratch = withScratchEdit(
+      withScratchEdit(EMPTY_SCRATCH, edit()),
+      edit({ itemId: 'power', date: '2026-09-24' as IsoDate }),
+    )
+    const kept = withoutScratchEdit(scratch, 'rent', '2026-09-20' as IsoDate)
+    expect(kept.map((entry) => entry.itemId)).toEqual(['power'])
+  })
+
+  it('drops it at either scope, matching how withScratchEdit keys them', () => {
+    // The pair has to agree: if adding replaces a `once` preview with a
+    // `future` one on the same occurrence, removing cannot leave a `future`
+    // entry behind that the row no longer has any way to show.
+    const scratch = withScratchEdit(EMPTY_SCRATCH, edit({ scope: 'future' }))
+    expect(withoutScratchEdit(scratch, 'rent', '2026-09-20' as IsoDate)).toEqual([])
+  })
+
+  it('keeps the same rule on another date', () => {
+    // `(itemId, date)`, not `itemId`: resetting September's rent must not
+    // discard the preview of October's.
+    const scratch = withScratchEdit(EMPTY_SCRATCH, edit())
+    expect(withoutScratchEdit(scratch, 'rent', '2026-10-20' as IsoDate)).toHaveLength(1)
+  })
+
+  it('is a no-op on a list holding nothing for that occurrence', () => {
+    expect(withoutScratchEdit(EMPTY_SCRATCH, 'rent', '2026-09-20' as IsoDate)).toEqual([])
+  })
+})
+
+describe('scratchKeys', () => {
+  it('keys previews the way a row identifies itself', () => {
+    // The row and the scratch list must spell the identity the same way, or a
+    // previewed row would render as an unpreviewed one.
+    const scratch = withScratchEdit(EMPTY_SCRATCH, edit())
+    expect(scratchKeys(scratch).has(occurrenceKey('rent', '2026-09-20' as IsoDate))).toBe(true)
+  })
+
+  it('does not claim an occurrence nothing is previewing', () => {
+    expect(scratchKeys(EMPTY_SCRATCH).has(occurrenceKey('rent', '2026-09-20' as IsoDate))).toBe(
+      false,
+    )
   })
 })

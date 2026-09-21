@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import type { IsoDate } from '~~/domain/dates'
 import { toMinorUnits } from '~~/domain/money'
-import { overrideSummary, splitConsequence } from './occurrence-editor'
+import { occurrenceKey, overrideSummary, splitConsequence } from './occurrence-editor'
 
 describe('splitConsequence', () => {
   it('names the label, the new amount, the cadence and the effective date', () => {
@@ -70,5 +71,19 @@ describe('overrideSummary', () => {
     })
     expect(text).toContain('$310')
     expect(text).toContain('Aug 20')
+  })
+})
+
+describe('occurrenceKey', () => {
+  it('keys on the pair a retime cannot move', () => {
+    // `Occurrence.id` is rewritten the moment an override lands, so a list
+    // keyed on it remounts every row it edits. This pair does not move.
+    expect(occurrenceKey('rent', '2026-09-20' as IsoDate)).toBe('rent@2026-09-20')
+  })
+
+  it('separates two occurrences of the same rule', () => {
+    expect(occurrenceKey('rent', '2026-09-20' as IsoDate)).not.toBe(
+      occurrenceKey('rent', '2026-10-20' as IsoDate),
+    )
   })
 })

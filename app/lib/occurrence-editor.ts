@@ -77,3 +77,17 @@ export function overrideSummary(input: {
 }): string {
   return `Rule value: ${formatMoney(input.projectedAmount)} on ${formatDateShort(input.projectedDate)}`
 }
+
+/**
+ * The identity of one occurrence, as a string a `Map` or `Set` can key on.
+ *
+ * `(itemId, projectedDate)` is `occurrences`' natural key and the only half of
+ * an occurrence that survives a retime — the same pair `OccurrenceEdit.date`
+ * and `OccurrenceRevert.date` carry, and deliberately not `Occurrence.id`,
+ * which `applyOne` rewrites the moment an override lands on it. A row keyed on
+ * `id` remounts on every edit; a row keyed on this one keeps its draft, its
+ * focus and its place.
+ */
+export function occurrenceKey(itemId: string, date: IsoDate): string {
+  return `${itemId}@${date}`
+}
