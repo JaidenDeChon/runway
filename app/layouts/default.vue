@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import AppSidebar from '@/components/AppSidebar.vue'
 import AppThemeToggle from '@/components/AppThemeToggle.vue'
+import AppWhatIfToggle from '@/components/AppWhatIfToggle.vue'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -15,6 +16,15 @@ import { resolveBreadcrumbs } from '@/lib/navigation'
 
 const route = useRoute()
 const crumbs = computed(() => resolveBreadcrumbs(route.path))
+
+/**
+ * What-if previews the dashboard's projection and nothing else, so its switch
+ * rides in the header only while the dashboard is what you are looking at. A
+ * trailing slash resolves the same way the breadcrumbs do — `resolveBreadcrumbs`
+ * normalizes one, and a control that vanished on `/` versus `//` would be a
+ * bug nobody could reproduce on purpose.
+ */
+const onDashboard = computed(() => route.path.replace(/\/+$/, '') === '')
 
 // Keeps the materialized occurrence horizon current as the calendar
 // advances. Client-only and idempotent — see the composable, and
@@ -54,7 +64,11 @@ const sidebarOpen = useCookie<boolean>('sidebar_state', { default: () => true })
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-          <span class="ml-auto shrink-0 text-sm font-semibold tracking-tight">Runway</span>
+          <AppWhatIfToggle v-if="onDashboard" class="ml-auto" />
+          <span
+            class="shrink-0 text-sm font-semibold tracking-tight"
+            :class="onDashboard ? 'hidden sm:inline' : 'ml-auto'"
+          >Runway</span>
           <AppThemeToggle />
         </div>
       </header>

@@ -34,7 +34,7 @@
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
 import type { OccurrenceOverride } from '~~/domain/overrides'
-import type { OccurrenceEdit } from './occurrence-editor'
+import { type OccurrenceEdit, occurrenceKey } from './occurrence-editor'
 
 /**
  * The previewed edits a what-if session is holding.
@@ -98,6 +98,44 @@ export function withScratchEdit(
     (existing) => existing.itemId !== entry.itemId || existing.date !== entry.date,
   )
   return [...kept, entry]
+}
+
+/**
+ * Drops this occurrence's preview, at either scope.
+ *
+ * The inverse of `withScratchEdit` and keyed the same way — on
+ * `(itemId, date)` rather than on `(itemId, date, scope)` — for the reason
+ * that function gives: the user is editing one occurrence either way, so
+ * "undo what I previewed here" cannot mean "undo only the `once` half of it".
+ *
+ * This is what Reset does with the mode on. It is deliberately *not* a
+ * previewed revert of a stored override: a preview that dropped a saved edit
+ * would have to be promoted as a `revert_occurrence` call, and a scratch
+ * entry carries no way to say so (`PromotionStep` has two kinds, both
+ * writes). With the mode on, Reset therefore undoes previews only, and the
+ * row says so; with it off, Reset reverts the stored override through the
+ * seam. See `OccurrenceAmountRow.vue`.
+ */
+export function withoutScratchEdit(
+  scratch: WhatIfScratch,
+  itemId: string,
+  date: IsoDate,
+): OccurrenceOverride[] {
+  return scratch.filter((entry) => entry.itemId !== itemId || entry.date !== date)
+}
+
+/**
+ * Which occurrences this session is previewing, as keys a row can test in
+ * constant time.
+ *
+ * The Upcoming list asks "is this row previewed?" once per row on every
+ * projection change; a `find` per row would make that quadratic in a list the
+ * user can push to 14 rows and a horizon can push further. `occurrenceKey` is
+ * the shared spelling of the identity, so a row and the scratch list cannot
+ * disagree about what "the same occurrence" means.
+ */
+export function scratchKeys(scratch: WhatIfScratch): ReadonlySet<string> {
+  return new Set(scratch.map((entry) => occurrenceKey(entry.itemId, entry.date)))
 }
 
 /**

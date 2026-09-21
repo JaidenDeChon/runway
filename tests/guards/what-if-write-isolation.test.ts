@@ -15,14 +15,18 @@
  * Three rules, each chosen because breaking it is the realistic way this
  * guarantee would be lost:
  *
- * 1. **`app/lib/what-if.ts` cannot write.** The module that holds scratch
- *    state imports no client, no fetch and no storage API, so there is
- *    nothing in scope for a future line to call. This is the strongest of the
- *    three: it is a fact about what the file can reach, not about what it
- *    currently does.
- * 2. **The preview branch calls no mutation.** `previewOccurrenceEdit` in
- *    `app/pages/index.vue` is the one function a what-if edit flows through,
- *    and none of the `useRunwayData()` seam's writers may appear in it.
+ * 1. **`app/lib/what-if.ts` and `app/composables/useWhatIf.ts` cannot write.**
+ *    The module that holds the scratch list's rules and the composable that
+ *    holds the session's refs — moved out of the page so the app header's
+ *    switch can drive the same state — import no client, no fetch and no
+ *    storage API, so there is nothing in scope for a future line to call.
+ *    This is the strongest of the three: it is a fact about what those files
+ *    can reach, not about what they currently do.
+ * 2. **The preview branches call no mutation.** `previewOccurrenceEdit` and
+ *    `previewOccurrenceRevert` in `app/pages/index.vue` are the two functions
+ *    a what-if edit flows through — a previewed change and the Upcoming row's
+ *    Reset — and none of the `useRunwayData()` seam's writers may appear in
+ *    either.
  * 3. **Web storage under `app/` has exactly one owner.** The issue asks that
  *    scratch state must not persist anywhere it could be mistaken for real
  *    data on return, and CLAUDE.md is blunter still: anything reaching for
@@ -65,7 +69,31 @@ function collectSourceFiles(dir: string): SourceFile[] {
 const sourceFiles = collectSourceFiles(APP_DIR)
 
 const SCRATCH_MODULE = 'lib/what-if.ts'
+/**
+ * Where the session's refs live now that the header's switch drives the same
+ * state the day editor's does. It holds the mode and the scratch list, so it
+ * is guarded exactly as the scratch module is: a file that cannot reach a
+ * client, a fetch or a storage API has nothing in scope to persist a preview
+ * with.
+ */
+const SESSION_COMPOSABLE = 'composables/useWhatIf.ts'
 const DASHBOARD_PAGE = 'pages/index.vue'
+
+/**
+ * Every function in the page that a what-if edit can flow through.
+ *
+ * `previewOccurrenceEdit` is the original — the preview branch of a save.
+ * `previewOccurrenceRevert` is the Upcoming row's Reset with the mode on, and
+ * it matters more than it looks: Reset's *off*-mode behaviour is a real write
+ * (`revertOccurrence`), so this is the one branch where the wrong line is
+ * already sitting in the function next door. Each is paired with the scratch
+ * helper it must still call, so a guard cannot pass by the function being
+ * emptied out.
+ */
+const PREVIEW_BRANCHES: Record<string, string> = {
+  previewOccurrenceEdit: 'withScratchEdit',
+  previewOccurrenceRevert: 'withoutScratchEdit',
+}
 const SEAM_FILE = 'composables/useRunwayData.ts'
 /** The one file under `app/` allowed to touch web storage. A device preference, not user data. */
 const STORAGE_OWNER = 'composables/useChartDensity.ts'
@@ -167,9 +195,28 @@ describe('what-if scratch state cannot reach storage', () => {
     expect(sourceFiles.length).toBeGreaterThan(20)
     const names = sourceFiles.map((file) => file.name)
     expect(names).toContain(SCRATCH_MODULE)
+    expect(names).toContain(SESSION_COMPOSABLE)
     expect(names).toContain(DASHBOARD_PAGE)
     expect(names).toContain(SEAM_FILE)
     expect(names).toContain(STORAGE_OWNER)
+  })
+
+  describe(`app/${SESSION_COMPOSABLE} has nothing in scope that could write`, () => {
+    for (const [what, pattern] of Object.entries(ESCAPE_HATCHES)) {
+      it(`never reaches for ${what}`, () => {
+        expect(
+          codeLines(sourceOf(SESSION_COMPOSABLE)).filter((line) => pattern.test(line)),
+        ).toEqual([])
+      })
+    }
+
+    it('still holds the session the page and the header share, so this cannot pass by the file being empty', () => {
+      const text = sourceOf(SESSION_COMPOSABLE)
+      expect(text).toContain('export function useWhatIf')
+      // `useState`, not a module-level ref: per-request on the server, so one
+      // user's previews cannot ride out in another user's payload.
+      expect(codeLines(text).some((line) => line.includes('useState<'))).toBe(true)
+    })
   })
 
   describe(`app/${SCRATCH_MODULE} has nothing in scope that could write`, () => {
@@ -202,26 +249,26 @@ describe('what-if scratch state cannot reach storage', () => {
       expect([...MUTATIONS].filter((name) => !members.has(name))).toEqual([])
     })
 
-    it('routes previews through previewOccurrenceEdit, which still does the layering', () => {
-      // The positive half: the function exists, and it is the one holding the
-      // scratch write. A guard on an empty or deleted function is vacuous.
-      expect(functionBody(sourceOf(DASHBOARD_PAGE), 'previewOccurrenceEdit')).toContain(
-        'withScratchEdit',
-      )
-    })
-
-    for (const mutation of MUTATIONS) {
-      it(`does not call ${mutation}()`, () => {
-        const body = functionBody(sourceOf(DASHBOARD_PAGE), 'previewOccurrenceEdit')
-        expect(codeLines(body).filter((line) => line.includes(mutation))).toEqual([])
+    for (const [branch, helper] of Object.entries(PREVIEW_BRANCHES)) {
+      it(`routes previews through ${branch}, which still does the layering`, () => {
+        // The positive half: the function exists, and it is the one holding the
+        // scratch write. A guard on an empty or deleted function is vacuous.
+        expect(functionBody(sourceOf(DASHBOARD_PAGE), branch)).toContain(helper)
       })
-    }
 
-    for (const [what, pattern] of Object.entries(ESCAPE_HATCHES)) {
-      it(`does not reach around the seam for ${what}`, () => {
-        const body = functionBody(sourceOf(DASHBOARD_PAGE), 'previewOccurrenceEdit')
-        expect(codeLines(body).filter((line) => pattern.test(line))).toEqual([])
-      })
+      for (const mutation of MUTATIONS) {
+        it(`${branch} does not call ${mutation}()`, () => {
+          const body = functionBody(sourceOf(DASHBOARD_PAGE), branch)
+          expect(codeLines(body).filter((line) => line.includes(mutation))).toEqual([])
+        })
+      }
+
+      for (const [what, pattern] of Object.entries(ESCAPE_HATCHES)) {
+        it(`${branch} does not reach around the seam for ${what}`, () => {
+          const body = functionBody(sourceOf(DASHBOARD_PAGE), branch)
+          expect(codeLines(body).filter((line) => pattern.test(line))).toEqual([])
+        })
+      }
     }
   })
 
