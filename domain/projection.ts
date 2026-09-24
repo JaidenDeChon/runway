@@ -15,6 +15,7 @@ import { dailyDiscretionary } from './discretionary'
 import type { MinorUnits } from './money'
 import type { OccurrenceOverride } from './overrides'
 import { applyOverrides } from './overrides'
+import { resolveAmount } from './prediction'
 import type { Account, BalanceSnapshot, RecurringItem, RunwayData } from './types'
 
 /** $250 of headroom above the cushion is the boundary between Covered and Tight. */
@@ -157,9 +158,28 @@ export interface ProjectionWindow {
  * Exported so screens that list items directly (recurring-items) can render
  * the same sign the projection engine uses, instead of re-deriving it from
  * `kind` inline in a component.
+ *
+ * Reads the *resolved* amount (issue #18): an estimated rule with enough
+ * settled history contributes its estimate, everything else its stored
+ * amount — see `prediction.ts`. This is the one place the engine asks for a
+ * rule's amount, so the chart, the verdict, the Upcoming list, the recurring
+ * list and materialization can never disagree about it.
  */
 export function signedAmount(item: RecurringItem): MinorUnits {
-  return item.kind === 'income' ? item.amount : -item.amount
+  const amount = resolveAmount(item)
+  return item.kind === 'income' ? amount : -amount
+}
+
+/**
+ * Whether an occurrence's amount is an estimate the UI must mark as one
+ * (issue #18: "never present an estimate as if it were certain").
+ *
+ * An estimated rule's occurrence is an estimate until somebody states its
+ * amount: a saved or previewed override (`isOverridden`) is the user's own
+ * figure and wins over the estimate, so it is no longer marked as one.
+ */
+export function isEstimated(occurrence: Occurrence): boolean {
+  return !occurrence.isOverridden && (occurrence.isPredicted || occurrence.isVariable)
 }
 
 function accountsFor(data: RunwayData, accountIds: readonly string[] | undefined): Account[] {

@@ -55,8 +55,10 @@ export const seedRecurringItems: readonly RecurringItem[] = [
     id: 'item-paycheck',
     name: 'Paycheck',
     kind: 'income',
-    // Equals the mean of depositHistory: prediction is stored, not recomputed
-    // at render time, so the two must already agree in seeded data.
+    // Equals the mean of depositHistory. Prediction is resolved live
+    // (`prediction.ts`), so this is the fallback figure, not a frozen copy —
+    // kept equal anyway so the seeded dashboard reads the same whichever of
+    // the two the engine uses.
     amount: toMinorUnits(2450),
     cadence: 'biweekly',
     accountId: 'acct-checking',
