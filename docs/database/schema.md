@@ -124,6 +124,7 @@ positive amount — see [One row, not two legs](#one-row-not-two-legs).
 | `discretionary_account_id` | `uuid`, nullable | composite FK → `accounts (user_id, id)`, `on delete set null (discretionary_account_id)` — deleting the account nulls only this column, never `user_id` |
 | `default_horizon_days` | `smallint` | default `30`; `check` is a sanity range, `1`–`730`. The dashboard's toggle offering 30/60/90 is a fact about that screen, not about the data — see [The horizon is not a menu](#the-horizon-is-not-a-menu) |
 | `balance_stale_after_days` | `smallint` | default `14`; `check` is a sanity range, `1`–`365`, in the same spirit as `default_horizon_days`. How old a manually-typed balance anchor may get before the accounts screen flags it |
+| `prediction_window` | `smallint` | default `3`; `check` `2`–`12`. How many of a rule's most recent settled occurrences an estimate averages (issue #18). The lower bound is `domain/prediction.ts` `MIN_DEPOSITS_FOR_PREDICTION` — a window of one is a copy, not an estimate. **No screen writes it yet**; see [Estimated amounts](#estimated-amounts) |
 
 `user_id` being the primary key is itself the RLS-predicate index — no
 separate `user_settings_user_id_idx`.
@@ -566,10 +567,17 @@ place and returns no successor. Otherwise it closes the rule
 (`ends_on = p_effective_from - 1` — *minus one* because both bounds are
 inclusive, so `p_effective_from` itself would otherwise let both rules emit
 that day) and inserts a successor copying `account_id`, `name`, `kind`,
-`amount_source`, `is_variable`, `cadence`, `days_of_month`, `days_of_week`,
-and **the closed rule's original `ends_on`** (read before that column was
-overwritten), with `amount_cents = p_amount_cents` and
-`anchor_date = starts_on = p_effective_from`.
+`cadence`, `days_of_month`, `days_of_week`, and **the closed rule's original
+`ends_on`** (read before that column was overwritten), with
+`amount_cents = p_amount_cents` and `anchor_date = starts_on = p_effective_from`.
+
+**Both branches pin the amount** (issue #18,
+`supabase/migrations/20260924020000_income_prediction.sql`): the in-place
+rule and the successor get `amount_source = 'fixed'` and
+`is_variable = false`, rather than inheriting them. Apply-to-future is the
+user stating the amount from here on; left estimated, the in-place branch —
+same rule id, so same settled history — would have the estimate paint over
+the figure just typed. The closed predecessor keeps its own flags.
 
 **Occurrence rows are untouched by this function**, on purpose — the split
 commits the rule change atomically, and the client is responsible for
@@ -584,6 +592,39 @@ is left to reconciliation (#26).
 Same `security invoker` / `user_id` / `PTxyz` posture as the two functions
 above: `PT400` for a non-positive amount, `PT404` for a foreign or unknown
 rule id, `PT409` when `p_effective_from` falls after the rule's own `ends_on`.
+
+### Estimated amounts
+
+Issue #18. Predicted income (`amount_source = 'predicted'`) and a variable
+bill (`is_variable`) are *estimated*: the engine projects the rounded mean of
+the rule's most recent settled amounts — at least two, at most
+`prediction_window` — and the rule's own `amount_cents` otherwise
+(`domain/prediction.ts`).
+
+- **Settled means `status = 'confirmed'`, and nothing else.** A hand-edited
+  but still-`projected` row (`is_overridden`) is a statement about the
+  future, not a record of what happened, and a `skipped` row has no amount
+  worth averaging.
+- **The estimate is live, not stored.** `amount_cents` stays the user's own
+  figure — the fallback — and is never overwritten with a mean. Before #18
+  the app froze the mean into it at save time, which destroyed the fallback
+  the first time it ran.
+- **The read is a function, not a table read.**
+  `public.recent_settled_amounts()` returns each rule's last N confirmed rows
+  (`row_number() over (partition by rule_id order by projected_date desc)`),
+  because PostgREST cannot express a per-group limit and an unbounded read of
+  every confirmed row would eventually meet `max_rows`. `security invoker`,
+  no user parameter: RLS on `occurrences` is what scopes it, and
+  `tests/integration/income-prediction.test.ts` proves one user's rows never
+  reach another's estimate.
+- **An override wins.** A single-occurrence override is protected from
+  regeneration and applied after expansion, so it replaces the estimate for
+  that occurrence; apply-to-future pins the rule (see
+  [Rule splitting](#rule-splitting)).
+- **`prediction_window` has no writer yet**, the same stance as
+  [the timezone override](#the-timezone-override-has-no-writer-on-purpose):
+  the column exists so the choice is storable, and the screen that offers it
+  has not been designed.
 
 ### Archiving, not deleting
 
@@ -660,7 +701,8 @@ The table `domain/*` code should consult when wiring a store to this schema:
 | `Account.archivedOn` | `accounts.archived_on` | `null` maps to **absent**, not to `archivedOn: undefined` — see [Archiving, not deleting](#archiving-not-deleting) |
 | `RecurringItem.nextOccurrence` | `recurring_rules.anchor_date` | **names differ deliberately**: the domain expands backwards from it too (to fill a chart's look-back), so it is an anchor, not a "next" — but never *before* it, since it is the rule's first occurrence |
 | `RecurringItem.daysOfMonth` / `.daysOfWeek` | `recurring_rules.days_of_month` / `.days_of_week` | same numbering on both sides, `-1` = month end, ISO weekdays. Optional in the domain, nullable here — both mean "the day the anchor names" |
-| `RecurringItem.depositHistory` | *derived* | `occurrences.actual_amount_cents where status = 'confirmed'`, ordered by `projected_date`. No array column — this is why occurrences are materialized. **The app still always reads this as `[]`**: issue #9 materializes `projected` rows, but nothing creates a `confirmed` one yet — that is the occurrence editor (#15) or reconciliation (#26). This is not a bug — it is why the recurring-items editor's "Predict from deposits" toggle stays disabled (`canPredict([])` is false) until one of those lands |
+| `RecurringItem.depositHistory` | *derived* | `public.recent_settled_amounts()`: each rule's most recent `occurrences.actual_amount_cents where status = 'confirmed'`, at most `user_settings.prediction_window` per rule, oldest first by `projected_date`, turned into magnitudes by the rule's kind (`withSettledHistory`, `app/lib/supabase/occurrences.ts`). No array column — this is why occurrences are materialized. Nothing in the app creates a `confirmed` row yet — that is reconciliation (#26) — so this is usually `[]`, and an estimated rule falls back to its own `amount_cents`. See [Estimated amounts](#estimated-amounts) |
+| `useRunwayData` (`HouseholdSettings.predictionWindow`) | `user_settings.prediction_window` | a *stored preference*, not a field on `RunwayData`: the seam applies it when it builds `depositHistory`, and the engine never reads it |
 | `Transfer.date` | `transfers.occurs_on` | |
 | `Transfer.createdAt` | `transfers.created_at` | epoch ms at the mapping edge; only ever a same-day tie-breaker |
 | `RunwayData.safetyCushion` | `user_settings.cushion_cents` | |
