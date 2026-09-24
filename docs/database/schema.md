@@ -613,7 +613,14 @@ the rule's most recent settled amounts — at least two, at most
   `public.recent_settled_amounts()` returns each rule's last N confirmed rows
   (`row_number() over (partition by rule_id order by projected_date desc)`),
   because PostgREST cannot express a per-group limit and an unbounded read of
-  every confirmed row would eventually meet `max_rows`. `security invoker`,
+  every confirmed row would eventually meet `max_rows`. Rows whose sign
+  contradicts the rule's kind are filtered *before* ranking, so they cannot
+  take a window slot from a valid older amount, and rules that ended more than
+  90 days ago are left out, so the rules apply-to-future splits leave behind
+  do not grow the result without bound
+  (`supabase/migrations/20260924030000_recent_settled_amounts_bounds.sql`).
+  The bound is `prediction_window` × (live rules + rules ended in the last 90
+  days). `security invoker`,
   no user parameter: RLS on `occurrences` is what scopes it, and
   `tests/integration/income-prediction.test.ts` proves one user's rows never
   reach another's estimate.
