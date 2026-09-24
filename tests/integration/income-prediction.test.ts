@@ -271,6 +271,48 @@ describe.skipIf(LOCAL_STACK === null)('income prediction from settled history (#
     }
   })
 
+  it('does not let an amount of the wrong sign take a place in the window', async () => {
+    // Window 3. The three most recent confirmed rows include a clawback
+    // recorded against the paycheck; it cannot be a deposit, and it must not
+    // push the valid 2,450 before it out of the window.
+    const seeded = await seedRule(userB)
+    await settle(userB, seeded, [
+      { date: '2026-06-05', actual: toMinorUnits(2_450) },
+      { date: '2026-06-19', actual: toMinorUnits(2_400) },
+      { date: '2026-07-03', actual: toMinorUnits(-50) },
+      { date: '2026-07-17', actual: toMinorUnits(2_500) },
+    ])
+    const rows = (await recentSettled(userB)).filter((row) => row.rule_id === seeded.ruleId)
+    expect(rows.map((row) => row.projected_date)).toEqual([
+      '2026-06-05',
+      '2026-06-19',
+      '2026-07-17',
+    ])
+    expect(await projectedEstimate(userB, seeded.ruleId)).toBe(toMinorUnits(2_450))
+  })
+
+  it('leaves out rules that ended more than 90 days ago, and keeps recently ended ones', async () => {
+    const longEnded = await seedRule(userB, {
+      nextOccurrence: '2025-01-03',
+      endsOn: '2025-06-30',
+    })
+    await settle(userB, longEnded, [
+      { date: '2025-05-02', actual: toMinorUnits(2_400) },
+      { date: '2025-05-16', actual: toMinorUnits(2_500) },
+    ])
+    // Ended yesterday by any clock this test could run under.
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
+    const recentlyEnded = await seedRule(userB, {
+      nextOccurrence: '2025-01-03',
+      endsOn: yesterday,
+    })
+    await settle(userB, recentlyEnded, [{ date: '2025-05-02', actual: toMinorUnits(2_400) }])
+
+    const rows = await recentSettled(userB)
+    expect(rows.some((row) => row.rule_id === longEnded.ruleId)).toBe(false)
+    expect(rows.some((row) => row.rule_id === recentlyEnded.ruleId)).toBe(true)
+  })
+
   it('falls back to the stored amount with one settled occurrence, and with none', async () => {
     const none = await seedRule(userB)
     expect(await projectedEstimate(userB, none.ruleId)).toBe(toMinorUnits(2_000))

@@ -175,11 +175,19 @@ export function signedAmount(item: RecurringItem): MinorUnits {
  * (issue #18: "never present an estimate as if it were certain").
  *
  * An estimated rule's occurrence is an estimate until somebody states its
- * amount: a saved or previewed override (`isOverridden`) is the user's own
- * figure and wins over the estimate, so it is no longer marked as one.
+ * amount: a saved or previewed override that *changed the amount* is the
+ * user's own figure and wins over the estimate, so it is no longer marked.
+ * An override that only moved the day carries the rule's amount along
+ * unchanged (`amount === projectedAmount`) — the user said nothing about the
+ * figure, so it is still the estimate and stays marked. (The stored override
+ * does freeze that figure: if the estimate later moves, the two part and the
+ * marker goes with it. `override_occurrence` always stores an amount; that is
+ * #15's contract, and the reason this check is on equality rather than on
+ * `newDate`.)
  */
 export function isEstimated(occurrence: Occurrence): boolean {
-  return !occurrence.isOverridden && (occurrence.isPredicted || occurrence.isVariable)
+  if (!occurrence.isPredicted && !occurrence.isVariable) return false
+  return !occurrence.isOverridden || occurrence.amount === occurrence.projectedAmount
 }
 
 function accountsFor(data: RunwayData, accountIds: readonly string[] | undefined): Account[] {
@@ -220,8 +228,10 @@ export function occurrencesIn(data: RunwayData, window: ProjectionWindow): Occur
   const occurrences: Occurrence[] = []
   for (const item of data.recurringItems) {
     if (!included.has(item.accountId)) continue
+    // Once per rule, not per date: it averages the rule's history (#18), and
+    // the answer is the same for every occurrence it expands to.
+    const amount = signedAmount(item)
     for (const date of occurrenceDates(item, expandStart, expandEnd)) {
-      const amount = signedAmount(item)
       occurrences.push({
         id: `${item.id}@${date}`,
         itemId: item.id,

@@ -53,6 +53,7 @@ import { discardPrompt } from '@/lib/what-if'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
 import type { OverrideScope } from '~~/domain/overrides'
+import { isEstimating } from '~~/domain/prediction'
 import type { Occurrence } from '~~/domain/projection'
 import type { Account, RecurringItem } from '~~/domain/types'
 
@@ -218,13 +219,14 @@ const editedSummary = computed(() => {
 const futureConsequence = computed(() => {
   const occurrence = editing.value
   if (!occurrence || form.scope !== 'future') return null
-  const cadence = props.recurringItemsById.get(occurrence.itemId)?.cadence
-  if (!cadence) return null
+  const item = props.recurringItemsById.get(occurrence.itemId)
+  if (!item) return null
   return splitConsequence({
     label: occurrence.label,
-    cadence,
+    cadence: item.cadence,
     effectiveFrom: occurrence.projectedDate,
     amount: form.amount,
+    estimating: isEstimating(item),
   })
 })
 

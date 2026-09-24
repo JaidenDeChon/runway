@@ -4,6 +4,17 @@ import { toMinorUnits } from '~~/domain/money'
 import { occurrenceKey, overrideSummary, splitConsequence } from './occurrence-editor'
 
 describe('splitConsequence', () => {
+  it('says the estimate stops when the rule is estimated (#18), and only then', () => {
+    const base = {
+      label: 'Paycheck',
+      cadence: 'biweekly' as const,
+      effectiveFrom: '2026-09-01',
+      amount: toMinorUnits(2_450),
+    }
+    expect(splitConsequence({ ...base, estimating: true })).toContain('no longer estimated')
+    expect(splitConsequence(base)).not.toContain('estimated')
+  })
+
   it('names the label, the new amount, the cadence and the effective date', () => {
     const text = splitConsequence({
       label: 'Rent',

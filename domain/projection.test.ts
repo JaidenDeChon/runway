@@ -120,6 +120,33 @@ describe('estimated occurrences (#18)', () => {
     expect(edited && isEstimated(edited)).toBe(false)
   })
 
+  it('a retime that leaves the amount alone is still an estimate', () => {
+    const estimated = item({
+      id: 'pay',
+      kind: 'income',
+      amountSource: 'predicted',
+      depositHistory: history,
+    })
+    const [moved] = occurrencesIn(
+      data({
+        recurringItems: [estimated],
+        occurrenceOverrides: [
+          {
+            itemId: 'pay',
+            date: '2026-08-20',
+            scope: 'once',
+            amount: toMinorUnits(650),
+            newDate: '2026-08-21',
+          },
+        ],
+      }),
+      window,
+    )
+    expect(moved?.isOverridden).toBe(true)
+    expect(moved?.date).toBe('2026-08-21')
+    expect(moved && isEstimated(moved)).toBe(true)
+  })
+
   it('never marks a fixed rule as estimated', () => {
     const [fixed] = occurrencesIn(data({ recurringItems: [item()] }), window)
     expect(fixed && isEstimated(fixed)).toBe(false)

@@ -175,7 +175,18 @@ const namePlaceholder = computed(() =>
   form.type === 'bill' ? 'e.g. Electric & water' : 'e.g. Paycheck',
 )
 
-const canPredictHistory = computed(() => canPredict(form.depositHistory))
+/**
+ * The settled history that applies to the item *as the form now describes
+ * it*. History is sign-filtered by kind on the way in (`settledMagnitude`,
+ * and again in `recent_settled_amounts()`), so a bill's history means
+ * nothing once the tab says Income, or vice versa — carrying it across would
+ * preview an estimate the saved item will never project.
+ */
+const history = computed<readonly MinorUnits[]>(() =>
+  props.item && props.item.kind === form.type ? form.depositHistory : [],
+)
+
+const canPredictHistory = computed(() => canPredict(history.value))
 
 /**
  * A preview of the amount the engine will project for this item — the same
@@ -193,7 +204,7 @@ const predictedAmount = computed(() =>
     accountId: form.accountId,
     nextOccurrence: form.nextOccurrence,
     amountSource: form.amountSource,
-    depositHistory: form.depositHistory,
+    depositHistory: history.value,
     isVariable: form.isVariable,
   }),
 )
@@ -214,6 +225,20 @@ const variableEstimate = computed(() =>
     ? formatMoney(predictedAmount.value)
     : null,
 )
+
+/**
+ * Leaving prediction for a fixed amount keeps the figure the user has been
+ * looking at. The stored amount is only the fallback — possibly the months-old
+ * figure the item was created with — so without this, choosing "Fixed amount"
+ * to lock in today's estimate would silently lock in something else. Before
+ * #18 the stored amount *was* the estimate, which is the behaviour this keeps.
+ */
+function onAmountSource(next: AmountSource): void {
+  if (form.amountSource === 'predicted' && next === 'fixed' && canPredictHistory.value) {
+    form.amount = predictedAmount.value
+  }
+  form.amountSource = next
+}
 
 async function onSave(): Promise<void> {
   if (!isValid.value) return
@@ -372,7 +397,7 @@ async function onDelete(): Promise<void> {
           :class="cn(SEGMENTED_TRACK, 'w-full gap-0')"
           :model-value="form.amountSource"
           aria-label="Amount source"
-          @update:model-value="(value) => value && (form.amountSource = value as AmountSource)"
+          @update:model-value="(value) => value && onAmountSource(value as AmountSource)"
         >
           <ToggleGroupItem
             value="fixed"
@@ -396,7 +421,7 @@ async function onDelete(): Promise<void> {
       <PredictedAmountPanel
         v-if="showPredictedPanel"
         :predicted="predictedAmount"
-        :deposit-count="form.depositHistory.length"
+        :deposit-count="history.length"
         :next-occurrence="form.nextOccurrence"
         @update:next-occurrence="(value) => (form.nextOccurrence = value)"
       />
@@ -425,7 +450,8 @@ async function onDelete(): Promise<void> {
             Shows as an estimate, like a utility bill. Update it as real amounts come in.
             <template v-if="variableEstimate">
               Currently estimated at {{ variableEstimate }} from your last
-              {{ form.depositHistory.length }} bills.
+              {{ history.length }} bills; the amount above is only used while there are
+              fewer than {{ MIN_DEPOSITS_FOR_PREDICTION }}.
             </template>
           </p>
         </div>

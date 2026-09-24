@@ -58,12 +58,19 @@ export function splitConsequence(input: {
   readonly cadence: Cadence
   readonly effectiveFrom: IsoDate
   readonly amount: MinorUnits
+  /**
+   * Issue #18: the rule is estimated (predicted income or a variable bill).
+   * `split_recurring_rule` pins the new schedule to the amount given, so the
+   * sentence has to say the estimate stops — it is not guessable otherwise.
+   */
+  readonly estimating?: boolean
 }): string {
   const closesOn = addDays(input.effectiveFrom, -1)
   return (
     `Every ${input.label} from ${formatDateShort(input.effectiveFrom)} becomes ` +
     `${formatMoney(input.amount)} ${CADENCE_ADVERB[input.cadence]}. The current schedule closes ` +
-    `${formatDateShort(closesOn)}; past occurrences are kept.`
+    `${formatDateShort(closesOn)}; past occurrences are kept.` +
+    (input.estimating ? ' From then on this is a fixed amount, no longer estimated.' : '')
   )
 }
 
