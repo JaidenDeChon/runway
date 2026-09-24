@@ -15,10 +15,19 @@
  *   occurrence'") but issue #8 requires as a first-class verb — ending a rule
  *   stops future occurrences without erasing past ones.
  *
- * Predicted income is resolved by `useRunwayData().saveRecurringItem` at save
- * time — this form only *previews* the predicted figure, via the same
- * `resolveAmount` the store calls, so the preview and the saved value can
- * never disagree.
+ * Estimates are resolved live by the engine from the rule's settled history
+ * (issue #18, `domain/prediction.ts`) — this form only *previews* the figure,
+ * through the same `resolveAmount` the engine calls, so the preview and what
+ * the dashboard projects can never disagree. The Amount field is always the
+ * user's own figure, saved as-is: it is what the estimate falls back to while
+ * there is too little history.
+ *
+ * Issue #18 also answers the spec's open question 5 ("decide what 'Predict
+ * from deposits' should do before any history exists") with the second of
+ * the two options it offers — a "not enough history yet" state — rather than
+ * the disabled toggle #8 shipped: choosing prediction before any deposit has
+ * settled is what lets the estimate take over on its own once they do. Until
+ * then the Amount field stays visible, because it is the amount in use.
  *
  * Every write is async and can fail — a dropped connection, an expired
  * session — so `saving`/`deleting` disable the buttons and a failure renders
@@ -43,7 +52,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useRunwayData } from '@/composables/useRunwayData'
 import { useToday } from '@/composables/useToday'
-import { formatCadence } from '@/lib/format'
+import { formatCadence, formatMoney } from '@/lib/format'
 import { SEGMENTED_SEGMENT, SEGMENTED_TRACK } from '@/lib/segmented-control'
 import { cn } from '@/lib/utils'
 import { nextOccurrenceOnOrAfter } from '~~/domain/cadence'
@@ -169,8 +178,10 @@ const namePlaceholder = computed(() =>
 const canPredictHistory = computed(() => canPredict(form.depositHistory))
 
 /**
- * A preview of what save would resolve to — reads through the same domain
- * function the store uses, so this can never drift from the saved figure.
+ * A preview of the amount the engine will project for this item — the same
+ * domain function `signedAmount` calls, so this can never drift from what the
+ * dashboard shows. Covers both estimated kinds: predicted income and a
+ * variable bill.
  */
 const predictedAmount = computed(() =>
   resolveAmount({
@@ -187,8 +198,21 @@ const predictedAmount = computed(() =>
   }),
 )
 
+/** Predicted income with enough history: the design's predicted panel replaces the Amount field. */
 const showPredictedPanel = computed(
-  () => form.type === 'income' && form.amountSource === 'predicted',
+  () => form.type === 'income' && form.amountSource === 'predicted' && canPredictHistory.value,
+)
+
+/** Predicted income without enough history yet: the Amount field stays, as the figure in use. */
+const awaitingHistory = computed(
+  () => form.type === 'income' && form.amountSource === 'predicted' && !canPredictHistory.value,
+)
+
+/** A variable bill with enough history to estimate from. Formatted here, at the edge. */
+const variableEstimate = computed(() =>
+  form.type === 'bill' && form.isVariable && canPredictHistory.value
+    ? formatMoney(predictedAmount.value)
+    : null,
 )
 
 async function onSave(): Promise<void> {
@@ -358,15 +382,14 @@ async function onDelete(): Promise<void> {
           </ToggleGroupItem>
           <ToggleGroupItem
             value="predicted"
-            :disabled="!canPredictHistory"
-            :title="canPredictHistory ? undefined : 'Not enough deposit history yet'"
             :class="cn(SEGMENTED_SEGMENT, 'h-11 flex-1 text-sm font-medium')"
           >
             Predict from deposits
           </ToggleGroupItem>
         </ToggleGroup>
-        <p v-if="!canPredictHistory" class="text-xs text-muted-foreground">
-          Needs at least {{ MIN_DEPOSITS_FOR_PREDICTION }} recorded deposits before Runway can predict this amount.
+        <p v-if="awaitingHistory" class="text-xs text-muted-foreground">
+          Not enough deposit history yet. Runway uses the amount below until
+          {{ MIN_DEPOSITS_FOR_PREDICTION }} deposits have landed, then estimates from them.
         </p>
       </div>
 
@@ -400,6 +423,10 @@ async function onDelete(): Promise<void> {
           <Label for="recurring-variable" class="leading-snug">Amount varies each cycle</Label>
           <p id="recurring-variable-help" class="text-xs text-muted-foreground">
             Shows as an estimate, like a utility bill. Update it as real amounts come in.
+            <template v-if="variableEstimate">
+              Currently estimated at {{ variableEstimate }} from your last
+              {{ form.depositHistory.length }} bills.
+            </template>
           </p>
         </div>
       </div>

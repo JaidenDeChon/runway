@@ -12,14 +12,20 @@
  * text, so it is announced, not a colour-only telling) plus a "moved from"
  * line when the edit also retimed the day. Used by both the Upcoming list and
  * `DayDetailEditor`'s own item list, so both get the marking for free.
+ *
+ * Issue #18: an estimated amount (predicted income, a variable bill) gets an
+ * `Est.` badge instead — never both, because an edit is the user's own figure
+ * and is no longer an estimate (`domain/projection.ts` `isEstimated`).
  */
 import { ChevronRight } from '@lucide/vue'
 import AccountSwatch from '@/components/AccountSwatch.vue'
+import EstimateBadge from '@/components/EstimateBadge.vue'
 import MoneyText from '@/components/MoneyText.vue'
 import { Badge } from '@/components/ui/badge'
 import { formatDateShort } from '@/lib/format'
 import type { IsoDate } from '~~/domain/dates'
 import type { Occurrence } from '~~/domain/projection'
+import { isEstimated } from '~~/domain/projection'
 import type { AccountColor } from '~~/domain/types'
 
 const props = withDefaults(
@@ -54,6 +60,7 @@ defineEmits<{ select: [] }>()
         <Badge v-if="props.occurrence.isOverridden" variant="outline" class="shrink-0">
           Edited
         </Badge>
+        <EstimateBadge v-else-if="isEstimated(props.occurrence)" />
       </span>
       <span class="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
         <AccountSwatch :color="props.accountColor" size="sm" />

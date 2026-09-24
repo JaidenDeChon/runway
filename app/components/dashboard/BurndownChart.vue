@@ -46,6 +46,7 @@ import { cn } from '@/lib/utils'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
 import type { DayPoint, LowestPoint, Occurrence, RunwayStatus } from '~~/domain/projection'
+import { isEstimated } from '~~/domain/projection'
 
 const props = defineProps<{
   days: readonly IsoDate[]
@@ -303,7 +304,7 @@ const announcement = computed(() => {
   const events = tooltipOccurrences.value
     .map(
       (occurrence) =>
-        `${occurrence.label} ${formatMoney(occurrence.amount)}${occurrence.isOverridden ? ' (edited)' : ''}`,
+        `${occurrence.label} ${formatMoney(occurrence.amount)}${occurrence.isOverridden ? ' (edited)' : isEstimated(occurrence) ? ' (estimated)' : ''}`,
     )
     .join(', ')
   const day = activeLabel.value
@@ -641,7 +642,7 @@ function onFocus(): void {
             class="mt-1 flex items-center gap-2 text-xs"
           >
             <span class="min-w-0 flex-1 truncate">
-              {{ occurrence.label }}<span v-if="occurrence.isOverridden" class="text-muted-foreground"> (edited)</span>
+              {{ occurrence.label }}<span v-if="occurrence.isOverridden" class="text-muted-foreground"> (edited)</span><span v-else-if="isEstimated(occurrence)" class="text-muted-foreground"> (estimated)</span>
             </span>
             <MoneyText :amount="occurrence.amount" signed colored size="sm" />
           </div>

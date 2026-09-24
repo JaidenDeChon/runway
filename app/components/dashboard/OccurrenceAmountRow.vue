@@ -42,6 +42,7 @@
  */
 import { ChevronRight } from '@lucide/vue'
 import AccountSwatch from '@/components/AccountSwatch.vue'
+import EstimateBadge from '@/components/EstimateBadge.vue'
 import MoneyInput from '@/components/MoneyInput.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -62,6 +63,7 @@ import { cn } from '@/lib/utils'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
 import type { Occurrence } from '~~/domain/projection'
+import { isEstimated } from '~~/domain/projection'
 import type { AccountColor } from '~~/domain/types'
 
 const props = defineProps<{
@@ -178,6 +180,10 @@ function onReset(): void {
           >
             Edited
           </Badge>
+          <!-- Issue #18: the third fact — the figure in the field is an
+               estimate. Last in the chain because a preview or an edit is the
+               user's own figure and stops being one. -->
+          <EstimateBadge v-else-if="isEstimated(props.occurrence)" />
         </span>
         <span class="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <AccountSwatch :color="props.accountColor" size="sm" />
