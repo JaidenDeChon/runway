@@ -50,6 +50,17 @@
  * accounts, recurring items and their occurrences. What-if's preview list is
  * untouched: nothing about issue #15 changes that a preview never persists.
  *
+ * Issue #18 gave predicted income and variable bills a history: a seventh
+ * read, `recent_settled_amounts()`, returns each rule's most recent settled
+ * (`status = 'confirmed'`) occurrence amounts, at most
+ * `user_settings.prediction_window` per rule, and `withSettledHistory`
+ * attaches them as `RecurringItem.depositHistory`. The engine resolves the
+ * estimate from that live (`domain/prediction.ts`); `saveRecurringItem` no
+ * longer freezes it into `amount_cents`, which stays the user's own figure
+ * and the fallback. Nothing in the app creates a confirmed occurrence yet —
+ * that is reconciliation (#26) — so until then the history is whatever was
+ * settled some other way, and usually empty.
+ *
  * This file is the seam. Every mutation lives here so a screen never reaches
  * around it to talk to Supabase directly, and RLS — not this file — is what
  * actually stops a cross-user read or write; see `docs/auth.md` and
@@ -81,6 +92,7 @@ import {
   toRegenerationArgs,
   toRevertArgs,
   toSplitArgs,
+  withSettledHistory,
 } from '@/lib/supabase/occurrences'
 import {
   RECURRING_RULE_COLUMNS,
@@ -94,7 +106,6 @@ import type { IsoDate } from '~~/domain/dates'
 import { desiredOccurrences, materializationWindow } from '~~/domain/materialization'
 import type { MinorUnits } from '~~/domain/money'
 import type { StoredOccurrenceOverride } from '~~/domain/overrides'
-import { resolveAmount } from '~~/domain/prediction'
 import type { Account, BalanceSnapshot, RecurringItem, RunwayData, Transfer } from '~~/domain/types'
 
 export type { AccountDraft, RecurringItemDraft }
@@ -168,6 +179,7 @@ export function useRunwayData() {
         hiddenAccountsResult,
         balanceHistoryResult,
         occurrenceOverridesResult,
+        settledAmountsResult,
       ] = await Promise.all([
         client
           .from('accounts')
@@ -214,6 +226,13 @@ export function useRunwayData() {
           .eq('is_overridden', true)
           .eq('status', 'projected')
           .order('projected_date', { ascending: true }),
+        // Issue #18: each rule's most recent settled amounts, already limited
+        // to the user's `prediction_window` per rule inside the function —
+        // PostgREST cannot express a per-group limit, and an unbounded read
+        // of every confirmed row would eventually meet `max_rows`. A function
+        // rather than a second direct table read, so the overlay read
+        // above stays this file's only direct read of the table.
+        client.rpc('recent_settled_amounts'),
       ])
       // The database's own error message can name columns, constraints and
       // policies. It goes nowhere near the UI, and nothing but the code is
@@ -246,13 +265,21 @@ export function useRunwayData() {
         })
         throw new Error('load-failed')
       }
+      if (settledAmountsResult.error) {
+        console.error('settled history read failed', { code: settledAmountsResult.error.code })
+        throw new Error('load-failed')
+      }
       const settings = toHouseholdSettings(settingsResult.data)
       return {
         hiddenAccountIds: toHiddenAccountIds(hiddenAccountsResult.data),
         accounts: (accountsResult.data ?? []).map((row) =>
           toAccount(row, settings.discretionaryAccountId),
         ),
-        recurringItems: (recurringRulesResult.data ?? []).map(toRecurringItem),
+        recurringItems: withSettledHistory(
+          (recurringRulesResult.data ?? []).map(toRecurringItem),
+          settledAmountsResult.data,
+          settings.predictionWindow,
+        ),
         balanceHistory: toBalanceHistory(balanceHistoryResult.data),
         occurrenceOverrides: (occurrenceOverridesResult.data ?? []).map(toOccurrenceOverride),
         settings,
@@ -717,13 +744,12 @@ export function useRunwayData() {
     today: IsoDate,
   ): Promise<RecurringItem> {
     const userId = requireUserId()
-    // Prediction is resolved at save time, not at render time, so the row and
-    // the projection always read one stored figure. `resolveAmount` reads
-    // `depositHistory` and `id`; a brand-new draft has neither yet, and an
-    // unresolved id doesn't change what a fixed or already-predicted amount
-    // resolves to.
-    const amount = resolveAmount({ ...draft, id: draft.id ?? '' })
-    const columns = toRecurringRuleColumns({ ...draft, amount })
+    // The typed amount is stored as-is, even for predicted income or a
+    // variable bill (issue #18): it is the fallback the estimate gives way
+    // to while history is thin, and the engine resolves the estimate live
+    // from `depositHistory` (`domain/prediction.ts`). Freezing the estimate
+    // in here — what this did before #18 — would overwrite that fallback.
+    const columns = toRecurringRuleColumns(draft)
 
     const { data: saved, error: saveError } = draft.id
       ? await client

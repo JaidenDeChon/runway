@@ -11,13 +11,19 @@
  * `tests/guards/occurrence-write-sites.test.ts` enforces that
  * `useRunwayData.ts` is the only caller of all four RPCs, and that the one
  * read this file's mapper feeds is a `.select(`, never an `.update(`/`.delete(`.
+ * Issue #18 adds `withSettledHistory`, which turns
+ * `recent_settled_amounts()` into each rule's `depositHistory` — a read-only
+ * RPC, held to the same one-call-site rule by that guard.
  */
 
 import type { Database } from '#shared/supabase/database.types'
 import type { IsoDate } from '~~/domain/dates'
+import { compareDates } from '~~/domain/dates'
 import type { DesiredOccurrence, MaterializationWindow } from '~~/domain/materialization'
 import type { MinorUnits } from '~~/domain/money'
 import type { StoredOccurrenceOverride } from '~~/domain/overrides'
+import { recentHistory, settledMagnitude } from '~~/domain/prediction'
+import type { RecurringItem } from '~~/domain/types'
 
 export type OccurrenceRow = Database['public']['Tables']['occurrences']['Row']
 
@@ -153,4 +159,48 @@ export function toSplitArgs(args: {
     p_effective_from: args.effectiveFrom,
     p_amount_cents: args.amount,
   }
+}
+
+/** One row of `public.recent_settled_amounts()` (issue #18). */
+export type SettledAmountRow =
+  Database['public']['Functions']['recent_settled_amounts']['Returns'][number]
+
+/**
+ * Attaches each rule's settled history to it, as `RecurringItem.depositHistory`
+ * — the read half of issue #18.
+ *
+ * `rows` come from `recent_settled_amounts()`, which already limits each rule
+ * to the user's window; `recentHistory` applies `window` again here anyway, so
+ * the domain's own bound holds even if the function's ever drifts from it.
+ * Rows are re-sorted rather than trusted to arrive oldest first, their signed
+ * amounts are turned into magnitudes by the rule's kind (`settledMagnitude`,
+ * which drops anything that cannot be a deposit or a payment of this rule),
+ * and a row naming a rule not in `items` is ignored — the same stance
+ * `RunwayData.balanceHistory` takes for a reading naming an unknown account.
+ *
+ * No arithmetic on amounts beyond the sign: averaging is `resolveAmount`'s.
+ */
+export function withSettledHistory(
+  items: readonly RecurringItem[],
+  rows: readonly SettledAmountRow[] | null,
+  window: number,
+): RecurringItem[] {
+  if (!rows || rows.length === 0) return [...items]
+
+  const byRule = new Map<string, SettledAmountRow[]>()
+  for (const row of rows) {
+    const list = byRule.get(row.rule_id)
+    if (list) list.push(row)
+    else byRule.set(row.rule_id, [row])
+  }
+
+  return items.map((item) => {
+    const settled = byRule.get(item.id)
+    if (!settled) return item
+    const magnitudes = [...settled]
+      .sort((a, b) => compareDates(a.projected_date, b.projected_date))
+      .map((row) => settledMagnitude(item.kind, row.actual_amount_cents))
+      .filter((amount): amount is MinorUnits => amount !== null)
+    return { ...item, depositHistory: recentHistory(magnitudes, window) }
+  })
 }

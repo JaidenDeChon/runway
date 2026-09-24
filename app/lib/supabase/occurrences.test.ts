@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { DesiredOccurrence, MaterializationWindow } from '~~/domain/materialization'
+import type { RecurringItem } from '~~/domain/types'
 import {
   type SelectedOccurrenceRow,
+  type SettledAmountRow,
   toOccurrenceOverride,
   toOverrideArgs,
   toRegenerationArgs,
   toRevertArgs,
   toSplitArgs,
+  withSettledHistory,
 } from './occurrences'
 
 const window: MaterializationWindow = { start: '2026-06-05', end: '2027-09-03' }
@@ -166,5 +169,68 @@ describe('toSplitArgs', () => {
       p_effective_from: '2026-09-01',
       p_amount_cents: 175_000,
     })
+  })
+})
+
+describe('withSettledHistory (#18)', () => {
+  const rule = (over: Partial<RecurringItem> = {}): RecurringItem => ({
+    id: 'pay',
+    name: 'Paycheck',
+    kind: 'income',
+    amount: 200_000,
+    cadence: 'biweekly',
+    accountId: 'acct',
+    nextOccurrence: '2026-08-21',
+    amountSource: 'predicted',
+    depositHistory: [],
+    isVariable: false,
+    ...over,
+  })
+  const settled = (over: Partial<SettledAmountRow> = {}): SettledAmountRow => ({
+    rule_id: 'pay',
+    projected_date: '2026-08-07',
+    actual_amount_cents: 245_000,
+    ...over,
+  })
+
+  it('leaves every item untouched when there is no history — the common case at launch', () => {
+    const items = [rule()]
+    expect(withSettledHistory(items, [], 3)).toEqual(items)
+    expect(withSettledHistory(items, null, 3)).toEqual(items)
+  })
+
+  it('attaches each rule its own settled amounts, oldest first, whatever order they arrive in', () => {
+    const [pay, rent] = withSettledHistory(
+      [rule(), rule({ id: 'rent', kind: 'bill', amountSource: 'fixed', isVariable: true })],
+      [
+        settled({ projected_date: '2026-08-21', actual_amount_cents: 250_000 }),
+        settled({ rule_id: 'rent', projected_date: '2026-08-01', actual_amount_cents: -14_000 }),
+        settled({ projected_date: '2026-08-07', actual_amount_cents: 240_000 }),
+      ],
+      3,
+    )
+    expect(pay?.depositHistory).toEqual([240_000, 250_000])
+    // A bill's settled amount is signed negative; history holds magnitudes.
+    expect(rent?.depositHistory).toEqual([14_000])
+  })
+
+  it('applies the window even if the function returned more than it should have', () => {
+    const rows = ['2026-06-01', '2026-06-15', '2026-07-01', '2026-07-15'].map((date, index) =>
+      settled({ projected_date: date, actual_amount_cents: (index + 1) * 100_000 }),
+    )
+    const [pay] = withSettledHistory([rule()], rows, 2)
+    expect(pay?.depositHistory).toEqual([300_000, 400_000])
+  })
+
+  it('drops an amount whose sign contradicts the rule, and ignores rows for unknown rules', () => {
+    const [pay] = withSettledHistory(
+      [rule()],
+      [
+        settled({ actual_amount_cents: -5_000 }),
+        settled({ rule_id: 'someone-elses-rule', actual_amount_cents: 999_999 }),
+      ],
+      3,
+    )
+    expect(pay?.depositHistory).toEqual([])
   })
 })

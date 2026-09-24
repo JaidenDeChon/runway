@@ -47,11 +47,12 @@ export interface RecurringItemDraft extends Omit<RecurringItem, 'id'> {
 }
 
 /**
- * `depositHistory` is always read as `[]` — it is *derived*
+ * `depositHistory` is always read as `[]` here — it is *derived*
  * (`occurrences.actual_amount_cents where status = 'confirmed'`, per
- * `docs/database/schema.md`), not a column on this row. Occurrence
- * materialization is out of scope for issue #8, so the app cannot populate it
- * yet; this is honest about that rather than inventing a column.
+ * `docs/database/schema.md`), not a column on this row. Issue #18 attaches it
+ * afterwards, from a separate read: `useRunwayData` passes these items through
+ * `withSettledHistory` (`app/lib/supabase/occurrences.ts`) with the rows of
+ * `recent_settled_amounts()`.
  */
 export function toRecurringItem(row: SelectedRecurringRuleRow): RecurringItem {
   return {
