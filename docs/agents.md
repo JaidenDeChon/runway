@@ -22,6 +22,17 @@ high effort tier. Implementation follows a plan that has already made the
 decisions, so it goes to Sonnet. Anything that inverts that — Opus writing
 components, Sonnet choosing a data model — is a bug in how the work was routed.
 
+## The copy humanizer
+
+`copy-humanizer` is separate from the board. It rewrites the words in one file
+per run so they read like a person wrote them for someone who has never used
+Runway, using the vendored humanizer skill in `.claude/skills/humanizer/`. It
+keeps every fact, every string a design spec fixes, the sign-in copy whose
+wording is a security rule, and all code. `bun scripts/humanize-copy.ts` holds
+its queue and ledger and checks each rewrite; the `humanize-copy` skill runs it
+on a loop, over the app's UI by default or over the README and `docs/` with
+`docs`.
+
 ## Running the board
 
 Start or resume the runner:
