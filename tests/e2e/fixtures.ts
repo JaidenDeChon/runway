@@ -166,13 +166,16 @@ export async function assertSessionAuthenticates(session: BrowserSession): Promi
  * dashboard's stored horizon, (issue #13) the monthly discretionary figure,
  * or (issue #14) the safety cushion — both #13 and #14 are edited from
  * `/accounts` now (`DiscretionarySpendCard.vue`, `SafetyCushionCard.vue`).
- * Those last two matter beyond tidiness: a crashed "everyday spending" test
- * would otherwise leave D with a drain, and a crashed "safety cushion" test
- * would leave D's cushion at whatever figure that test typed — either way the
- * exact-figure verdict tests in `dashboard-states.spec.ts` ("Covered"/"$2,000",
- * "Tight"/"$700", "Short by $500", all measured against D's seeded $600
- * cushion) would then start failing for a reason that looks nothing like the
- * cause.
+ * The prediction window (issue #18) is edited there too, by
+ * `PredictionWindowCard.vue` in `settle-occurrence.spec.ts`; left at anything
+ * but its default 3, it would quietly change what every estimate averages.
+ * The discretionary figure and the cushion matter beyond tidiness: a crashed
+ * "everyday spending" test would otherwise leave D with a drain, and a crashed
+ * "safety cushion" test would leave D's cushion at whatever figure that test
+ * typed — either way the exact-figure verdict tests in
+ * `dashboard-states.spec.ts` ("Covered"/"$2,000", "Tight"/"$700", "Short by
+ * $500", all measured against D's seeded $600 cushion) would then start
+ * failing for a reason that looks nothing like the cause.
  */
 export async function resetEmptyHousehold(): Promise<void> {
   const sql = adminSql()
@@ -181,7 +184,7 @@ export async function resetEmptyHousehold(): Promise<void> {
     await sql`
       update public.user_settings
       set discretionary_account_id = null, balance_stale_after_days = 14, default_horizon_days = 30,
-          monthly_discretionary_cents = 0, cushion_cents = 60000
+          monthly_discretionary_cents = 0, cushion_cents = 60000, prediction_window = 3
       where user_id = ${USER_D.id}
     `
   } finally {
