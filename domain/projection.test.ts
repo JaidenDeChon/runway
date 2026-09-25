@@ -6,6 +6,7 @@ import {
   canAnswerShortfall,
   classifyMargin,
   evaluate,
+  isEstimated,
   laterTargetsMatter,
   occurrencesIn,
   project,
@@ -60,6 +61,132 @@ describe('signedAmount', () => {
       toMinorUnits(500),
     )
     expect(signedAmount(item({ kind: 'bill', amount: toMinorUnits(500) }))).toBe(toMinorUnits(-500))
+  })
+
+  it('uses the estimate for predicted income and variable bills with enough history (#18)', () => {
+    const history = [toMinorUnits(600), toMinorUnits(700)]
+    expect(
+      signedAmount(item({ kind: 'income', amountSource: 'predicted', depositHistory: history })),
+    ).toBe(toMinorUnits(650))
+    expect(signedAmount(item({ isVariable: true, depositHistory: history }))).toBe(
+      toMinorUnits(-650),
+    )
+    // A fixed rule carrying history ignores it.
+    expect(signedAmount(item({ depositHistory: history }))).toBe(toMinorUnits(-100))
+  })
+})
+
+describe('estimated occurrences (#18)', () => {
+  const window = { start: '2026-08-01', end: '2026-08-31' }
+  const history = [toMinorUnits(600), toMinorUnits(700)]
+
+  it('projects the estimate, marks it, and keeps the stored amount as the fallback', () => {
+    const estimated = item({
+      id: 'pay',
+      kind: 'income',
+      amountSource: 'predicted',
+      depositHistory: history,
+    })
+    const [withHistory] = occurrencesIn(data({ recurringItems: [estimated] }), window)
+    expect(withHistory?.amount).toBe(toMinorUnits(650))
+    expect(withHistory?.projectedAmount).toBe(toMinorUnits(650))
+    expect(withHistory && isEstimated(withHistory)).toBe(true)
+
+    const [thin] = occurrencesIn(
+      data({ recurringItems: [{ ...estimated, depositHistory: [toMinorUnits(900)] }] }),
+      window,
+    )
+    expect(thin?.amount).toBe(toMinorUnits(100))
+    expect(thin && isEstimated(thin)).toBe(true)
+  })
+
+  it('a stored override wins over the estimate and is no longer marked as one', () => {
+    const estimated = item({
+      id: 'pay',
+      kind: 'income',
+      amountSource: 'predicted',
+      depositHistory: history,
+    })
+    const [edited] = occurrencesIn(
+      data({
+        recurringItems: [estimated],
+        occurrenceOverrides: [
+          { itemId: 'pay', date: '2026-08-20', scope: 'once', amount: toMinorUnits(812) },
+        ],
+      }),
+      window,
+    )
+    expect(edited?.amount).toBe(toMinorUnits(812))
+    expect(edited && isEstimated(edited)).toBe(false)
+  })
+
+  it('a retime that leaves the amount alone is still an estimate', () => {
+    const estimated = item({
+      id: 'pay',
+      kind: 'income',
+      amountSource: 'predicted',
+      depositHistory: history,
+    })
+    const [moved] = occurrencesIn(
+      data({
+        recurringItems: [estimated],
+        occurrenceOverrides: [
+          {
+            itemId: 'pay',
+            date: '2026-08-20',
+            scope: 'once',
+            amount: toMinorUnits(650),
+            newDate: '2026-08-21',
+          },
+        ],
+      }),
+      window,
+    )
+    expect(moved?.isOverridden).toBe(true)
+    expect(moved?.date).toBe('2026-08-21')
+    expect(moved && isEstimated(moved)).toBe(true)
+  })
+
+  it('a settled occurrence is never an estimate, even at exactly the estimated figure (#26)', () => {
+    const estimated = item({
+      id: 'pay',
+      kind: 'income',
+      amountSource: 'predicted',
+      depositHistory: history,
+    })
+    const [settled] = occurrencesIn(
+      data({
+        recurringItems: [estimated],
+        occurrenceOverrides: [
+          {
+            itemId: 'pay',
+            date: '2026-08-20',
+            scope: 'once',
+            amount: toMinorUnits(650),
+            newDate: '2026-08-20',
+            settled: true,
+          },
+        ],
+      }),
+      window,
+    )
+    expect(settled?.isSettled).toBe(true)
+    expect(settled?.amount).toBe(settled?.projectedAmount)
+    expect(settled && isEstimated(settled)).toBe(false)
+  })
+
+  it('never marks a fixed rule as estimated', () => {
+    const [fixed] = occurrencesIn(data({ recurringItems: [item()] }), window)
+    expect(fixed && isEstimated(fixed)).toBe(false)
+  })
+
+  it('moves the projection by the estimate, not by the stored amount', () => {
+    const variable = item({
+      isVariable: true,
+      depositHistory: [toMinorUnits(300), toMinorUnits(500)],
+    })
+    const result = project(data({ recurringItems: [variable] }), window)
+    expect(result.combined.at(-1)?.balance).toBe(toMinorUnits(1000 - 400))
   })
 })
 
@@ -543,6 +670,26 @@ describe('upcomingBills', () => {
   it('is sorted by date ascending', () => {
     const dates = upcomingBills(seeded, SEED_TODAY).map((bill) => bill.date)
     expect([...dates].sort()).toEqual(dates)
+  })
+
+  it('says which bills are estimates, from the occurrence they came from (#18)', () => {
+    const household = data({
+      recurringItems: [
+        item({ id: 'fixed', name: 'Rent', kind: 'bill' }),
+        item({
+          id: 'varies',
+          name: 'Electric',
+          kind: 'bill',
+          isVariable: true,
+          depositHistory: [toMinorUnits(80), toMinorUnits(120)],
+        }),
+      ],
+    })
+    const bills = upcomingBills(household, SEED_TODAY)
+    expect(bills.find((bill) => bill.itemId === 'fixed')?.isEstimated).toBe(false)
+    const variable = bills.find((bill) => bill.itemId === 'varies')
+    expect(variable?.isEstimated).toBe(true)
+    expect(variable?.amount).toBe(-toMinorUnits(100))
   })
 })
 

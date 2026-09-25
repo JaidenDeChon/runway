@@ -31,7 +31,9 @@ without infrastructure, and it is enforced rather than promised
 | `occurrencesIn(data, window)` | the individual events in a window, expanded from the rules |
 | `nextOccurrenceOnOrAfter(item, from, withinDays?)` | the first date on or after `from` a rule occurs, or `null` once it has ended (`domain/cadence.ts`) — what a list screen shows as "next", never the stored anchor |
 | `upcomingBills(data, today)` | the next occurrence of each bill ahead, for the shortfall screen's picker |
-| `signedAmount(item)` | the signed delta of a rule, so a screen never re-derives the sign from `kind` |
+| `signedAmount(item)` | the signed delta of a rule, so a screen never re-derives the sign from `kind` — the *resolved* amount, estimate included (see [Estimated amounts](#estimated-amounts)) |
+| `isEstimated(occurrence)` | whether an occurrence's amount is an estimate a screen must mark as one |
+| `resolveAmount(item)` / `recentHistory(history, window)` | the amount the engine uses for a rule, and the rolling window it averages (`domain/prediction.ts`) |
 | `classifyMargin(margin)` | the three-band verdict on its own |
 | `todayIn(zone, instant)` | which calendar day it is, in a zone (`domain/dates.ts`) |
 | `dailyDiscretionary(monthly, date)` | what discretionary spending costs on a day (`domain/discretionary.ts`) |
@@ -254,6 +256,58 @@ Three things worth being deliberate about:
 - **`daysBelow` excludes today.** Today's own status is already `firstBreach
   === today`; counting it again would let a household read as "short 181 of
   the next 180 days".
+
+## Estimated amounts
+
+Issue #18. Two kinds of rule are *estimated* rather than stated: income with
+`amountSource: 'predicted'`, and a bill with `isVariable`. For both,
+`resolveAmount` (`domain/prediction.ts`) returns the **rounded mean of
+`depositHistory`** when it holds at least `MIN_DEPOSITS_FOR_PREDICTION` (2)
+entries, and the rule's own `amount` otherwise. `signedAmount` calls it, and
+`signedAmount` is the only place the engine reads a rule's amount — so the
+chart, the verdict, the lists and `desiredOccurrences` all see the same
+figure.
+
+```ts
+const paycheck = { ...rule, kind: 'income', amount: 200_000, amountSource: 'predicted',
+  depositHistory: [240_000, 250_000] }
+signedAmount(paycheck)                                 // 245_000 — the estimate
+signedAmount({ ...paycheck, depositHistory: [260_000] }) // 200_000 — one deposit is not enough
+predictAmount(recentHistory([100, 100, 100, 400], 2))  // 250 — the window decides
+```
+
+- **`depositHistory` arrives already windowed.** It is the rule's most recent
+  settled amounts, at most the user's `prediction_window`, oldest first — the
+  app builds it (`withSettledHistory`) with `recentHistory`. `resolveAmount`
+  averages whatever it is given and does not know the window.
+- **Live, not stored.** The mean is never written back into `amount`, which
+  is the fallback. Do not "cache" the estimate into the rule.
+- **An override wins.** `isEstimated(occurrence)` is
+  `!isOverridden && (isPredicted || isVariable)`: the user's own figure for an
+  occurrence — saved or previewed — is not an estimate and is not marked as
+  one. A fixed-looking fallback amount *is* still marked: the user said the
+  amount varies.
+- **Settled is what happened.** A stored override with `settled: true`
+  (`occurrences.status = 'confirmed'`, "Mark as paid" / "Mark as received",
+  #26's manual half) is applied like any other and marks the occurrence
+  `isSettled`. `isEstimated` is always false for it, even when the settled
+  figure equals the estimate to the cent, and `applyOverrides` lets no later
+  override rewrite it — neither a what-if preview of that day nor an
+  apply-to-future preview sweeping across it. The same settled row is what
+  reaches `depositHistory`, which is how settling moves every later estimate.
+  `UpcomingBill.isEstimated` carries the same answer to the shortfall screen.
+- **The known failure mode is an outlier.** A plain mean is pulled by a
+  single unusual amount — a bonus, a partial final paycheck, a winter heating
+  bill — by `(outlier − typical) / window`, for exactly as many cycles as it
+  stays inside the window, and then not at all. The rolling window is what
+  bounds it; with the default of 3, a one-off distorts three estimates. A
+  median would ignore a lone outlier but would also ignore a genuine step
+  change (a raise) until it was the majority of the window, and the design
+  specifies a mean. Anomaly detection, trend fitting and seasonality are out
+  of scope for #18. `domain/prediction.test.ts` pins the ageing-out behaviour.
+- **Rounding** is half-up on the magnitude, so an income estimate is never
+  biased downwards and a bill estimate errs towards the larger bill — both the
+  cautious direction for a runway forecast.
 
 ## Rules worth knowing before you change anything
 

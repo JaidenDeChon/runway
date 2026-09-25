@@ -39,9 +39,9 @@
  * already reads the stored horizon and hidden set.
  *
  * Issue #15 gave the dashboard's day editor real persistence:
- * `RunwayData.occurrenceOverrides` comes from a sixth query, reading only the
- * `is_overridden = true, status = 'projected'` rows (a settled occurrence is
- * reconciliation's concern, #26, and stays inert here). `overrideOccurrence`,
+ * `RunwayData.occurrenceOverrides` comes from a sixth query, reading the
+ * `is_overridden = true, status = 'projected'` rows (and, since #26's manual
+ * half, the settled ones — see below). `overrideOccurrence`,
  * `revertOccurrence` and `splitRecurringItem` are its three new mutations,
  * calling `override_occurrence` / `revert_occurrence` / `split_recurring_rule`
  * (`supabase/migrations/20260913090000_occurrence_overrides_and_rule_split.sql`).
@@ -50,11 +50,31 @@
  * accounts, recurring items and their occurrences. What-if's preview list is
  * untouched: nothing about issue #15 changes that a preview never persists.
  *
+ * Issue #18 gave predicted income and variable bills a history: a seventh
+ * read, `recent_settled_amounts()`, returns each rule's most recent settled
+ * (`status = 'confirmed'`) occurrence amounts, at most
+ * `user_settings.prediction_window` per rule, and `withSettledHistory`
+ * attaches them as `RecurringItem.depositHistory`. The engine resolves the
+ * estimate from that live (`domain/prediction.ts`); `saveRecurringItem` no
+ * longer freezes it into `amount_cents`, which stays the user's own figure
+ * and the fallback.
+ *
+ * Issue #26's manual half is what fills that history: `settleOccurrence`
+ * ("Mark as paid" / "Mark as received" in the day editor) and
+ * `unsettleOccurrence` call `settle_occurrence` / `unsettle_occurrence`
+ * (`supabase/migrations/20260925010000_settle_occurrence.sql`). A settled row
+ * reaches the engine twice: through the overlay read, as an override marked
+ * `settled` that puts what actually happened on the chart, and through
+ * `recent_settled_amounts()`, as history that moves every later estimate.
+ * Matching imported transactions is #26's other half and waits on an import
+ * source (#22). `setPredictionWindow` is the window's writer.
+ *
  * This file is the seam. Every mutation lives here so a screen never reaches
  * around it to talk to Supabase directly, and RLS — not this file — is what
  * actually stops a cross-user read or write; see `docs/auth.md` and
  * `docs/database/rls.md`. `regenerateOccurrences`, `overrideOccurrence`,
- * `revertOccurrence` and `splitRecurringItem` must stay the only things in
+ * `revertOccurrence`, `settleOccurrence`, `unsettleOccurrence` and
+ * `splitRecurringItem` must stay the only things in
  * `app/` that write `public.occurrences` (directly or through a rule split),
  * and this file's own overlay read must stay the only read —
  * `tests/guards/occurrence-write-sites.test.ts` enforces both structurally.
@@ -80,7 +100,10 @@ import {
   toOverrideArgs,
   toRegenerationArgs,
   toRevertArgs,
+  toSettleArgs,
   toSplitArgs,
+  toUnsettleArgs,
+  withSettledHistory,
 } from '@/lib/supabase/occurrences'
 import {
   RECURRING_RULE_COLUMNS,
@@ -94,7 +117,7 @@ import type { IsoDate } from '~~/domain/dates'
 import { desiredOccurrences, materializationWindow } from '~~/domain/materialization'
 import type { MinorUnits } from '~~/domain/money'
 import type { StoredOccurrenceOverride } from '~~/domain/overrides'
-import { resolveAmount } from '~~/domain/prediction'
+import { MAX_PREDICTION_WINDOW, MIN_PREDICTION_WINDOW } from '~~/domain/prediction'
 import type { Account, BalanceSnapshot, RecurringItem, RunwayData, Transfer } from '~~/domain/types'
 
 export type { AccountDraft, RecurringItemDraft }
@@ -168,6 +191,7 @@ export function useRunwayData() {
         hiddenAccountsResult,
         balanceHistoryResult,
         occurrenceOverridesResult,
+        settledAmountsResult,
       ] = await Promise.all([
         client
           .from('accounts')
@@ -202,18 +226,33 @@ export function useRunwayData() {
           .from('balance_readings')
           .select(BALANCE_READING_COLUMNS)
           .order('as_of', { ascending: true }),
-        // The overlay read (issue #15): only the hand-edited, still-projected
-        // rows — a settled occurrence (`confirmed`/`skipped`) is
-        // reconciliation's concern (#26) and must stay inert here. One row
-        // per overridden occurrence, so this is never the table `occurrences`
-        // reads in bulk — `regenerate_occurrences` remains the only bulk
-        // reader/writer, over its own RPC connection.
+        // The overlay read (issue #15): the hand-edited, still-projected
+        // rows, and — since issue #26's manual half — the settled
+        // (`confirmed`) ones, which the engine applies as what actually
+        // happened. A `skipped` row stays inert: nothing writes one yet. One
+        // row per edited or settled occurrence, so this is never the table
+        // `occurrences` reads in bulk — `regenerate_occurrences` remains the
+        // only bulk reader/writer, over its own RPC connection.
+        //
+        // Newest first, unlike the ascending order this read had before:
+        // settled rows accumulate for as long as someone uses the app, so
+        // this is now a read that can meet PostgREST's `max_rows`
+        // (`supabase/config.toml`). If it ever does, the rows a truncation
+        // drops should be the oldest, which sit behind every chart's
+        // look-back, not the newest. Each `(rule_id, projected_date)` is one
+        // row, so the order cannot change which override wins.
         client
           .from('occurrences')
           .select(OVERRIDE_COLUMNS)
-          .eq('is_overridden', true)
-          .eq('status', 'projected')
-          .order('projected_date', { ascending: true }),
+          .or('and(is_overridden.eq.true,status.eq.projected),status.eq.confirmed')
+          .order('projected_date', { ascending: false }),
+        // Issue #18: each rule's most recent settled amounts, already limited
+        // to the user's `prediction_window` per rule inside the function —
+        // PostgREST cannot express a per-group limit, and an unbounded read
+        // of every confirmed row would eventually meet `max_rows`. A function
+        // rather than a second direct table read, so the overlay read
+        // above stays this file's only direct read of the table.
+        client.rpc('recent_settled_amounts'),
       ])
       // The database's own error message can name columns, constraints and
       // policies. It goes nowhere near the UI, and nothing but the code is
@@ -246,13 +285,21 @@ export function useRunwayData() {
         })
         throw new Error('load-failed')
       }
+      if (settledAmountsResult.error) {
+        console.error('settled history read failed', { code: settledAmountsResult.error.code })
+        throw new Error('load-failed')
+      }
       const settings = toHouseholdSettings(settingsResult.data)
       return {
         hiddenAccountIds: toHiddenAccountIds(hiddenAccountsResult.data),
         accounts: (accountsResult.data ?? []).map((row) =>
           toAccount(row, settings.discretionaryAccountId),
         ),
-        recurringItems: (recurringRulesResult.data ?? []).map(toRecurringItem),
+        recurringItems: withSettledHistory(
+          (recurringRulesResult.data ?? []).map(toRecurringItem),
+          settledAmountsResult.data,
+          settings.predictionWindow,
+        ),
         balanceHistory: toBalanceHistory(balanceHistoryResult.data),
         occurrenceOverrides: (occurrenceOverridesResult.data ?? []).map(toOccurrenceOverride),
         settings,
@@ -391,6 +438,13 @@ export function useRunwayData() {
   const defaultHorizonDays = computed(
     () => settingsOverride.value.defaultHorizonDays ?? remote.value.settings.defaultHorizonDays,
   )
+
+  /**
+   * `user_settings.prediction_window` (issue #18). No overlay: its writer
+   * refreshes instead, because the history it shapes is windowed inside the
+   * database (see `setPredictionWindow`).
+   */
+  const predictionWindow = computed(() => remote.value.settings.predictionWindow)
 
   /**
    * Ids of the accounts hidden from the dashboard's chart legend. The stored
@@ -653,6 +707,61 @@ export function useRunwayData() {
   }
 
   /**
+   * "Mark as paid" / "Mark as received" — issue #26's manual half. Records
+   * what actually happened to the occurrence named by `(itemId, date)`
+   * (`date` is its `projectedDate`, the natural key) through
+   * `settle_occurrence`, which sets `status = 'confirmed'`.
+   *
+   * That one write does two things the refresh below makes visible: the
+   * overlay read now returns the row as a settled override, so the chart
+   * uses what landed rather than what was planned; and
+   * `recent_settled_amounts()` now counts it, so an estimated rule's later
+   * occurrences move to the new mean. No regeneration: a confirmed row is
+   * already protected from it, and the rule itself did not change.
+   *
+   * `PT400` (the amount's sign contradicts the item) and `PT409` (already
+   * settled) surface as the generic save failure — the editor never sends
+   * either, so reaching one means a stale screen, which the refresh fixes.
+   */
+  async function settleOccurrence(settlement: {
+    readonly itemId: string
+    readonly date: IsoDate
+    readonly amount: MinorUnits
+    readonly projectedAmount: MinorUnits
+    readonly actualDate: IsoDate
+  }): Promise<void> {
+    requireUserId()
+    const { error: settleError } = await client.rpc('settle_occurrence', toSettleArgs(settlement))
+    if (settleError) throwForRpcError(settleError.code)
+    await refresh()
+  }
+
+  /**
+   * Takes a settlement back ("the user can always unmatch", #26). The row
+   * returns to `projected` — still hand-edited if it was before it was
+   * settled, otherwise back to the rule's own value — and drops out of the
+   * settled history, so an estimate that had moved moves back.
+   *
+   * `today` and the best-effort regeneration are `revertOccurrence`'s, for
+   * the same reason: a row that is no longer protected may be carrying a
+   * `projected_amount_cents` the rule has since moved away from.
+   */
+  async function unsettleOccurrence(itemId: string, date: IsoDate, today: IsoDate): Promise<void> {
+    requireUserId()
+    const { error: unsettleError } = await client.rpc(
+      'unsettle_occurrence',
+      toUnsettleArgs(itemId, date),
+    )
+    if (unsettleError) throwForRpcError(unsettleError.code)
+    await refresh()
+    try {
+      await regenerateOccurrences(today, [itemId])
+    } catch {
+      // Already logged inside regenerateOccurrences, with a code and nothing else.
+    }
+  }
+
+  /**
    * "Apply to all future." Closes `itemId`'s rule the day before
    * `effectiveFrom` and opens a successor from that day forward, through
    * `split_recurring_rule` — never a bulk occurrence edit
@@ -717,13 +826,12 @@ export function useRunwayData() {
     today: IsoDate,
   ): Promise<RecurringItem> {
     const userId = requireUserId()
-    // Prediction is resolved at save time, not at render time, so the row and
-    // the projection always read one stored figure. `resolveAmount` reads
-    // `depositHistory` and `id`; a brand-new draft has neither yet, and an
-    // unresolved id doesn't change what a fixed or already-predicted amount
-    // resolves to.
-    const amount = resolveAmount({ ...draft, id: draft.id ?? '' })
-    const columns = toRecurringRuleColumns({ ...draft, amount })
+    // The typed amount is stored as-is, even for predicted income or a
+    // variable bill (issue #18): it is the fallback the estimate gives way
+    // to while history is thin, and the engine resolves the estimate live
+    // from `depositHistory` (`domain/prediction.ts`). Freezing the estimate
+    // in here — what this did before #18 — would overwrite that fallback.
+    const columns = toRecurringRuleColumns(draft)
 
     const { data: saved, error: saveError } = draft.id
       ? await client
@@ -930,6 +1038,41 @@ export function useRunwayData() {
   }
 
   /**
+   * Persists how many recent settled amounts an estimate averages
+   * (`user_settings.prediction_window`, issue #18) — the "Estimates" card on
+   * `/accounts`. Values outside `[MIN_PREDICTION_WINDOW,
+   * MAX_PREDICTION_WINDOW]`, or not whole, are refused before any write: the
+   * column's check constraint says the same, and the control never offers one.
+   *
+   * **Refreshes, unlike the other settings writers.** `recent_settled_amounts()`
+   * applies the *stored* window inside the database, so widening it needs
+   * rows the last read never fetched; no client-side overlay can conjure
+   * them. The refresh is what re-reads the history under the new window.
+   *
+   * Throws on a failed write, like `setMonthlyDiscretionarySpend` and for the
+   * same reason: the window changes figures the projection uses, so a
+   * dropped write would leave a chart the database does not agree with.
+   */
+  async function setPredictionWindow(window: number): Promise<void> {
+    if (
+      !Number.isInteger(window) ||
+      window < MIN_PREDICTION_WINDOW ||
+      window > MAX_PREDICTION_WINDOW
+    ) {
+      throw new Error('save-failed')
+    }
+    const userId = requireUserId()
+    const { error: writeError } = await client
+      .from('user_settings')
+      .upsert({ user_id: userId, prediction_window: window }, { onConflict: 'user_id' })
+    if (writeError) {
+      console.error('prediction window write failed', { code: writeError.code })
+      throw new Error('save-failed')
+    }
+    await refresh()
+  }
+
+  /**
    * Hides or shows an account's series on the dashboard chart.
    *
    * Presence in `dashboard_hidden_accounts` *is* the value — there is no
@@ -1000,6 +1143,7 @@ export function useRunwayData() {
     monthlyDiscretionarySpend,
     timeZoneOverride,
     defaultHorizonDays,
+    predictionWindow,
     hiddenAccountIds,
     isEmpty,
     accountName,
@@ -1012,12 +1156,15 @@ export function useRunwayData() {
     regenerateOccurrences,
     overrideOccurrence,
     revertOccurrence,
+    settleOccurrence,
+    unsettleOccurrence,
     splitRecurringItem,
     addTransfer,
     setSafetyCushion,
     setTimeZoneOverride,
     setMonthlyDiscretionarySpend,
     setDefaultHorizonDays,
+    setPredictionWindow,
     setAccountHidden,
     clearRecords,
   }

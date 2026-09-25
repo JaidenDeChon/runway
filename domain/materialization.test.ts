@@ -38,6 +38,18 @@ describe('materializationWindow', () => {
 })
 
 describe('desiredOccurrences', () => {
+  it('materializes the estimate for an estimated rule, so stored rows agree with the engine (#18)', () => {
+    const pay = item({
+      id: 'pay',
+      kind: 'income',
+      amount: toMinorUnits(200),
+      amountSource: 'predicted',
+      depositHistory: [toMinorUnits(250), toMinorUnits(350)],
+    })
+    const desired = desiredOccurrences([pay], { start: '2026-08-01', end: '2026-08-31' })
+    expect(desired.map((row) => row.amount)).toEqual([toMinorUnits(300)])
+  })
+
   it('matches occurrenceDates exactly for a single rule', () => {
     const rule = item({ id: 'rent', nextOccurrence: '2026-08-20' })
     const window = { start: '2026-08-01', end: '2026-11-30' }

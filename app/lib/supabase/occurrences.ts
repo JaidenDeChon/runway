@@ -11,13 +11,22 @@
  * `tests/guards/occurrence-write-sites.test.ts` enforces that
  * `useRunwayData.ts` is the only caller of all four RPCs, and that the one
  * read this file's mapper feeds is a `.select(`, never an `.update(`/`.delete(`.
+ * Issue #18 adds `withSettledHistory`, which turns
+ * `recent_settled_amounts()` into each rule's `depositHistory` — a read-only
+ * RPC, held to the same one-call-site rule by that guard. Issue #26's manual
+ * half adds `settle_occurrence` / `unsettle_occurrence`
+ * (`supabase/migrations/20260925010000_settle_occurrence.sql`), and the
+ * overlay read now carries settled rows too.
  */
 
 import type { Database } from '#shared/supabase/database.types'
 import type { IsoDate } from '~~/domain/dates'
+import { compareDates } from '~~/domain/dates'
 import type { DesiredOccurrence, MaterializationWindow } from '~~/domain/materialization'
 import type { MinorUnits } from '~~/domain/money'
 import type { StoredOccurrenceOverride } from '~~/domain/overrides'
+import { recentHistory, settledMagnitude } from '~~/domain/prediction'
+import type { RecurringItem } from '~~/domain/types'
 
 export type OccurrenceRow = Database['public']['Tables']['occurrences']['Row']
 
@@ -82,10 +91,11 @@ export type SelectedOccurrenceRow = Pick<
 >
 
 /**
- * Maps one overridden, still-`projected` row to a `StoredOccurrenceOverride`.
- * `useRunwayData.ts`'s overlay query already filters to
- * `is_overridden = true and status = 'projected'`, so every row this sees is
- * eligible — a `confirmed`/`skipped` row never reaches here.
+ * Maps one overlay row to a `StoredOccurrenceOverride`: an overridden,
+ * still-`projected` row (issue #15), or a settled — `confirmed` — one (issue
+ * #26's manual half), which becomes an override with `settled: true`.
+ * `useRunwayData.ts`'s overlay query filters to exactly those two; a
+ * `skipped` row never reaches here.
  *
  * `itemId` is `rule_id`: `RecurringItem.id` is the rule's own uuid
  * (`app/lib/supabase/recurring-items.ts` `toRecurringItem`), so no separate
@@ -104,12 +114,15 @@ export function toOccurrenceOverride(row: SelectedOccurrenceRow): StoredOccurren
     // `null` maps to *absent* — `exactOptionalPropertyTypes` requires it, the
     // same idiom `app/lib/supabase/accounts.ts` `toAccount` uses for `archivedOn`.
     ...(row.actual_date ? { newDate: row.actual_date } : {}),
+    ...(row.status === 'confirmed' ? { settled: true } : {}),
   }
 }
 
 export type OverrideArgs = Database['public']['Functions']['override_occurrence']['Args']
 export type RevertArgs = Database['public']['Functions']['revert_occurrence']['Args']
 export type SplitArgs = Database['public']['Functions']['split_recurring_rule']['Args']
+export type SettleArgs = Database['public']['Functions']['settle_occurrence']['Args']
+export type UnsettleArgs = Database['public']['Functions']['unsettle_occurrence']['Args']
 
 /**
  * Builds `override_occurrence`'s RPC payload. `edit.date` is the occurrence's
@@ -142,6 +155,34 @@ export function toRevertArgs(itemId: string, date: IsoDate): RevertArgs {
   return { p_rule_id: itemId, p_projected_date: date }
 }
 
+/**
+ * Builds `settle_occurrence`'s payload (issue #26, manual half). Keyed like
+ * `toOverrideArgs` — `settlement.date` is the occurrence's `projectedDate`,
+ * never the day it actually landed — but `actualDate` is always sent: a
+ * settlement records *when* it happened, where an override's `null` means
+ * "on the projected day". `amount` is signed, matching `Occurrence.amount`;
+ * the function refuses a sign that contradicts the rule's kind.
+ */
+export function toSettleArgs(settlement: {
+  readonly itemId: string
+  readonly date: IsoDate
+  readonly amount: MinorUnits
+  readonly projectedAmount: MinorUnits
+  readonly actualDate: IsoDate
+}): SettleArgs {
+  return {
+    p_rule_id: settlement.itemId,
+    p_projected_date: settlement.date,
+    p_projected_amount_cents: settlement.projectedAmount,
+    p_actual_amount_cents: settlement.amount,
+    p_actual_date: settlement.actualDate,
+  }
+}
+
+export function toUnsettleArgs(itemId: string, date: IsoDate): UnsettleArgs {
+  return { p_rule_id: itemId, p_projected_date: date }
+}
+
 /** `amount` is a positive magnitude, matching `recurring_rules.amount_cents`. */
 export function toSplitArgs(args: {
   readonly itemId: string
@@ -153,4 +194,48 @@ export function toSplitArgs(args: {
     p_effective_from: args.effectiveFrom,
     p_amount_cents: args.amount,
   }
+}
+
+/** One row of `public.recent_settled_amounts()` (issue #18). */
+export type SettledAmountRow =
+  Database['public']['Functions']['recent_settled_amounts']['Returns'][number]
+
+/**
+ * Attaches each rule's settled history to it, as `RecurringItem.depositHistory`
+ * — the read half of issue #18.
+ *
+ * `rows` come from `recent_settled_amounts()`, which already limits each rule
+ * to the user's window; `recentHistory` applies `window` again here anyway, so
+ * the domain's own bound holds even if the function's ever drifts from it.
+ * Rows are re-sorted rather than trusted to arrive oldest first, their signed
+ * amounts are turned into magnitudes by the rule's kind (`settledMagnitude`,
+ * which drops anything that cannot be a deposit or a payment of this rule),
+ * and a row naming a rule not in `items` is ignored — the same stance
+ * `RunwayData.balanceHistory` takes for a reading naming an unknown account.
+ *
+ * No arithmetic on amounts beyond the sign: averaging is `resolveAmount`'s.
+ */
+export function withSettledHistory(
+  items: readonly RecurringItem[],
+  rows: readonly SettledAmountRow[] | null,
+  window: number,
+): RecurringItem[] {
+  if (!rows || rows.length === 0) return [...items]
+
+  const byRule = new Map<string, SettledAmountRow[]>()
+  for (const row of rows) {
+    const list = byRule.get(row.rule_id)
+    if (list) list.push(row)
+    else byRule.set(row.rule_id, [row])
+  }
+
+  return items.map((item) => {
+    const settled = byRule.get(item.id)
+    if (!settled) return item
+    const magnitudes = [...settled]
+      .sort((a, b) => compareDates(a.projected_date, b.projected_date))
+      .map((row) => settledMagnitude(item.kind, row.actual_amount_cents))
+      .filter((amount): amount is MinorUnits => amount !== null)
+    return { ...item, depositHistory: recentHistory(magnitudes, window) }
+  })
 }

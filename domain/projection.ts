@@ -15,6 +15,7 @@ import { dailyDiscretionary } from './discretionary'
 import type { MinorUnits } from './money'
 import type { OccurrenceOverride } from './overrides'
 import { applyOverrides } from './overrides'
+import { resolveAmount } from './prediction'
 import type { Account, BalanceSnapshot, RecurringItem, RunwayData } from './types'
 
 /** $250 of headroom above the cushion is the boundary between Covered and Tight. */
@@ -59,6 +60,14 @@ export interface Occurrence {
   readonly projectedAmount: MinorUnits
   /** True once a stored or what-if override has been applied to this occurrence. */
   readonly isOverridden: boolean
+  /**
+   * True when this occurrence has been settled — marked paid or received
+   * (issue #26's manual half, `occurrences.status = 'confirmed'`). `amount`
+   * and `date` are then what actually happened. Implies `isOverridden`: a
+   * settlement is carried by the same overlay, and every screen that treats
+   * an edited figure as the user's own treats a settled one the same way.
+   */
+  readonly isSettled: boolean
 }
 
 /**
@@ -157,9 +166,39 @@ export interface ProjectionWindow {
  * Exported so screens that list items directly (recurring-items) can render
  * the same sign the projection engine uses, instead of re-deriving it from
  * `kind` inline in a component.
+ *
+ * Reads the *resolved* amount (issue #18): an estimated rule with enough
+ * settled history contributes its estimate, everything else its stored
+ * amount — see `prediction.ts`. This is the one place the engine asks for a
+ * rule's amount, so the chart, the verdict, the Upcoming list, the recurring
+ * list and materialization can never disagree about it.
  */
 export function signedAmount(item: RecurringItem): MinorUnits {
-  return item.kind === 'income' ? item.amount : -item.amount
+  const amount = resolveAmount(item)
+  return item.kind === 'income' ? amount : -amount
+}
+
+/**
+ * Whether an occurrence's amount is an estimate the UI must mark as one
+ * (issue #18: "never present an estimate as if it were certain").
+ *
+ * An estimated rule's occurrence is an estimate until somebody states its
+ * amount: a saved or previewed override that *changed the amount* is the
+ * user's own figure and wins over the estimate, so it is no longer marked.
+ * An override that only moved the day carries the rule's amount along
+ * unchanged (`amount === projectedAmount`) — the user said nothing about the
+ * figure, so it is still the estimate and stays marked. (The stored override
+ * does freeze that figure: if the estimate later moves, the two part and the
+ * marker goes with it. `override_occurrence` always stores an amount; that is
+ * #15's contract, and the reason this check is on equality rather than on
+ * `newDate`.) A settled occurrence (issue #26) is never an estimate: its
+ * figure is what actually landed, even when it equals the estimate to the cent.
+ */
+export function isEstimated(occurrence: Occurrence): boolean {
+  if (!occurrence.isPredicted && !occurrence.isVariable) return false
+  // Settled is what happened, even when it happens to equal the estimate.
+  if (occurrence.isSettled) return false
+  return !occurrence.isOverridden || occurrence.amount === occurrence.projectedAmount
 }
 
 function accountsFor(data: RunwayData, accountIds: readonly string[] | undefined): Account[] {
@@ -200,8 +239,10 @@ export function occurrencesIn(data: RunwayData, window: ProjectionWindow): Occur
   const occurrences: Occurrence[] = []
   for (const item of data.recurringItems) {
     if (!included.has(item.accountId)) continue
+    // Once per rule, not per date: it averages the rule's history (#18), and
+    // the answer is the same for every occurrence it expands to.
+    const amount = signedAmount(item)
     for (const date of occurrenceDates(item, expandStart, expandEnd)) {
-      const amount = signedAmount(item)
       occurrences.push({
         id: `${item.id}@${date}`,
         itemId: item.id,
@@ -214,6 +255,7 @@ export function occurrencesIn(data: RunwayData, window: ProjectionWindow): Occur
         projectedDate: date,
         projectedAmount: amount,
         isOverridden: false,
+        isSettled: false,
       })
     }
   }
@@ -765,6 +807,12 @@ export interface UpcomingBill {
   /** Signed (negative), matching the occurrence it came from. */
   readonly amount: MinorUnits
   readonly daysAway: number
+  /**
+   * Whether `amount` is an estimate — a variable bill's (issue #18) — so the
+   * shortfall screen's bill picker can mark it the way every other screen
+   * does. `isEstimated` of the occurrence it came from, not a second rule.
+   */
+  readonly isEstimated: boolean
 }
 
 /**
@@ -796,6 +844,7 @@ export function upcomingBills(
       date: occurrence.date,
       amount: occurrence.amount,
       daysAway: daysBetween(today, occurrence.date),
+      isEstimated: isEstimated(occurrence),
     })
   }
   return bills

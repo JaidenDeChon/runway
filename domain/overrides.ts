@@ -47,6 +47,17 @@ export interface OccurrenceOverride {
    * occurrences is not a thing a date field can express.
    */
   readonly newDate?: IsoDate
+  /**
+   * `once` only, and stored only — true when this is a *settlement*
+   * (`occurrences.status = 'confirmed'`, issue #26's manual half): `amount`
+   * and `newDate` are then what actually happened, not a plan. Nothing that
+   * builds a what-if preview sets it.
+   *
+   * A settled occurrence is a fact, so no later override rewrites it — not a
+   * what-if preview of that one day, and not an apply-to-future preview
+   * sweeping across it. `applyOne` enforces that.
+   */
+  readonly settled?: boolean
 }
 
 /**
@@ -64,6 +75,8 @@ export type StoredOccurrenceOverride = Omit<OccurrenceOverride, 'scope'> & {
 
 function applyOne(occurrence: Occurrence, override: OccurrenceOverride): Occurrence {
   if (occurrence.itemId !== override.itemId) return occurrence
+  // What happened is not up for previewing. See `OccurrenceOverride.settled`.
+  if (occurrence.isSettled) return occurrence
 
   if (override.scope === 'future') {
     if (compareDates(occurrence.projectedDate, override.date) < 0) return occurrence
@@ -82,6 +95,7 @@ function applyOne(occurrence: Occurrence, override: OccurrenceOverride): Occurre
     amount: override.amount,
     date,
     isOverridden: true,
+    isSettled: override.settled === true,
     id: `${occurrence.itemId}@${occurrence.projectedDate}`,
   }
 }

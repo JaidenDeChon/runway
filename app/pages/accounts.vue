@@ -4,6 +4,7 @@ import AppPage from '@/components/AppPage.vue'
 import AccountEditor from '@/components/accounts/AccountEditor.vue'
 import AccountRow from '@/components/accounts/AccountRow.vue'
 import DiscretionarySpendCard from '@/components/accounts/DiscretionarySpendCard.vue'
+import PredictionWindowCard from '@/components/accounts/PredictionWindowCard.vue'
 import SafetyCushionCard from '@/components/accounts/SafetyCushionCard.vue'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -141,6 +142,11 @@ function openAdd(): void {
          against until there is a balance to project. Moved here from
          `/will-i-make-it` — see SafetyCushionCard's own doc comment for why. -->
     <SafetyCushionCard v-if="!showSkeleton && !loadError && accounts.length > 0" />
+
+    <!-- Same gate again: an estimate needs a recurring item on an account,
+         and an account comes first. No design artifact covers this card;
+         see its own doc comment. -->
+    <PredictionWindowCard v-if="!showSkeleton && !loadError && accounts.length > 0" />
 
     <!-- Inert by design: not focusable, not clickable, and kept out of the
          tab order entirely rather than merely dimmed. -->

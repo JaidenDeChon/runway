@@ -71,6 +71,14 @@ const RPC_CALLS: Record<string, RegExp> = {
   override_occurrence: /rpc\(\s*['"]override_occurrence['"]/,
   revert_occurrence: /rpc\(\s*['"]revert_occurrence['"]/,
   split_recurring_rule: /rpc\(\s*['"]split_recurring_rule['"]/,
+  // Issue #18: read-only, but it reads `public.occurrences` all the same, so
+  // it is held to the same single call site as the writers — a screen
+  // reaching for settled history directly is a screen going around the seam.
+  recent_settled_amounts: /rpc\(\s*['"]recent_settled_amounts['"]/,
+  // Issue #26's manual half: marking an occurrence paid or received, and
+  // taking that back. Writers, so the same single call site.
+  settle_occurrence: /rpc\(\s*['"]settle_occurrence['"]/,
+  unsettle_occurrence: /rpc\(\s*['"]unsettle_occurrence['"]/,
 }
 
 /** `from('occurrences')`, tolerating Biome's line breaks the same way the RPC patterns do. */

@@ -100,8 +100,10 @@ export type RecurringKind = 'bill' | 'income'
 /**
  * How an income item's amount is arrived at.
  *
- * `fixed` uses the typed amount. `predicted` derives it from `depositHistory`
- * — see `prediction.ts`. Bills are always `fixed`.
+ * `fixed` uses the typed amount. `predicted` estimates it from
+ * `depositHistory`, falling back to the typed amount while there is too
+ * little history — see `prediction.ts`. Bills are always `fixed`; a bill's
+ * equivalent is `isVariable`.
  */
 export type AmountSource = 'fixed' | 'predicted'
 
@@ -157,11 +159,20 @@ export interface RecurringItem {
    */
   readonly nextOccurrence: IsoDate
   readonly amountSource: AmountSource
-  /** Past deposits backing a `predicted` amount, oldest first. */
+  /**
+   * The settled amounts an estimate averages, oldest first, as positive
+   * magnitudes: this rule's most recent `status = 'confirmed'` occurrences,
+   * at most `user_settings.prediction_window` of them. Derived, not stored —
+   * `useRunwayData` builds it from `public.recent_settled_amounts()` (issue
+   * #18). Only read when the rule is estimated (`prediction.ts`
+   * `isEstimating`); a `fixed` rule may carry history and ignore it.
+   */
   readonly depositHistory: readonly MinorUnits[]
   /**
-   * Bill-only: the amount changes each cycle (a utility bill). Purely a
-   * presentation marker — the stored amount is still what projection uses.
+   * Bill-only: the amount changes each cycle (a utility bill). Estimated from
+   * `depositHistory` the same way predicted income is, falling back to
+   * `amount` while history is thin, and always marked as an estimate — see
+   * `prediction.ts`.
    */
   readonly isVariable: boolean
   /** Inclusive window bound. `undefined` means unbounded in that direction. */

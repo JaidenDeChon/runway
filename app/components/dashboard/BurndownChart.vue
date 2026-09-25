@@ -42,6 +42,7 @@ import {
   valueRange,
 } from '@/lib/burndown'
 import { formatDateShort, formatMoney } from '@/lib/format'
+import { occurrenceQualifier } from '@/lib/occurrence-editor'
 import { cn } from '@/lib/utils'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
@@ -301,9 +302,10 @@ const announcement = computed(() => {
     .map((row) => `${row.name} ${formatMoney(row.balance)}`)
     .join(', ')
   const events = tooltipOccurrences.value
-    .map(
-      (occurrence) =>
-        `${occurrence.label} ${formatMoney(occurrence.amount)}${occurrence.isOverridden ? ' (edited)' : ''}`,
+    .map((occurrence) =>
+      [occurrence.label, formatMoney(occurrence.amount), occurrenceQualifier(occurrence)]
+        .filter(Boolean)
+        .join(' '),
     )
     .join(', ')
   const day = activeLabel.value
@@ -641,7 +643,7 @@ function onFocus(): void {
             class="mt-1 flex items-center gap-2 text-xs"
           >
             <span class="min-w-0 flex-1 truncate">
-              {{ occurrence.label }}<span v-if="occurrence.isOverridden" class="text-muted-foreground"> (edited)</span>
+              {{ occurrence.label }}<span v-if="occurrenceQualifier(occurrence)" class="text-muted-foreground"> {{ occurrenceQualifier(occurrence) }}</span>
             </span>
             <MoneyText :amount="occurrence.amount" signed colored size="sm" />
           </div>

@@ -39,10 +39,20 @@
  * reveal is `group-focus-within`, i.e. CSS: a JS focus flag would have to
  * decide whether a blur heading *into* one of the buttons should hide them
  * first, and gets it wrong the day it guesses.
+ *
+ * **A settled row (issue #26's manual half) is read-only.** Its amount is
+ * what actually happened, `override_occurrence` refuses to rewrite it, and
+ * what-if never previews over it (`domain/overrides.ts` `applyOne`), so the
+ * field is disabled and the three buttons are not rendered at all — Reset in
+ * particular would mean `revert_occurrence`, which refuses a settled row.
+ * Undoing a settlement is the day editor's job, one tap away on the
+ * identity half of the row.
  */
 import { ChevronRight } from '@lucide/vue'
 import AccountSwatch from '@/components/AccountSwatch.vue'
+import EstimateBadge from '@/components/EstimateBadge.vue'
 import MoneyInput from '@/components/MoneyInput.vue'
+import SettledBadge from '@/components/SettledBadge.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { formatDateShort } from '@/lib/format'
@@ -62,6 +72,7 @@ import { cn } from '@/lib/utils'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
 import type { Occurrence } from '~~/domain/projection'
+import { isEstimated } from '~~/domain/projection'
 import type { AccountColor } from '~~/domain/types'
 
 const props = defineProps<{
@@ -164,8 +175,12 @@ function onReset(): void {
                unsaved and a stored override is not, and the mode's amber says
                which without asking anyone to remember what the badge meant
                last time. -->
+          <SettledBadge
+            v-if="props.occurrence.isSettled"
+            :projected-amount="props.occurrence.projectedAmount"
+          />
           <Badge
-            v-if="props.previewed"
+            v-else-if="props.previewed"
             variant="outline"
             class="shrink-0 border-chart-5 text-chart-5"
           >
@@ -178,6 +193,10 @@ function onReset(): void {
           >
             Edited
           </Badge>
+          <!-- Issue #18: the third fact — the figure in the field is an
+               estimate. Last in the chain because a preview or an edit is the
+               user's own figure and stops being one. -->
+          <EstimateBadge v-else-if="isEstimated(props.occurrence)" />
         </span>
         <span class="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <AccountSwatch :color="props.accountColor" size="sm" />
@@ -187,7 +206,8 @@ function onReset(): void {
           v-if="props.occurrence.isOverridden && props.occurrence.date !== props.occurrence.projectedDate"
           class="mt-0.5 block text-xs text-muted-foreground"
         >
-          moved from {{ formatDateShort(props.occurrence.projectedDate) }}
+          {{ props.occurrence.isSettled ? 'due' : 'moved from' }}
+          {{ formatDateShort(props.occurrence.projectedDate) }}
         </span>
       </span>
 
@@ -201,12 +221,13 @@ function onReset(): void {
       <MoneyInput
         v-model="draft"
         allow-negative
-        :disabled="props.pending"
+        :disabled="props.pending || props.occurrence.isSettled"
         :aria-label="fieldLabel"
       />
     </div>
 
     <div
+      v-if="!props.occurrence.isSettled"
       class="w-full items-center justify-end gap-2 lg:w-auto"
       :class="actionsPinned ? 'flex' : 'hidden group-focus-within:flex'"
     >

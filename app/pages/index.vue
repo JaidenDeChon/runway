@@ -69,7 +69,11 @@ import {
 import { ARROW_LINK } from '@/lib/arrow-link'
 import type { LegendEntry } from '@/lib/burndown'
 import { chartLines } from '@/lib/burndown'
-import type { OccurrenceEdit, OccurrenceRevert } from '@/lib/occurrence-editor'
+import type {
+  OccurrenceEdit,
+  OccurrenceRevert,
+  OccurrenceSettlement,
+} from '@/lib/occurrence-editor'
 import { occurrenceKey } from '@/lib/occurrence-editor'
 import {
   discardPrompt,
@@ -111,6 +115,8 @@ const {
   setDefaultHorizonDays,
   overrideOccurrence,
   revertOccurrence,
+  settleOccurrence,
+  unsettleOccurrence,
   splitRecurringItem,
 } = useRunwayData()
 const today = useToday()
@@ -588,6 +594,39 @@ async function revertOccurrenceEdit(target: OccurrenceRevert): Promise<void> {
   }
 }
 
+/**
+ * "Mark as paid" / "Mark as received" (issue #26's manual half). Never
+ * reached with what-if on — the editor does not offer it there, because the
+ * mode writes nothing and the engine has no previewed settlement — but
+ * refused here as well, so a stale emit cannot write through the mode.
+ */
+async function settleOccurrenceEdit(settlement: OccurrenceSettlement): Promise<void> {
+  if (whatIf.value) return
+  savingEdit.value = true
+  editError.value = null
+  try {
+    await settleOccurrence(settlement)
+  } catch {
+    editError.value = 'Could not record that. Check your connection and try again.'
+  } finally {
+    savingEdit.value = false
+  }
+}
+
+/** Takes a settlement back. Same what-if refusal as `settleOccurrenceEdit`. */
+async function unsettleOccurrenceEdit(target: OccurrenceRevert): Promise<void> {
+  if (whatIf.value) return
+  savingEdit.value = true
+  editError.value = null
+  try {
+    await unsettleOccurrence(target.itemId, target.date, today.value)
+  } catch {
+    editError.value = 'Could not undo that. Check your connection and try again.'
+  } finally {
+    savingEdit.value = false
+  }
+}
+
 // The Upcoming list's inline edits report separately from the day editor's
 // form: which row failed is the whole message when there are fourteen of
 // them, and a single shared string would put "could not save" under a row
@@ -743,10 +782,13 @@ async function quickResetOccurrence(target: OccurrenceRevert): Promise<void> {
       :what-if-edit-count="whatIfOverrides.length"
       :saving="savingEdit"
       :error="editError"
+      :today="today"
       @update:open="setEditorOpen"
       @update:what-if="setWhatIf"
       @save="saveOccurrenceEdit"
       @revert="revertOccurrenceEdit"
+      @settle="settleOccurrenceEdit"
+      @unsettle="unsettleOccurrenceEdit"
     />
 
     <!-- Keeps the last card scrollable clear of the fixed bar. Rendered only

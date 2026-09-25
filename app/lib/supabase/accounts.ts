@@ -10,6 +10,7 @@ import type { Database } from '#shared/supabase/database.types'
 import { DEFAULT_STALE_AFTER_DAYS } from '~~/domain/accounts'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
+import { DEFAULT_PREDICTION_WINDOW } from '~~/domain/prediction'
 import type { Account, AccountColor, BalanceSnapshot } from '~~/domain/types'
 import { ACCOUNT_COLORS } from '~~/domain/types'
 
@@ -19,7 +20,7 @@ export type UserSettingsRow = Database['public']['Tables']['user_settings']['Row
 /** Named columns, never `select('*')` — a column added later is a deliberate addition. */
 export const ACCOUNT_COLUMNS = 'id, name, color, balance_cents, balance_as_of, archived_on' as const
 export const USER_SETTINGS_COLUMNS =
-  'user_id, cushion_cents, monthly_discretionary_cents, discretionary_account_id, default_horizon_days, time_zone, balance_stale_after_days' as const
+  'user_id, cushion_cents, monthly_discretionary_cents, discretionary_account_id, default_horizon_days, time_zone, balance_stale_after_days, prediction_window' as const
 
 /**
  * What a `.select(ACCOUNT_COLUMNS)` / `.select(USER_SETTINGS_COLUMNS)` query
@@ -40,6 +41,7 @@ export type SelectedUserSettingsRow = Pick<
   | 'default_horizon_days'
   | 'time_zone'
   | 'balance_stale_after_days'
+  | 'prediction_window'
 >
 
 /** The `saveAccount` parameter. Omits `archivedOn` — the editor never sets it. */
@@ -59,6 +61,13 @@ export interface HouseholdSettings {
   readonly staleAfterDays: number
   readonly discretionaryAccountId: string | null
   readonly defaultHorizonDays: number
+  /**
+   * How many recent settled occurrences an estimate averages (issue #18).
+   * Not a `RunwayData` field: the engine never reads it — `useRunwayData`
+   * applies it when it builds each rule's `depositHistory`, the same way
+   * `staleAfterDays` and `defaultHorizonDays` stay out of the engine's input.
+   */
+  readonly predictionWindow: number
 }
 
 /**
@@ -116,6 +125,7 @@ export function toHouseholdSettings(row: SelectedUserSettingsRow | null): Househ
       staleAfterDays: DEFAULT_STALE_AFTER_DAYS,
       discretionaryAccountId: null,
       defaultHorizonDays: 30,
+      predictionWindow: DEFAULT_PREDICTION_WINDOW,
     }
   }
   return {
@@ -125,6 +135,7 @@ export function toHouseholdSettings(row: SelectedUserSettingsRow | null): Househ
     staleAfterDays: row.balance_stale_after_days,
     discretionaryAccountId: row.discretionary_account_id,
     defaultHorizonDays: row.default_horizon_days,
+    predictionWindow: row.prediction_window,
   }
 }
 

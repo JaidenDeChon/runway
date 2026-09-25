@@ -34,6 +34,7 @@ const settingsRow = (over: Partial<UserSettingsRow> = {}): UserSettingsRow => ({
   default_horizon_days: 30,
   time_zone: null,
   balance_stale_after_days: 14,
+  prediction_window: 3,
   created_at: '2026-08-01T00:00:00Z',
   updated_at: '2026-08-01T00:00:00Z',
   ...over,
@@ -109,7 +110,12 @@ describe('toHouseholdSettings', () => {
       staleAfterDays: 14,
       discretionaryAccountId: 'acct-1',
       defaultHorizonDays: 30,
+      predictionWindow: 3,
     })
+  })
+
+  it('carries a non-default prediction window through (#18)', () => {
+    expect(toHouseholdSettings(settingsRow({ prediction_window: 6 })).predictionWindow).toBe(6)
   })
 
   it('carries a non-default stored horizon through, not just the column default', () => {
@@ -129,6 +135,7 @@ describe('toHouseholdSettings', () => {
       staleAfterDays: 14,
       discretionaryAccountId: null,
       defaultHorizonDays: 30,
+      predictionWindow: 3,
     })
   })
 })
