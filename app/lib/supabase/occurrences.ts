@@ -13,7 +13,10 @@
  * read this file's mapper feeds is a `.select(`, never an `.update(`/`.delete(`.
  * Issue #18 adds `withSettledHistory`, which turns
  * `recent_settled_amounts()` into each rule's `depositHistory` — a read-only
- * RPC, held to the same one-call-site rule by that guard.
+ * RPC, held to the same one-call-site rule by that guard. Issue #26's manual
+ * half adds `settle_occurrence` / `unsettle_occurrence`
+ * (`supabase/migrations/20260925010000_settle_occurrence.sql`), and the
+ * overlay read now carries settled rows too.
  */
 
 import type { Database } from '#shared/supabase/database.types'
@@ -88,10 +91,11 @@ export type SelectedOccurrenceRow = Pick<
 >
 
 /**
- * Maps one overridden, still-`projected` row to a `StoredOccurrenceOverride`.
- * `useRunwayData.ts`'s overlay query already filters to
- * `is_overridden = true and status = 'projected'`, so every row this sees is
- * eligible — a `confirmed`/`skipped` row never reaches here.
+ * Maps one overlay row to a `StoredOccurrenceOverride`: an overridden,
+ * still-`projected` row (issue #15), or a settled — `confirmed` — one (issue
+ * #26's manual half), which becomes an override with `settled: true`.
+ * `useRunwayData.ts`'s overlay query filters to exactly those two; a
+ * `skipped` row never reaches here.
  *
  * `itemId` is `rule_id`: `RecurringItem.id` is the rule's own uuid
  * (`app/lib/supabase/recurring-items.ts` `toRecurringItem`), so no separate
@@ -110,12 +114,15 @@ export function toOccurrenceOverride(row: SelectedOccurrenceRow): StoredOccurren
     // `null` maps to *absent* — `exactOptionalPropertyTypes` requires it, the
     // same idiom `app/lib/supabase/accounts.ts` `toAccount` uses for `archivedOn`.
     ...(row.actual_date ? { newDate: row.actual_date } : {}),
+    ...(row.status === 'confirmed' ? { settled: true } : {}),
   }
 }
 
 export type OverrideArgs = Database['public']['Functions']['override_occurrence']['Args']
 export type RevertArgs = Database['public']['Functions']['revert_occurrence']['Args']
 export type SplitArgs = Database['public']['Functions']['split_recurring_rule']['Args']
+export type SettleArgs = Database['public']['Functions']['settle_occurrence']['Args']
+export type UnsettleArgs = Database['public']['Functions']['unsettle_occurrence']['Args']
 
 /**
  * Builds `override_occurrence`'s RPC payload. `edit.date` is the occurrence's
@@ -145,6 +152,34 @@ export function toOverrideArgs(edit: {
 }
 
 export function toRevertArgs(itemId: string, date: IsoDate): RevertArgs {
+  return { p_rule_id: itemId, p_projected_date: date }
+}
+
+/**
+ * Builds `settle_occurrence`'s payload (issue #26, manual half). Keyed like
+ * `toOverrideArgs` — `settlement.date` is the occurrence's `projectedDate`,
+ * never the day it actually landed — but `actualDate` is always sent: a
+ * settlement records *when* it happened, where an override's `null` means
+ * "on the projected day". `amount` is signed, matching `Occurrence.amount`;
+ * the function refuses a sign that contradicts the rule's kind.
+ */
+export function toSettleArgs(settlement: {
+  readonly itemId: string
+  readonly date: IsoDate
+  readonly amount: MinorUnits
+  readonly projectedAmount: MinorUnits
+  readonly actualDate: IsoDate
+}): SettleArgs {
+  return {
+    p_rule_id: settlement.itemId,
+    p_projected_date: settlement.date,
+    p_projected_amount_cents: settlement.projectedAmount,
+    p_actual_amount_cents: settlement.amount,
+    p_actual_date: settlement.actualDate,
+  }
+}
+
+export function toUnsettleArgs(itemId: string, date: IsoDate): UnsettleArgs {
   return { p_rule_id: itemId, p_projected_date: date }
 }
 

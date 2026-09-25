@@ -92,6 +92,7 @@ describe('resetEffect', () => {
     whatIf: false,
     previewed: false,
     isOverridden: false,
+    isSettled: false,
     dirty: false,
     ...over,
   })

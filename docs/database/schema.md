@@ -528,6 +528,59 @@ convention (`raise sqlstate 'PT404' using message = '…'`) so a rejection
 carries a distinguishable HTTP status without risking a bare `raise
 exception`'s `P0002` → HTTP 500 mapping.
 
+### Settling an occurrence
+
+**Issue #26's manual half** — "Mark as paid" / "Mark as received" in the
+day editor — adds the two functions that create and remove a *settled* row:
+`public.settle_occurrence` and `public.unsettle_occurrence`
+(`supabase/migrations/20260925010000_settle_occurrence.sql`). The other half
+of #26, matching imported transactions against occurrences, waits on an
+import source (#22, per ADR 0002) and is meant to call these same two
+functions rather than a second write path.
+
+`settle_occurrence(p_rule_id, p_projected_date, p_projected_amount_cents,
+p_actual_amount_cents, p_actual_date)` sets `status = 'confirmed'` and the
+actual amount and date, keyed and inserting exactly as `override_occurrence`
+does. It leaves `is_overridden` as it found it. Rejects with `PT400` for a
+null date or an amount whose sign contradicts the rule's kind (income `> 0`,
+bill `< 0` — anything else would be dropped from the history by
+`settledMagnitude` anyway, so it is refused rather than quietly not
+counting), `PT404` for a foreign or unknown rule, and `PT409` for a row that
+is already settled or skipped: re-settling would overwrite a recorded fact.
+
+`unsettle_occurrence(p_rule_id, p_projected_date)` is the way back ("the
+user can always unmatch"): `status` returns to `projected`; a row that was
+hand-edited before it was settled keeps its `actual_*` as its edit, and one
+that was not has them cleared. `PT404` for not-found, `PT409` for a row that
+is not settled. The row is kept either way; the next regeneration owns it
+again if nothing protects it.
+
+What a settled row does, without any further mechanism:
+
+- **It is what happened, on the chart.** The overlay read
+  (`useRunwayData`) returns `confirmed` rows beside the edited ones, mapped
+  to overrides with `settled: true`; the engine applies them like any
+  override, marks the occurrence `isSettled`, and lets no later override —
+  a what-if preview of that day or an apply-to-future sweep — rewrite it
+  (`domain/overrides.ts`).
+- **It moves every later estimate.** It is exactly what
+  `recent_settled_amounts()` reads, so settling a predicted paycheck or a
+  variable bill is what gives the rule its history. That is #26's
+  "corrections propagate forward without disturbing history".
+- **Regeneration leaves it alone**, because `status <> 'projected'` is
+  already half of the protection predicate.
+
+`override_occurrence` and `revert_occurrence` still refuse a settled row
+with `PT409`; the day editor shows a settled occurrence as a summary with an
+Undo rather than an editable form for that reason.
+
+**A settled row on a rule that is later split at an earlier date** stays on
+the closed rule, as the paragraph on protected rows in
+[Rule splitting](#rule-splitting) describes for overridden ones, and so
+leaves the forecast. Settling is meant for what has already happened, and
+splits are made from a date forward, so the two rarely cross; when they do,
+the record is kept, not rewritten.
+
 ### Rule splitting
 
 Apply-to-future is implemented as a **rule split**: close the existing rule
@@ -628,10 +681,19 @@ the rule's most recent settled amounts — at least two, at most
   regeneration and applied after expansion, so it replaces the estimate for
   that occurrence; apply-to-future pins the rule (see
   [Rule splitting](#rule-splitting)).
-- **`prediction_window` has no writer yet**, the same stance as
-  [the timezone override](#the-timezone-override-has-no-writer-on-purpose):
-  the column exists so the choice is storable, and the screen that offers it
-  has not been designed.
+- **`prediction_window`'s writer is the "Estimates" card on `/accounts`**
+  (`app/components/accounts/PredictionWindowCard.vue`, through
+  `useRunwayData().setPredictionWindow`). No design artifact covers it; it is
+  built from the same pieces as the two settings cards beside it. The write
+  is followed by a refresh, not an overlay, because the window is applied
+  *inside* `recent_settled_amounts()`: widening it needs rows the previous
+  read never fetched.
+- **History follows the rule id.** A split's successor starts with none of
+  its predecessor's settled rows. The split pins the successor to a fixed
+  amount (see [Rule splitting](#rule-splitting)), so nothing estimates from
+  that empty history unless the user switches the successor back to an
+  estimated amount; if they do, it falls back to its own `amount_cents`
+  until two occurrences settle.
 
 ### Archiving, not deleting
 
@@ -708,7 +770,7 @@ The table `domain/*` code should consult when wiring a store to this schema:
 | `Account.archivedOn` | `accounts.archived_on` | `null` maps to **absent**, not to `archivedOn: undefined` — see [Archiving, not deleting](#archiving-not-deleting) |
 | `RecurringItem.nextOccurrence` | `recurring_rules.anchor_date` | **names differ deliberately**: the domain expands backwards from it too (to fill a chart's look-back), so it is an anchor, not a "next" — but never *before* it, since it is the rule's first occurrence |
 | `RecurringItem.daysOfMonth` / `.daysOfWeek` | `recurring_rules.days_of_month` / `.days_of_week` | same numbering on both sides, `-1` = month end, ISO weekdays. Optional in the domain, nullable here — both mean "the day the anchor names" |
-| `RecurringItem.depositHistory` | *derived* | `public.recent_settled_amounts()`: each rule's most recent `occurrences.actual_amount_cents where status = 'confirmed'`, at most `user_settings.prediction_window` per rule, oldest first by `projected_date`, turned into magnitudes by the rule's kind (`withSettledHistory`, `app/lib/supabase/occurrences.ts`). No array column — this is why occurrences are materialized. Nothing in the app creates a `confirmed` row yet — that is reconciliation (#26) — so this is usually `[]`, and an estimated rule falls back to its own `amount_cents`. See [Estimated amounts](#estimated-amounts) |
+| `RecurringItem.depositHistory` | *derived* | `public.recent_settled_amounts()`: each rule's most recent `occurrences.actual_amount_cents where status = 'confirmed'`, at most `user_settings.prediction_window` per rule, oldest first by `projected_date`, turned into magnitudes by the rule's kind (`withSettledHistory`, `app/lib/supabase/occurrences.ts`). No array column — this is why occurrences are materialized. A `confirmed` row comes from `public.settle_occurrence` ("Mark as paid" / "Mark as received", #26's manual half — see [Settling an occurrence](#settling-an-occurrence)); with fewer than two, an estimated rule falls back to its own `amount_cents`. See [Estimated amounts](#estimated-amounts) |
 | `useRunwayData` (`HouseholdSettings.predictionWindow`) | `user_settings.prediction_window` | a *stored preference*, not a field on `RunwayData`: the seam applies it when it builds `depositHistory`, and the engine never reads it |
 | `Transfer.date` | `transfers.occurs_on` | |
 | `Transfer.createdAt` | `transfers.created_at` | epoch ms at the mapping edge; only ever a same-day tie-breaker |
@@ -718,7 +780,8 @@ The table `domain/*` code should consult when wiring a store to this schema:
 | `useRunwayData().defaultHorizonDays` | `user_settings.default_horizon_days` | a *stored preference*, not a field on `RunwayData` — the projection engine takes the window as a parameter and does not know a "default" exists |
 | `useRunwayData().hiddenAccountIds` | `dashboard_hidden_accounts.account_id` | presence in the table means hidden; `RunwayData` carries no field for it either, for the same reason — see [A hidden set, not a visible one](#a-hidden-set-not-a-visible-one) |
 | `Occurrence.date` / `.amount` | *derived* | `coalesce(actual_*, projected_*)` |
-| `RunwayData.occurrenceOverrides` (`StoredOccurrenceOverride[]`) | `occurrences` rows where `is_overridden = true and status = 'projected'`, written by `public.override_occurrence` / cleared by `public.revert_occurrence` | scope is `'once'` by construction — see [Rule splitting](#rule-splitting) for the other scope |
+| `RunwayData.occurrenceOverrides` (`StoredOccurrenceOverride[]`) | `occurrences` rows where `is_overridden = true and status = 'projected'`, written by `public.override_occurrence` / cleared by `public.revert_occurrence`; **and** rows where `status = 'confirmed'`, written by `public.settle_occurrence` / cleared by `public.unsettle_occurrence`, which map to `settled: true` | scope is `'once'` by construction — see [Rule splitting](#rule-splitting) for the other scope, and [Settling an occurrence](#settling-an-occurrence) |
+| `Occurrence.isSettled` | *derived* | `status = 'confirmed'`, through the override above |
 | `OccurrenceOverride` scope `future` | **a rule split**, via `public.split_recurring_rule` — not an occurrence write | |
 
 ## Why `rls_fixture_items` stays

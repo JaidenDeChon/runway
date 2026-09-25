@@ -147,6 +147,34 @@ describe('estimated occurrences (#18)', () => {
     expect(moved && isEstimated(moved)).toBe(true)
   })
 
+  it('a settled occurrence is never an estimate, even at exactly the estimated figure (#26)', () => {
+    const estimated = item({
+      id: 'pay',
+      kind: 'income',
+      amountSource: 'predicted',
+      depositHistory: history,
+    })
+    const [settled] = occurrencesIn(
+      data({
+        recurringItems: [estimated],
+        occurrenceOverrides: [
+          {
+            itemId: 'pay',
+            date: '2026-08-20',
+            scope: 'once',
+            amount: toMinorUnits(650),
+            newDate: '2026-08-20',
+            settled: true,
+          },
+        ],
+      }),
+      window,
+    )
+    expect(settled?.isSettled).toBe(true)
+    expect(settled?.amount).toBe(settled?.projectedAmount)
+    expect(settled && isEstimated(settled)).toBe(false)
+  })
+
   it('never marks a fixed rule as estimated', () => {
     const [fixed] = occurrencesIn(data({ recurringItems: [item()] }), window)
     expect(fixed && isEstimated(fixed)).toBe(false)
@@ -642,6 +670,26 @@ describe('upcomingBills', () => {
   it('is sorted by date ascending', () => {
     const dates = upcomingBills(seeded, SEED_TODAY).map((bill) => bill.date)
     expect([...dates].sort()).toEqual(dates)
+  })
+
+  it('says which bills are estimates, from the occurrence they came from (#18)', () => {
+    const household = data({
+      recurringItems: [
+        item({ id: 'fixed', name: 'Rent', kind: 'bill' }),
+        item({
+          id: 'varies',
+          name: 'Electric',
+          kind: 'bill',
+          isVariable: true,
+          depositHistory: [toMinorUnits(80), toMinorUnits(120)],
+        }),
+      ],
+    })
+    const bills = upcomingBills(household, SEED_TODAY)
+    expect(bills.find((bill) => bill.itemId === 'fixed')?.isEstimated).toBe(false)
+    const variable = bills.find((bill) => bill.itemId === 'varies')
+    expect(variable?.isEstimated).toBe(true)
+    expect(variable?.amount).toBe(-toMinorUnits(100))
   })
 })
 

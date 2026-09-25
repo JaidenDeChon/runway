@@ -287,6 +287,15 @@ predictAmount(recentHistory([100, 100, 100, 400], 2))  // 250 — the window dec
   occurrence — saved or previewed — is not an estimate and is not marked as
   one. A fixed-looking fallback amount *is* still marked: the user said the
   amount varies.
+- **Settled is what happened.** A stored override with `settled: true`
+  (`occurrences.status = 'confirmed'`, "Mark as paid" / "Mark as received",
+  #26's manual half) is applied like any other and marks the occurrence
+  `isSettled`. `isEstimated` is always false for it, even when the settled
+  figure equals the estimate to the cent, and `applyOverrides` lets no later
+  override rewrite it — neither a what-if preview of that day nor an
+  apply-to-future preview sweeping across it. The same settled row is what
+  reaches `depositHistory`, which is how settling moves every later estimate.
+  `UpcomingBill.isEstimated` carries the same answer to the shortfall screen.
 - **The known failure mode is an outlier.** A plain mean is pulled by a
   single unusual amount — a bonus, a partial final paycheck, a winter heating
   bill — by `(outlier − typical) / window`, for exactly as many cycles as it

@@ -60,6 +60,14 @@ export interface Occurrence {
   readonly projectedAmount: MinorUnits
   /** True once a stored or what-if override has been applied to this occurrence. */
   readonly isOverridden: boolean
+  /**
+   * True when this occurrence has been settled — marked paid or received
+   * (issue #26's manual half, `occurrences.status = 'confirmed'`). `amount`
+   * and `date` are then what actually happened. Implies `isOverridden`: a
+   * settlement is carried by the same overlay, and every screen that treats
+   * an edited figure as the user's own treats a settled one the same way.
+   */
+  readonly isSettled: boolean
 }
 
 /**
@@ -183,10 +191,13 @@ export function signedAmount(item: RecurringItem): MinorUnits {
  * does freeze that figure: if the estimate later moves, the two part and the
  * marker goes with it. `override_occurrence` always stores an amount; that is
  * #15's contract, and the reason this check is on equality rather than on
- * `newDate`.)
+ * `newDate`.) A settled occurrence (issue #26) is never an estimate: its
+ * figure is what actually landed, even when it equals the estimate to the cent.
  */
 export function isEstimated(occurrence: Occurrence): boolean {
   if (!occurrence.isPredicted && !occurrence.isVariable) return false
+  // Settled is what happened, even when it happens to equal the estimate.
+  if (occurrence.isSettled) return false
   return !occurrence.isOverridden || occurrence.amount === occurrence.projectedAmount
 }
 
@@ -244,6 +255,7 @@ export function occurrencesIn(data: RunwayData, window: ProjectionWindow): Occur
         projectedDate: date,
         projectedAmount: amount,
         isOverridden: false,
+        isSettled: false,
       })
     }
   }
@@ -795,6 +807,12 @@ export interface UpcomingBill {
   /** Signed (negative), matching the occurrence it came from. */
   readonly amount: MinorUnits
   readonly daysAway: number
+  /**
+   * Whether `amount` is an estimate — a variable bill's (issue #18) — so the
+   * shortfall screen's bill picker can mark it the way every other screen
+   * does. `isEstimated` of the occurrence it came from, not a second rule.
+   */
+  readonly isEstimated: boolean
 }
 
 /**
@@ -826,6 +844,7 @@ export function upcomingBills(
       date: occurrence.date,
       amount: occurrence.amount,
       daysAway: daysBetween(today, occurrence.date),
+      isEstimated: isEstimated(occurrence),
     })
   }
   return bills

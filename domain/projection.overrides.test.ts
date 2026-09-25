@@ -114,6 +114,7 @@ describe('occurrencesIn window arithmetic with stored overrides', () => {
         amount: toMinorUnits(-500),
         projectedAmount: toMinorUnits(-500),
         isOverridden: false,
+        isSettled: false,
       }),
     ])
   })

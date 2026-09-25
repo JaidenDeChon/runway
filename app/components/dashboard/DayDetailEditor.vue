@@ -32,7 +32,22 @@
  * pressed. `onSave` builds its payload from `editing.projectedDate` /
  * `.projectedAmount`, never `.date`/`.amount`: those are post-override values,
  * and keying a write on them would re-key it onto an already-moved date.
+ *
+ * Issue #26's manual half adds settlement — "Mark as paid" / "Mark as
+ * received" — and there is no design for it. It lives here, on the one
+ * occurrence you have opened, because that is where the two facts it needs
+ * are already on screen: the amount and the date fields. The action records
+ * *those* as what happened, so correcting a variable bill to what the bank
+ * actually took and marking it paid is one form, not two. It is a callout
+ * under the scope control rather than a third submit button: saving an edit
+ * and recording a fact are different statements, and a row of three buttons
+ * at 375px would not say which is which. A settled occurrence swaps the form
+ * for a summary with an Undo, because `override_occurrence` refuses a settled
+ * row — offering fields that cannot save would be a trap. What-if hides the
+ * action entirely: the mode never writes, and a previewed settlement is not a
+ * thing the engine has.
  */
+import { CircleCheck } from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
 import OccurrenceRow from '@/components/dashboard/OccurrenceRow.vue'
 import MoneyInput from '@/components/MoneyInput.vue'
@@ -44,9 +59,21 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { formatDateLong } from '@/lib/format'
-import type { OccurrenceEdit, OccurrenceRevert } from '@/lib/occurrence-editor'
-import { overrideSummary, splitConsequence } from '@/lib/occurrence-editor'
+import { formatDateLong, formatDateShort } from '@/lib/format'
+import type {
+  OccurrenceEdit,
+  OccurrenceRevert,
+  OccurrenceSettlement,
+} from '@/lib/occurrence-editor'
+import {
+  overrideSummary,
+  plannedSummary,
+  settledWord,
+  settleLabel,
+  settlementDate,
+  settlementProblem,
+  splitConsequence,
+} from '@/lib/occurrence-editor'
 import { SEGMENTED_SEGMENT, SEGMENTED_TRACK } from '@/lib/segmented-control'
 import { cn } from '@/lib/utils'
 import { discardPrompt } from '@/lib/what-if'
@@ -77,6 +104,8 @@ const props = defineProps<{
   whatIfEditCount: number
   saving: boolean
   error: string | null
+  /** Settling records the past; a day that has not arrived is recorded as today (`settlementDate`). */
+  today: IsoDate
 }>()
 
 const emit = defineEmits<{
@@ -84,6 +113,8 @@ const emit = defineEmits<{
   'update:whatIf': [value: boolean]
   save: [edit: OccurrenceEdit]
   revert: [target: OccurrenceRevert]
+  settle: [settlement: OccurrenceSettlement]
+  unsettle: [target: OccurrenceRevert]
 }>()
 
 const editing = ref<Occurrence | null>(null)
@@ -198,8 +229,81 @@ function onRevert(): void {
   emit('revert', { itemId: occurrence.itemId, date: occurrence.projectedDate })
 }
 
+function onSettle(): void {
+  const occurrence = editing.value
+  if (!occurrence || settleBlocked.value) return
+  emit('settle', {
+    itemId: occurrence.itemId,
+    date: occurrence.projectedDate,
+    amount: form.amount,
+    projectedAmount: occurrence.projectedAmount,
+    actualDate: settlementDate(form.date, props.today),
+  })
+}
+
+function onUnsettle(): void {
+  const occurrence = editing.value
+  if (!occurrence) return
+  emit('unsettle', { itemId: occurrence.itemId, date: occurrence.projectedDate })
+}
+
+/**
+ * The occurrence being looked at, kept current. `editing` is a snapshot taken
+ * when the row was opened; after a settle or an undo the projection hands
+ * over a new occurrence for the same `(itemId, projectedDate)`, and the panel
+ * has to show that one — otherwise Undo would sit under a form that no
+ * longer applies, until the editor closed.
+ */
+const current = computed(() => {
+  const occurrence = editing.value
+  if (!occurrence) return null
+  return (
+    props.occurrences.find(
+      (candidate) =>
+        candidate.itemId === occurrence.itemId &&
+        candidate.projectedDate === occurrence.projectedDate,
+    ) ?? occurrence
+  )
+})
+
+const settled = computed(() => current.value?.isSettled === true)
+
+const settledHeadline = computed(() => {
+  const occurrence = current.value
+  if (!occurrence?.isSettled) return ''
+  return `${settledWord(occurrence.projectedAmount)} on ${formatDateShort(occurrence.date)}`
+})
+
+const settledPlanned = computed(() => {
+  const occurrence = current.value
+  if (!occurrence) return ''
+  return plannedSummary({
+    projectedAmount: occurrence.projectedAmount,
+    projectedDate: occurrence.projectedDate,
+  })
+})
+
+const settleProblem = computed(() => {
+  const occurrence = editing.value
+  if (!occurrence) return null
+  return settlementProblem({ amount: form.amount, projectedAmount: occurrence.projectedAmount })
+})
+
+const settleBlocked = computed(() => props.saving || settleProblem.value !== null)
+
+const settleText = computed(() => {
+  const occurrence = editing.value
+  if (!occurrence) return ''
+  return settleLabel({
+    projectedAmount: occurrence.projectedAmount,
+    formDate: form.date,
+    today: props.today,
+  })
+})
+
 const title = computed(() => {
   if (pendingExit.value) return 'Discard what-if changes?'
+  if (settled.value) return 'Settled occurrence'
   return editing.value ? 'Edit occurrence' : 'Day detail'
 })
 const subtitle = computed(() => (props.date ? formatDateLong(props.date) : ''))
@@ -335,6 +439,57 @@ const submitLabel = computed(() => {
         <Button class="w-full" @click="emit('update:open', false)">Done</Button>
       </template>
 
+      <!-- Settled: what happened, what was planned, and the way back. No
+           fields — a settled row cannot be edited, only un-settled. -->
+      <div v-else-if="settled" class="flex flex-col gap-4">
+        <p class="text-sm font-medium">{{ current?.label }}</p>
+
+        <div class="flex items-start gap-3 rounded-md border bg-muted/50 p-3">
+          <CircleCheck aria-hidden="true" class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <div class="min-w-0 flex-1">
+            <p class="flex flex-wrap items-baseline justify-between gap-x-3 text-sm font-medium">
+              <span>{{ settledHeadline }}</span>
+              <MoneyText
+                v-if="current"
+                :amount="current.amount"
+                :colored="current.amount > 0"
+                :label="current.label"
+                size="sm"
+              />
+            </p>
+            <p class="mt-0.5 text-xs text-muted-foreground">{{ settledPlanned }}</p>
+          </div>
+        </div>
+
+        <p v-if="props.whatIf" class="text-xs text-muted-foreground">
+          Already settled, so what-if leaves it as it is.
+        </p>
+
+        <p v-if="props.error" role="alert" class="text-sm text-destructive">{{ props.error }}</p>
+
+        <div class="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            class="flex-1"
+            :disabled="props.saving"
+            @click="editing = null"
+          >
+            Back
+          </Button>
+          <Button
+            v-if="!props.whatIf"
+            type="button"
+            variant="outline"
+            class="flex-1"
+            :disabled="props.saving"
+            @click="onUnsettle"
+          >
+            Undo {{ settledWord(current?.projectedAmount ?? 0).toLowerCase() }}
+          </Button>
+        </div>
+      </div>
+
       <form v-else class="flex flex-col gap-4" @submit.prevent="onSave">
         <p class="text-sm font-medium">{{ editing?.label }}</p>
 
@@ -410,6 +565,36 @@ const submitLabel = computed(() => {
               'Rewrites the amount on every occurrence from this date onward. The date is left as it is.'
             }}
           </p>
+        </div>
+
+        <!-- Settlement (#26, manual half). Only for "this occurrence only":
+             a settlement is a fact about one day, and apply-to-future is a
+             plan for many. Uses the amount and date above, so it reads as a
+             second thing to do with the same two fields. -->
+        <div
+          v-if="!props.whatIf && form.scope === 'once'"
+          class="flex flex-col gap-3 rounded-md border bg-muted/50 p-3 sm:flex-row sm:items-center"
+        >
+          <div class="min-w-0 flex-1">
+            <p id="occurrence-settle-label" class="text-sm font-medium">Already happened?</p>
+            <p id="occurrence-settle-help" class="mt-0.5 text-xs text-muted-foreground">
+              {{
+                settleProblem ??
+                'Records the amount and date above as what actually happened. Estimates learn from it.'
+              }}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            class="shrink-0"
+            :disabled="settleBlocked"
+            aria-describedby="occurrence-settle-help"
+            @click="onSettle"
+          >
+            <CircleCheck aria-hidden="true" class="size-4" />
+            {{ settleText }}
+          </Button>
         </div>
 
         <p v-if="props.error" role="alert" class="text-sm text-destructive">{{ props.error }}</p>

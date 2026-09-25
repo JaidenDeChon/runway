@@ -25,6 +25,7 @@ const occurrence = (over: Partial<Occurrence> = {}): Occurrence => ({
   projectedDate: over.date ?? '2026-08-20',
   projectedAmount: over.amount ?? toMinorUnits(-310),
   isOverridden: false,
+  isSettled: false,
   ...over,
 })
 
@@ -94,6 +95,48 @@ describe('applyOverrides', () => {
       [override({ amount: toMinorUnits(-4496) }), override({ amount: toMinorUnits(-6000) })],
     )
     expect(applied[0]?.amount).toBe(toMinorUnits(-6000))
+  })
+})
+
+describe('settled overrides (#26, manual half)', () => {
+  it('applies what actually happened and marks the occurrence settled', () => {
+    const [applied] = applyOverrides(
+      [occurrence()],
+      [override({ amount: toMinorUnits(-322), newDate: '2026-08-19', settled: true })],
+    )
+    expect(applied?.amount).toBe(toMinorUnits(-322))
+    expect(applied?.date).toBe('2026-08-19')
+    expect(applied?.isSettled).toBe(true)
+    expect(applied?.isOverridden).toBe(true)
+    expect(applied?.projectedAmount).toBe(toMinorUnits(-310))
+  })
+
+  it('a plain edit is not a settlement', () => {
+    const [applied] = applyOverrides([occurrence()], [override()])
+    expect(applied?.isSettled).toBe(false)
+  })
+
+  it('a later one-day preview cannot rewrite a settled occurrence', () => {
+    const [applied] = applyOverrides(
+      [occurrence()],
+      [
+        override({ amount: toMinorUnits(-322), settled: true }),
+        override({ amount: toMinorUnits(-9_999) }),
+      ],
+    )
+    expect(applied?.amount).toBe(toMinorUnits(-322))
+    expect(applied?.isSettled).toBe(true)
+  })
+
+  it('an apply-to-future preview sweeps past a settled occurrence and rewrites the rest', () => {
+    const applied = applyOverrides(
+      [occurrence(), occurrence({ id: 'i@2026-09-20', date: '2026-09-20' })],
+      [
+        override({ amount: toMinorUnits(-322), settled: true }),
+        override({ scope: 'future', date: '2026-08-01', amount: toMinorUnits(-400) }),
+      ],
+    )
+    expect(applied.map((entry) => entry.amount)).toEqual([toMinorUnits(-322), toMinorUnits(-400)])
   })
 })
 

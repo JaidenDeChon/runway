@@ -8,7 +8,9 @@ import {
   toOverrideArgs,
   toRegenerationArgs,
   toRevertArgs,
+  toSettleArgs,
   toSplitArgs,
+  toUnsettleArgs,
   withSettledHistory,
 } from './occurrences'
 
@@ -115,6 +117,44 @@ describe('toOccurrenceOverride', () => {
   it('carries actual_date through as newDate when set', () => {
     const override = toOccurrenceOverride(row({ actual_date: '2026-08-22' }))
     expect(override.newDate).toBe('2026-08-22')
+  })
+  it('marks a confirmed row as a settlement (#26), and nothing else as one', () => {
+    const settled = toOccurrenceOverride(
+      row({ status: 'confirmed', actual_amount_cents: -91_250, actual_date: '2026-08-19' }),
+    )
+    expect(settled.settled).toBe(true)
+    expect(settled.amount).toBe(-91_250)
+    expect(settled.newDate).toBe('2026-08-19')
+
+    const edited = toOccurrenceOverride(row({ status: 'projected' }))
+    expect('settled' in edited).toBe(false)
+  })
+})
+
+describe('toSettleArgs / toUnsettleArgs (#26)', () => {
+  it('keys on the projected date and always sends the actual date', () => {
+    expect(
+      toSettleArgs({
+        itemId: 'rule-1',
+        date: '2026-08-20',
+        amount: -91_250,
+        projectedAmount: -90_000,
+        actualDate: '2026-08-19',
+      }),
+    ).toEqual({
+      p_rule_id: 'rule-1',
+      p_projected_date: '2026-08-20',
+      p_projected_amount_cents: -90_000,
+      p_actual_amount_cents: -91_250,
+      p_actual_date: '2026-08-19',
+    })
+  })
+
+  it('names the occurrence by its natural key to unsettle it', () => {
+    expect(toUnsettleArgs('rule-1', '2026-08-20')).toEqual({
+      p_rule_id: 'rule-1',
+      p_projected_date: '2026-08-20',
+    })
   })
 })
 

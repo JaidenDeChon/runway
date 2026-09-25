@@ -16,11 +16,16 @@
  * Issue #18: an estimated amount (predicted income, a variable bill) gets an
  * `Est.` badge instead — never both, because an edit is the user's own figure
  * and is no longer an estimate (`domain/projection.ts` `isEstimated`).
+ *
+ * Issue #26's manual half: a settled occurrence gets `Paid` / `Received`
+ * (`SettledBadge`) ahead of both — what happened outranks an edit of what
+ * was planned, and is never an estimate.
  */
 import { ChevronRight } from '@lucide/vue'
 import AccountSwatch from '@/components/AccountSwatch.vue'
 import EstimateBadge from '@/components/EstimateBadge.vue'
 import MoneyText from '@/components/MoneyText.vue'
+import SettledBadge from '@/components/SettledBadge.vue'
 import { Badge } from '@/components/ui/badge'
 import { formatDateShort } from '@/lib/format'
 import type { IsoDate } from '~~/domain/dates'
@@ -57,7 +62,11 @@ defineEmits<{ select: [] }>()
     <span class="min-w-0 flex-1">
       <span class="flex items-center gap-1.5">
         <span class="truncate font-medium">{{ props.occurrence.label }}</span>
-        <Badge v-if="props.occurrence.isOverridden" variant="outline" class="shrink-0">
+        <SettledBadge
+          v-if="props.occurrence.isSettled"
+          :projected-amount="props.occurrence.projectedAmount"
+        />
+        <Badge v-else-if="props.occurrence.isOverridden" variant="outline" class="shrink-0">
           Edited
         </Badge>
         <EstimateBadge v-else-if="isEstimated(props.occurrence)" />
@@ -70,7 +79,7 @@ defineEmits<{ select: [] }>()
         v-if="props.occurrence.isOverridden && props.occurrence.date !== props.occurrence.projectedDate"
         class="mt-0.5 block text-xs text-muted-foreground"
       >
-        moved from {{ formatDateShort(props.occurrence.projectedDate) }}
+        {{ props.occurrence.isSettled ? 'due' : 'moved from' }} {{ formatDateShort(props.occurrence.projectedDate) }}
       </span>
     </span>
 
