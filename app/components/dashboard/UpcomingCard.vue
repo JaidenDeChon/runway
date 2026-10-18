@@ -19,10 +19,12 @@
  * The 14-row cap is the design's. The line that says the list was truncated is
  * not — see the note in the page.
  */
+
 import { computed } from 'vue'
 import OccurrenceAmountRow from '@/components/dashboard/OccurrenceAmountRow.vue'
 import { Card } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
+import WhatIfMark from '@/components/WhatIfMark.vue'
 import type { OccurrenceEdit, OccurrenceRevert } from '@/lib/occurrence-editor'
 import { occurrenceKey } from '@/lib/occurrence-editor'
 import type { IsoDate } from '~~/domain/dates'
@@ -81,7 +83,7 @@ function keyFor(occurrence: Occurrence): string {
            the buttons are, because a field that writes and a field that
            previews look identical. -->
       <p v-if="props.whatIf" class="mt-1 text-sm text-chart-5">
-        <span aria-hidden="true">◑</span>
+        <WhatIfMark class="inline size-3.5 align-[-0.125em]" />
         Amounts you change here are previewed, not saved.
       </p>
     </div>

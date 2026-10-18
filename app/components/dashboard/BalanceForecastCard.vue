@@ -7,6 +7,7 @@
  * presentation controls the design puts in this card's chrome, because none of
  * them means anything anywhere else on the screen.
  */
+
 import { Settings2 } from '@lucide/vue'
 import AccountLegendRow from '@/components/dashboard/AccountLegendRow.vue'
 import BurndownChart from '@/components/dashboard/BurndownChart.vue'
@@ -18,6 +19,7 @@ import { Card } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import WhatIfMark from '@/components/WhatIfMark.vue'
 import type { ChartDensity, ChartSeries, LegendEntry } from '@/lib/burndown'
 import { SEGMENTED_SEGMENT, SEGMENTED_TRACK } from '@/lib/segmented-control'
 import { cn } from '@/lib/utils'
@@ -79,7 +81,7 @@ function setHorizon(value: unknown): void {
       v-if="props.whatIf"
       class="mx-4 mb-3 flex items-center gap-2 rounded-md border border-dashed border-chart-5 bg-chart-5/10 px-3 py-2 text-sm font-medium text-chart-5 lg:mx-5"
     >
-      <span aria-hidden="true">◑</span>
+      <WhatIfMark class="size-4 shrink-0" />
       Previewing what-if — not saved
     </p>
 

@@ -28,7 +28,9 @@
  * address, which `tests/guards/announcer-role-collisions.test.ts` exists to
  * prevent.
  */
+
 import { Button } from '@/components/ui/button'
+import WhatIfMark from '@/components/WhatIfMark.vue'
 import { previewSummary } from '@/lib/what-if'
 
 const props = defineProps<{ editCount: number; saving: boolean; error: string | null }>()
@@ -48,7 +50,7 @@ const canPromote = computed(() => props.editCount > 0)
       class="pointer-events-auto w-full max-w-[560px] rounded-lg border border-dashed border-chart-5 bg-card px-3 py-2 shadow-lg"
     >
       <div class="flex items-center gap-3">
-        <span aria-hidden="true" class="text-chart-5">◑</span>
+        <WhatIfMark class="size-4 shrink-0 text-chart-5" />
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-medium text-chart-5">What-if preview — not saved</p>
           <p class="truncate text-xs text-muted-foreground">{{ summary }}</p>
