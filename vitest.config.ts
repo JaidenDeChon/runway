@@ -37,6 +37,9 @@ export default defineConfig({
             // that needs one, and it is mocked rather than run. It belongs in
             // the project that boots nothing, beside the guards.
             'tests/support/**/*.test.ts',
+            // Tests for the repo's own scripts, such as the copy humanizer's
+            // detail guard. Pure logic over strings and a temp directory.
+            'tests/scripts/**/*.test.ts',
           ],
         },
         resolve: {
