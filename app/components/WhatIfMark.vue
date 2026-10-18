@@ -6,7 +6,8 @@
  * paths composed on Lucide's 24-unit grid with its stroke conventions, and it
  * sizes and colours like any other Lucide icon (`size-*`, `currentColor`).
  *
- * Always decorative: every place it appears also says "What-if" in words.
+ * Always decorative (`aria-hidden`): every place it appears also says in
+ * words that what-if is on and nothing is being saved.
  */
 </script>
 

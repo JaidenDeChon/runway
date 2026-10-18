@@ -33,6 +33,7 @@
  * `.projectedAmount`, never `.date`/`.amount`: those are post-override values,
  * and keying a write on them would re-key it onto an already-moved date.
  */
+
 import { computed, reactive, ref, watch } from 'vue'
 import OccurrenceRow from '@/components/dashboard/OccurrenceRow.vue'
 import MoneyInput from '@/components/MoneyInput.vue'
@@ -44,6 +45,7 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import WhatIfMark from '@/components/WhatIfMark.vue'
 import { formatDateLong } from '@/lib/format'
 import type { OccurrenceEdit, OccurrenceRevert } from '@/lib/occurrence-editor'
 import { overrideSummary, splitConsequence } from '@/lib/occurrence-editor'
@@ -249,7 +251,7 @@ const submitLabel = computed(() => {
       <p
         class="flex items-start gap-2 rounded-md border border-dashed border-chart-5 bg-chart-5/10 px-3 py-2 text-sm font-medium text-chart-5"
       >
-        <span aria-hidden="true">◑</span>
+        <WhatIfMark class="mt-0.5 size-4 shrink-0" />
         {{ discardMessage }}
       </p>
 
@@ -282,7 +284,7 @@ const submitLabel = computed(() => {
         <p
           class="flex items-center gap-2 rounded-md border border-dashed border-chart-5 bg-chart-5/10 px-3 py-2 text-sm font-medium text-chart-5"
         >
-          <span aria-hidden="true">◑</span>
+          <WhatIfMark class="size-4 shrink-0" />
           What-if — changes here won't be saved
         </p>
       </div>

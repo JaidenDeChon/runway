@@ -34,7 +34,8 @@
  * **Text, not colour alone.** `--chart-5` is the what-if token everywhere on
  * this screen, but the label says "What-if" and the switch reports its own
  * on/off state; the amber is the third telling, never the only one. The mark
- * (a dashed square around a question mark, `WhatIfMark`) is `aria-hidden` — a
+ * (a dashed square around a question mark, `WhatIfMark`, the same mark
+ * the what-if bar, banners and Upcoming hint carry) is `aria-hidden` — a
  * visual anchor for the mode, not information.
  *
  * At 375px the word drops and the mark stays, which keeps the control inside
