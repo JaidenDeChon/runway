@@ -51,7 +51,8 @@ const sidebarOpen = useCookie<boolean>('sidebar_state', { default: () => true })
         class="flex h-16 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12"
       >
         <div class="flex w-full items-center gap-2 px-4">
-          <SidebarTrigger class="-ml-1" />
+          <span class="mr-1 shrink-0 text-sm font-semibold tracking-tight">Runway</span>
+          <SidebarTrigger />
           <Separator orientation="vertical" class="mr-2 data-[orientation=vertical]:h-4" />
           <Breadcrumb v-if="crumbs">
             <BreadcrumbList>
@@ -64,12 +65,10 @@ const sidebarOpen = useCookie<boolean>('sidebar_state', { default: () => true })
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-          <AppWhatIfToggle v-if="onDashboard" class="ml-auto" />
-          <span
-            class="shrink-0 text-sm font-semibold tracking-tight"
-            :class="onDashboard ? 'hidden sm:inline' : 'ml-auto'"
-          >Runway</span>
-          <AppThemeToggle />
+          <div class="ml-auto flex shrink-0 items-center gap-2">
+            <AppWhatIfToggle v-if="onDashboard" />
+            <AppThemeToggle />
+          </div>
         </div>
       </header>
       <div class="flex flex-1 flex-col gap-4 p-4">

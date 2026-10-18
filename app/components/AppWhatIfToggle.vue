@@ -22,18 +22,30 @@
  * `useWhatIf()`, so they cannot disagree, and both route their off-switch
  * through the same confirmation.
  *
+ * **The whole pill is the hit target.** It is a `<label>` dressed as an outline
+ * button, wrapping the registry `Switch`: a click anywhere on the mark, the
+ * word or the track flips it, while the `Switch` stays the one focusable,
+ * announced control (`role="switch"`, named "What-if mode"). A real `<button>`
+ * around it would nest one button inside another, which is invalid HTML and
+ * leaves a screen reader with two controls for one state. The focus ring is
+ * drawn on the pill (`has-focus-visible:`) so keyboard focus looks like the
+ * thing you are pressing.
+ *
  * **Text, not colour alone.** `--chart-5` is the what-if token everywhere on
  * this screen, but the label says "What-if" and the switch reports its own
- * on/off state; the amber is the third telling, never the only one. The ◑
- * glyph is the same mark the bar and the editor's banner carry, and is
- * `aria-hidden` — it is a visual anchor for the mode, not information.
+ * on/off state; the amber is the third telling, never the only one. The mark
+ * (a dashed square around a question mark, `WhatIfMark`) is `aria-hidden` — a
+ * visual anchor for the mode, not information.
  *
- * At 375px the word drops and the glyph stays, which keeps the control inside
- * a header that also holds the sidebar trigger, the breadcrumb, the wordmark
+ * At 375px the word drops and the mark stays, which keeps the control inside
+ * a header that also holds the wordmark, the sidebar trigger, the breadcrumb
  * and the theme button. The switch's accessible name is unaffected: it comes
  * from `aria-label`, which says "What-if mode" at every width.
  */
+
+import { buttonVariants } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import WhatIfMark from '@/components/WhatIfMark.vue'
 import { useWhatIf } from '@/composables/useWhatIf'
 import { cn } from '@/lib/utils'
 
@@ -56,32 +68,24 @@ function setWhatIf(value: boolean): void {
 </script>
 
 <template>
-  <div
-    class="flex shrink-0 items-center gap-1.5 rounded-4xl border border-dashed px-2 py-1 transition-colors"
-    :class="on ? 'border-chart-5' : 'border-transparent'"
+  <label
+    :class="
+      cn(
+        buttonVariants({ variant: 'outline', size: 'sm' }),
+        'cursor-pointer gap-2 has-focus-visible:border-ring has-focus-visible:ring-3 has-focus-visible:ring-ring/50',
+        on ? 'border-chart-5 text-chart-5 hover:text-chart-5' : 'text-muted-foreground',
+      )
+    "
     data-slot="what-if-toggle"
   >
-    <span
-      aria-hidden="true"
-      :class="cn('text-sm', on ? 'text-chart-5' : 'text-muted-foreground')"
-    >
-      ◑
-    </span>
-    <span
-      :class="
-        cn(
-          'hidden text-sm font-medium sm:inline',
-          on ? 'text-chart-5' : 'text-muted-foreground',
-        )
-      "
-    >
-      What-if
-    </span>
+    <WhatIfMark class="size-4" />
+    <span class="hidden sm:inline">What-if</span>
     <Switch
       :model-value="on"
+      size="sm"
       aria-label="What-if mode"
-      :class="cn('shrink-0', on && 'data-checked:bg-chart-5')"
+      :class="cn('shrink-0 after:hidden', on && 'data-checked:bg-chart-5')"
       @update:model-value="(value) => setWhatIf(value === true)"
     />
-  </div>
+  </label>
 </template>
