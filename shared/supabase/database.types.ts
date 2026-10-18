@@ -170,7 +170,6 @@ export type Database = {
         Row: {
           account_id: string
           amount_cents: number
-          amount_source: Database["public"]["Enums"]["recurring_amount_source"]
           anchor_date: string
           cadence: Database["public"]["Enums"]["recurring_cadence"]
           created_at: string
@@ -188,7 +187,6 @@ export type Database = {
         Insert: {
           account_id: string
           amount_cents: number
-          amount_source?: Database["public"]["Enums"]["recurring_amount_source"]
           anchor_date: string
           cadence: Database["public"]["Enums"]["recurring_cadence"]
           created_at?: string
@@ -206,7 +204,6 @@ export type Database = {
         Update: {
           account_id?: string
           amount_cents?: number
-          amount_source?: Database["public"]["Enums"]["recurring_amount_source"]
           anchor_date?: string
           cadence?: Database["public"]["Enums"]["recurring_cadence"]
           created_at?: string
@@ -480,7 +477,6 @@ export type Database = {
     }
     Enums: {
       occurrence_status: "projected" | "confirmed" | "skipped"
-      recurring_amount_source: "fixed" | "predicted"
       recurring_cadence: "weekly" | "biweekly" | "monthly" | "annual"
       recurring_kind: "bill" | "income"
     }
@@ -611,7 +607,6 @@ export const Constants = {
   public: {
     Enums: {
       occurrence_status: ["projected", "confirmed", "skipped"],
-      recurring_amount_source: ["fixed", "predicted"],
       recurring_cadence: ["weekly", "biweekly", "monthly", "annual"],
       recurring_kind: ["bill", "income"],
     },

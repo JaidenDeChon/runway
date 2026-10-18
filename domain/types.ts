@@ -98,14 +98,6 @@ export const LAST_DAY_OF_MONTH = -1
 export type RecurringKind = 'bill' | 'income'
 
 /**
- * How an income item's amount is arrived at.
- *
- * `fixed` uses the typed amount. `predicted` derives it from `depositHistory`
- * — see `prediction.ts`. Bills are always `fixed`.
- */
-export type AmountSource = 'fixed' | 'predicted'
-
-/**
  * A bill or income rule, expanded into individual occurrences by
  * `occurrenceDates`.
  *
@@ -156,9 +148,6 @@ export interface RecurringItem {
    * `recurring_rules.anchor_date`.
    */
   readonly nextOccurrence: IsoDate
-  readonly amountSource: AmountSource
-  /** Past deposits backing a `predicted` amount, oldest first. */
-  readonly depositHistory: readonly MinorUnits[]
   /**
    * Bill-only: the amount changes each cycle (a utility bill). Purely a
    * presentation marker — the stored amount is still what projection uses.

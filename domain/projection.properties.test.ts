@@ -67,8 +67,6 @@ const itemArb = (accountIds: readonly string[], index: number): fc.Arbitrary<Rec
       cadence,
       accountId,
       nextOccurrence: addDays(WINDOW_START, anchorOffset),
-      amountSource: 'fixed' as const,
-      depositHistory: [],
       isVariable: false,
       ...(daysOfMonth ? { daysOfMonth } : {}),
     }))
@@ -436,8 +434,6 @@ describe('balances are reported, not clamped', () => {
           cadence: 'monthly',
           accountId: data.accounts[0]?.id ?? 'a',
           nextOccurrence: addDays(WINDOW_START, 1),
-          amountSource: 'fixed',
-          depositHistory: [],
           isVariable: false,
         }
         const projection = projectOver(

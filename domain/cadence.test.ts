@@ -11,8 +11,6 @@ const item = (over: Partial<RecurringItem> = {}): RecurringItem => ({
   cadence: 'monthly',
   accountId: 'a',
   nextOccurrence: '2026-08-20',
-  amountSource: 'fixed',
-  depositHistory: [],
   isVariable: false,
   ...over,
 })

@@ -47,22 +47,16 @@ export const seedRecurringItems: readonly RecurringItem[] = [
     cadence: 'monthly',
     accountId: 'acct-checking',
     nextOccurrence: '2026-08-20',
-    amountSource: 'fixed',
-    depositHistory: [],
     isVariable: false,
   },
   {
     id: 'item-paycheck',
     name: 'Paycheck',
     kind: 'income',
-    // Equals the mean of depositHistory: prediction is stored, not recomputed
-    // at render time, so the two must already agree in seeded data.
     amount: toMinorUnits(2450),
     cadence: 'biweekly',
     accountId: 'acct-checking',
     nextOccurrence: '2026-08-21',
-    amountSource: 'predicted',
-    depositHistory: [toMinorUnits(2440), toMinorUnits(2450), toMinorUnits(2460)],
     isVariable: false,
   },
   {
@@ -73,8 +67,6 @@ export const seedRecurringItems: readonly RecurringItem[] = [
     cadence: 'monthly',
     accountId: 'acct-checking',
     nextOccurrence: '2026-08-24',
-    amountSource: 'fixed',
-    depositHistory: [],
     isVariable: false,
   },
   {
@@ -85,8 +77,6 @@ export const seedRecurringItems: readonly RecurringItem[] = [
     cadence: 'monthly',
     accountId: 'acct-checking',
     nextOccurrence: '2026-08-28',
-    amountSource: 'fixed',
-    depositHistory: [],
     isVariable: true,
   },
   {
@@ -97,8 +87,6 @@ export const seedRecurringItems: readonly RecurringItem[] = [
     cadence: 'monthly',
     accountId: 'acct-savings',
     nextOccurrence: '2026-08-31',
-    amountSource: 'fixed',
-    depositHistory: [],
     isVariable: false,
   },
   {
@@ -109,8 +97,6 @@ export const seedRecurringItems: readonly RecurringItem[] = [
     cadence: 'monthly',
     accountId: 'acct-checking',
     nextOccurrence: '2026-09-01',
-    amountSource: 'fixed',
-    depositHistory: [],
     isVariable: false,
   },
   {
@@ -121,8 +107,6 @@ export const seedRecurringItems: readonly RecurringItem[] = [
     cadence: 'monthly',
     accountId: 'acct-checking',
     nextOccurrence: '2026-09-03',
-    amountSource: 'fixed',
-    depositHistory: [],
     isVariable: false,
   },
   {
@@ -133,8 +117,6 @@ export const seedRecurringItems: readonly RecurringItem[] = [
     cadence: 'monthly',
     accountId: 'acct-savings',
     nextOccurrence: '2026-09-08',
-    amountSource: 'fixed',
-    depositHistory: [],
     isVariable: false,
   },
 ] as const
@@ -223,8 +205,6 @@ export const shortSeedRecurringItems: readonly RecurringItem[] = [
     daysOfMonth: [1, 15],
     accountId: 'acct-short-checking',
     nextOccurrence: '2026-09-01',
-    amountSource: 'fixed',
-    depositHistory: [],
     isVariable: false,
   },
   {
@@ -235,8 +215,6 @@ export const shortSeedRecurringItems: readonly RecurringItem[] = [
     cadence: 'monthly',
     accountId: 'acct-short-checking',
     nextOccurrence: '2026-09-06',
-    amountSource: 'fixed',
-    depositHistory: [],
     isVariable: false,
   },
   {
@@ -247,8 +225,6 @@ export const shortSeedRecurringItems: readonly RecurringItem[] = [
     cadence: 'monthly',
     accountId: 'acct-short-checking',
     nextOccurrence: '2026-09-12',
-    amountSource: 'fixed',
-    depositHistory: [],
     isVariable: false,
   },
   {
@@ -259,8 +235,6 @@ export const shortSeedRecurringItems: readonly RecurringItem[] = [
     cadence: 'monthly',
     accountId: 'acct-short-checking',
     nextOccurrence: '2026-08-22',
-    amountSource: 'fixed',
-    depositHistory: [],
     isVariable: true,
   },
   {
@@ -271,8 +245,6 @@ export const shortSeedRecurringItems: readonly RecurringItem[] = [
     cadence: 'monthly',
     accountId: 'acct-short-checking',
     nextOccurrence: '2026-08-24',
-    amountSource: 'fixed',
-    depositHistory: [],
     isVariable: false,
   },
   {
@@ -283,8 +255,6 @@ export const shortSeedRecurringItems: readonly RecurringItem[] = [
     cadence: 'monthly',
     accountId: 'acct-short-checking',
     nextOccurrence: '2026-09-01',
-    amountSource: 'fixed',
-    depositHistory: [],
     isVariable: false,
   },
 ] as const

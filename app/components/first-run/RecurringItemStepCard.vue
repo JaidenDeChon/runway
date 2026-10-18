@@ -2,9 +2,7 @@
 /**
  * Step 2 — the recurring-item half of onboarding.
  *
- * Always a fixed amount: onboarding never offers the "predicted from
- * deposits" source the recurring-items screen has, per the spec's step-2
- * notes. The Bill/Income switch is a `ToggleGroup` rather than `Tabs` — the
+ * The Bill/Income switch is a `ToggleGroup` rather than `Tabs` — the
  * export tags it `Tabs` but styles a segmented control, and the spec asks for
  * whichever control the recurring-items screen uses for the same choice; that
  * screen uses a `ToggleGroup` too. Its look comes from `SEGMENTED_*`, shared

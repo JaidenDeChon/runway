@@ -225,29 +225,29 @@ where id = '10000000-0000-4000-8002-00000000000b';
 -- days_of_month is null everywhere but B's paycheck, which is the point: null
 -- means "the day anchor_date names".
 insert into public.recurring_rules (
-  id, user_id, account_id, name, kind, amount_cents, amount_source, is_variable,
+  id, user_id, account_id, name, kind, amount_cents, is_variable,
   cadence, anchor_date, starts_on, ends_on, days_of_month
 ) values
   ('20000000-0000-4000-8000-00000000000a', '00000000-0000-4000-8000-00000000000a',
-   '10000000-0000-4000-8000-00000000000a', 'Car payment', 'bill', 31000, 'fixed', false,
+   '10000000-0000-4000-8000-00000000000a', 'Car payment', 'bill', 31000, false,
    'monthly', '2026-08-20', null, null, null),
   ('20000000-0000-4000-8001-00000000000a', '00000000-0000-4000-8000-00000000000a',
-   '10000000-0000-4000-8000-00000000000a', 'Paycheck', 'income', 245000, 'predicted', false,
+   '10000000-0000-4000-8000-00000000000a', 'Paycheck', 'income', 245000, false,
    'biweekly', '2026-08-21', null, null, null),
   ('20000000-0000-4000-8002-00000000000a', '00000000-0000-4000-8000-00000000000a',
-   '10000000-0000-4000-8000-00000000000a', 'Car insurance', 'bill', 17500, 'fixed', false,
+   '10000000-0000-4000-8000-00000000000a', 'Car insurance', 'bill', 17500, false,
    'monthly', '2026-08-24', null, null, null),
   ('20000000-0000-4000-8003-00000000000a', '00000000-0000-4000-8000-00000000000a',
-   '10000000-0000-4000-8000-00000000000a', 'Electric & water', 'bill', 14000, 'fixed', true,
+   '10000000-0000-4000-8000-00000000000a', 'Electric & water', 'bill', 14000, true,
    'monthly', '2026-08-28', null, null, null),
   ('20000000-0000-4000-8004-00000000000a', '00000000-0000-4000-8000-00000000000a',
-   '10000000-0000-4000-8001-00000000000a', 'Side work', 'income', 40000, 'fixed', false,
+   '10000000-0000-4000-8001-00000000000a', 'Side work', 'income', 40000, false,
    'monthly', '2026-08-31', null, null, null),
   ('20000000-0000-4000-8005-00000000000a', '00000000-0000-4000-8000-00000000000a',
-   '10000000-0000-4000-8000-00000000000a', 'Phone', 'bill', 5500, 'fixed', false,
+   '10000000-0000-4000-8000-00000000000a', 'Phone', 'bill', 5500, false,
    'monthly', '2026-09-03', null, null, null),
   ('20000000-0000-4000-8006-00000000000a', '00000000-0000-4000-8000-00000000000a',
-   '10000000-0000-4000-8001-00000000000a', 'Streaming', 'bill', 1800, 'fixed', false,
+   '10000000-0000-4000-8001-00000000000a', 'Streaming', 'bill', 1800, false,
    'monthly', '2026-09-08', null, null, null),
   -- The split pair: the August rule closes with ends_on, the September rule
   -- opens with starts_on == anchor_date. Apply-to-future is this split, never
@@ -259,13 +259,13 @@ insert into public.recurring_rules (
   -- divergence on one side or the other; it belongs on the closed August rule,
   -- which no screen and no spec figure reads.
   ('20000000-0000-4000-8007-00000000000a', '00000000-0000-4000-8000-00000000000a',
-   '10000000-0000-4000-8000-00000000000a', 'Rent', 'bill', 155000, 'fixed', false,
+   '10000000-0000-4000-8000-00000000000a', 'Rent', 'bill', 155000, false,
    'monthly', '2026-08-01', null, '2026-08-31', null),
   ('20000000-0000-4000-8008-00000000000a', '00000000-0000-4000-8000-00000000000a',
-   '10000000-0000-4000-8000-00000000000a', 'Rent', 'bill', 165000, 'fixed', false,
+   '10000000-0000-4000-8000-00000000000a', 'Rent', 'bill', 165000, false,
    'monthly', '2026-09-01', '2026-09-01', null, null),
   ('20000000-0000-4000-8000-00000000000b', '00000000-0000-4000-8000-00000000000b',
-   '10000000-0000-4000-8000-00000000000b', 'B Rent', 'bill', 90000, 'fixed', false,
+   '10000000-0000-4000-8000-00000000000b', 'B Rent', 'bill', 90000, false,
    'monthly', '2026-09-01', null, null, null),
   -- Semi-monthly, the 1st and the 15th — the way a large share of people are
   -- actually paid, and the fixture for days_of_month. It sits on user B rather
@@ -275,7 +275,7 @@ insert into public.recurring_rules (
   -- and `db:reset` failing to do that is worth noticing here rather than in a
   -- projection three screens away.
   ('20000000-0000-4000-8001-00000000000b', '00000000-0000-4000-8000-00000000000b',
-   '10000000-0000-4000-8000-00000000000b', 'B Paycheck', 'income', 120000, 'fixed', false,
+   '10000000-0000-4000-8000-00000000000b', 'B Paycheck', 'income', 120000, false,
    'monthly', '2026-08-15', null, null, '{15,1}'),
   -- ── user C: the short household ──────────────────────────────────────────
   -- Mirrors domain/seed.ts `shortSeedRecurringItems`, rule for rule, the way
@@ -287,22 +287,22 @@ insert into public.recurring_rules (
   -- *before* the money that would cover it — the shape the shortfall screen
   -- exists to catch.
   ('20000000-0000-4000-8000-00000000000c', '00000000-0000-4000-8000-00000000000c',
-   '10000000-0000-4000-8000-00000000000c', 'Paycheck', 'income', 106200, 'fixed', false,
+   '10000000-0000-4000-8000-00000000000c', 'Paycheck', 'income', 106200, false,
    'monthly', '2026-09-01', null, null, '{1,15}'),
   ('20000000-0000-4000-8001-00000000000c', '00000000-0000-4000-8000-00000000000c',
-   '10000000-0000-4000-8000-00000000000c', 'Car insurance', 'bill', 12100, 'fixed', false,
+   '10000000-0000-4000-8000-00000000000c', 'Car insurance', 'bill', 12100, false,
    'monthly', '2026-09-06', null, null, null),
   ('20000000-0000-4000-8002-00000000000c', '00000000-0000-4000-8000-00000000000c',
-   '10000000-0000-4000-8000-00000000000c', 'Phone', 'bill', 5800, 'fixed', false,
+   '10000000-0000-4000-8000-00000000000c', 'Phone', 'bill', 5800, false,
    'monthly', '2026-09-12', null, null, null),
   ('20000000-0000-4000-8003-00000000000c', '00000000-0000-4000-8000-00000000000c',
-   '10000000-0000-4000-8000-00000000000c', 'Electric & water', 'bill', 13200, 'fixed', true,
+   '10000000-0000-4000-8000-00000000000c', 'Electric & water', 'bill', 13200, true,
    'monthly', '2026-08-22', null, null, null),
   ('20000000-0000-4000-8004-00000000000c', '00000000-0000-4000-8000-00000000000c',
-   '10000000-0000-4000-8000-00000000000c', 'Card minimum', 'bill', 9500, 'fixed', false,
+   '10000000-0000-4000-8000-00000000000c', 'Card minimum', 'bill', 9500, false,
    'monthly', '2026-08-24', null, null, null),
   ('20000000-0000-4000-8005-00000000000c', '00000000-0000-4000-8000-00000000000c',
-   '10000000-0000-4000-8000-00000000000c', 'Rent', 'bill', 115000, 'fixed', false,
+   '10000000-0000-4000-8000-00000000000c', 'Rent', 'bill', 115000, false,
    'monthly', '2026-09-01', null, null, null);
 
 -- occurrences — materialized from every rule above, from its effective start

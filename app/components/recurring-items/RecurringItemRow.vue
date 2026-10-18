@@ -34,9 +34,6 @@ defineEmits<{ select: [] }>()
 
 const amount = computed(() => signedAmount(props.item))
 
-const isPredicted = computed(
-  () => props.item.kind === 'income' && props.item.amountSource === 'predicted',
-)
 const isVariableBill = computed(() => props.item.kind === 'bill' && props.item.isVariable)
 const hasEnded = computed(() => props.nextDate === null)
 
@@ -73,10 +70,7 @@ const metaLine = computed(() => {
           :colored="props.item.kind === 'income'"
           :label="props.item.name"
         />
-        <Badge v-if="isPredicted" class="border-transparent bg-accent text-muted-foreground" aria-label="Predicted from deposit history">
-          Predicted
-        </Badge>
-        <Badge v-else-if="isVariableBill" class="border-transparent bg-accent text-muted-foreground" aria-label="Estimated amount">
+        <Badge v-if="isVariableBill" class="border-transparent bg-accent text-muted-foreground" aria-label="Estimated amount">
           Est.
         </Badge>
       </span>

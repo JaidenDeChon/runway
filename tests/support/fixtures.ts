@@ -149,7 +149,6 @@ export async function seedHousehold(
             name: fixtureName(spec.label, item.name),
             kind: item.kind,
             amount_cents: item.amount,
-            amount_source: item.amountSource,
             is_variable: item.isVariable,
             cadence: item.cadence,
             // `anchor_date` is the rule's first occurrence; `nextOccurrence` is

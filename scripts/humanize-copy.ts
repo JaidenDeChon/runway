@@ -130,7 +130,6 @@ export const UI_ORDER: readonly string[] = [
   'app/pages/accounts.vue',
   // Recurring items.
   'app/components/recurring-items/RecurringItemRow.vue',
-  'app/components/recurring-items/PredictedAmountPanel.vue',
   'app/components/recurring-items/RecurringItemEditor.vue',
   'app/pages/recurring-items.vue',
   // Errors the server returns to a signed-in user.

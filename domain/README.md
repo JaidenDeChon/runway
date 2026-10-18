@@ -29,7 +29,7 @@ runtime APIs.
 - `projection.ts` — the engine itself: `project`, `evaluate`, `shortfallThrough`, `upcomingBills`.
 - `discretionary.ts` — the monthly discretionary figure divided by the length of the month each day
   falls in, with the remainder distributed so a month costs exactly what the user said it costs.
-- `overrides.ts` — occurrence-level edits. `prediction.ts` — income predicted from deposit history.
+- `overrides.ts` — occurrence-level edits.
   `accounts.ts`, `transfers.ts` — invariants over those collections. `seed.ts` — the synthetic
   fixture the app boots with, mirrored by `supabase/seed.sql`.
 - `materialization.ts` — the desired set of materialized `public.occurrences` rows for a sliding

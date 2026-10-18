@@ -4,6 +4,13 @@
 **Related issues:** Recurring items, Income prediction
 **Last updated:** 2026-08-15
 
+> **Income prediction was dropped on 2026-10-17 and is not built**
+> ([ADR 0003](../../decisions/0003-drop-income-prediction.md)). Ignore everything here about it:
+> the "Amount source" toggle, "Predict from deposits", `PredictedAmountPanel`, the "Predicted"
+> row badge, `screens/edit-predicted-income.png`, "Income prediction — the subtle part", and open
+> questions 5–7. Every income item takes a typed amount. The rest of this spec, including the
+> variable-bill "Est." marker, still applies.
+
 ---
 
 ## Purpose
