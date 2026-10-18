@@ -10,13 +10,13 @@
 import type { Database } from '#shared/supabase/database.types'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
-import type { AmountSource, Cadence, RecurringItem, RecurringKind } from '~~/domain/types'
+import type { Cadence, RecurringItem, RecurringKind } from '~~/domain/types'
 
 export type RecurringRuleRow = Database['public']['Tables']['recurring_rules']['Row']
 
 /** Named columns, never `select('*')` — a column added later is a deliberate addition. */
 export const RECURRING_RULE_COLUMNS =
-  'id, account_id, name, kind, amount_cents, amount_source, is_variable, cadence, anchor_date, days_of_month, days_of_week, starts_on, ends_on' as const
+  'id, account_id, name, kind, amount_cents, is_variable, cadence, anchor_date, days_of_month, days_of_week, starts_on, ends_on' as const
 
 /**
  * What a `.select(RECURRING_RULE_COLUMNS)` query actually returns — the full
@@ -31,7 +31,6 @@ export type SelectedRecurringRuleRow = Pick<
   | 'name'
   | 'kind'
   | 'amount_cents'
-  | 'amount_source'
   | 'is_variable'
   | 'cadence'
   | 'anchor_date'
@@ -46,13 +45,6 @@ export interface RecurringItemDraft extends Omit<RecurringItem, 'id'> {
   readonly id?: string
 }
 
-/**
- * `depositHistory` is always read as `[]` — it is *derived*
- * (`occurrences.actual_amount_cents where status = 'confirmed'`, per
- * `docs/database/schema.md`), not a column on this row. Occurrence
- * materialization is out of scope for issue #8, so the app cannot populate it
- * yet; this is honest about that rather than inventing a column.
- */
 export function toRecurringItem(row: SelectedRecurringRuleRow): RecurringItem {
   return {
     id: row.id,
@@ -67,8 +59,6 @@ export function toRecurringItem(row: SelectedRecurringRuleRow): RecurringItem {
     // table. `anchor_date` is the rule's first occurrence, not "the next
     // date" once it has passed — see `nextOccurrenceOnOrAfter`.
     nextOccurrence: row.anchor_date,
-    amountSource: row.amount_source,
-    depositHistory: [],
     isVariable: row.is_variable,
     // `null` maps to *absent*, not to `daysOfMonth: undefined` —
     // `exactOptionalPropertyTypes` requires it, and `toAccount` uses the same
@@ -86,7 +76,6 @@ export function toRecurringRuleColumns(draft: RecurringItemDraft): {
   name: string
   kind: RecurringKind
   amount_cents: MinorUnits
-  amount_source: AmountSource
   is_variable: boolean
   cadence: Cadence
   anchor_date: IsoDate
@@ -100,7 +89,6 @@ export function toRecurringRuleColumns(draft: RecurringItemDraft): {
     name: draft.name,
     kind: draft.kind,
     amount_cents: draft.amount,
-    amount_source: draft.amountSource,
     is_variable: draft.isVariable,
     cadence: draft.cadence,
     anchor_date: draft.nextOccurrence,

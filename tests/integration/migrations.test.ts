@@ -78,12 +78,7 @@ const EXPECTED_TABLES = [
   'user_settings',
 ] as const
 
-const EXPECTED_ENUMS = [
-  'occurrence_status',
-  'recurring_amount_source',
-  'recurring_cadence',
-  'recurring_kind',
-] as const
+const EXPECTED_ENUMS = ['occurrence_status', 'recurring_cadence', 'recurring_kind'] as const
 
 describe('migrations', () => {
   it('are all named so the CLI can derive a version from them', () => {

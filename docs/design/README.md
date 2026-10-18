@@ -60,7 +60,7 @@ If a design artifact appears to use a value that doesn't exist in the token set,
 | Will I make it | `shortfall` | Shortfall calculator | ☑ |
 | Occurrence editor | `occurrence-editor` | Occurrence editor, What-if mode | ☐ |
 | Accounts | `accounts` | Accounts management | ☑ |
-| Recurring items | `recurring-items` | Recurring items, Income prediction | ☑ |
+| Recurring items | `recurring-items` | Recurring items, Income prediction (dropped, [ADR 0003](../decisions/0003-drop-income-prediction.md)) | ☑ |
 | First run | `first-run` | First-run experience | ☑ |
 | Sign in / sign up / password reset | `auth` | Authentication | ☐ |
 

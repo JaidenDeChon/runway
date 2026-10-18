@@ -21,7 +21,6 @@ const occurrence = (over: Partial<Occurrence> = {}): Occurrence => ({
   accountId: 'a',
   amount: toMinorUnits(-310),
   isVariable: false,
-  isPredicted: false,
   projectedDate: over.date ?? '2026-08-20',
   projectedAmount: over.amount ?? toMinorUnits(-310),
   isOverridden: false,

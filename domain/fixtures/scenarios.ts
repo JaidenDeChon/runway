@@ -60,8 +60,6 @@ const rule = (over: Partial<RecurringItem> & Pick<RecurringItem, 'id' | 'nextOcc
   amount: 50_000,
   cadence: 'monthly' as const,
   accountId: 'checking',
-  amountSource: 'fixed' as const,
-  depositHistory: [],
   isVariable: false,
   ...over,
 })

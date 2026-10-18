@@ -29,7 +29,6 @@ interface RuleRow {
   readonly name: string
   readonly kind: string
   readonly amount_cents: number
-  readonly amount_source: string
   readonly is_variable: boolean
   readonly cadence: string
   readonly days_of_month: number[] | null
@@ -43,7 +42,7 @@ async function readRule(context: AuthContext, id: string): Promise<RuleRow> {
   const { data, error } = await context.client
     .from('recurring_rules')
     .select(
-      'id, account_id, name, kind, amount_cents, amount_source, is_variable, cadence, days_of_month, days_of_week, anchor_date, starts_on, ends_on',
+      'id, account_id, name, kind, amount_cents, is_variable, cadence, days_of_month, days_of_week, anchor_date, starts_on, ends_on',
     )
     .eq('id', id)
     .single()
@@ -88,8 +87,6 @@ const baseItem = (id: string, over: Partial<RecurringItem> = {}): RecurringItem 
   cadence: 'monthly',
   accountId: 'unused',
   nextOccurrence: '2026-08-01',
-  amountSource: 'fixed',
-  depositHistory: [],
   isVariable: false,
   ...over,
 })
@@ -124,8 +121,6 @@ describe.skipIf(LOCAL_STACK === null)('split_recurring_rule', () => {
           cadence: 'monthly',
           accountId: 'a',
           nextOccurrence: overs.nextOccurrence ?? '2026-08-01',
-          amountSource: 'fixed',
-          depositHistory: [],
           isVariable: false,
         },
       ],

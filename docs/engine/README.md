@@ -66,10 +66,10 @@ const data: RunwayData = {
   recurringItems: [
     { id: 'rent', name: 'Rent', kind: 'bill', amount: 180_000, cadence: 'monthly',
       accountId: 'checking', nextOccurrence: '2026-09-01',
-      amountSource: 'fixed', depositHistory: [], isVariable: false },
+      isVariable: false },
     { id: 'pay', name: 'Paycheck', kind: 'income', amount: 310_000, cadence: 'biweekly',
       accountId: 'checking', nextOccurrence: '2026-08-21',
-      amountSource: 'fixed', depositHistory: [], isVariable: false },
+      isVariable: false },
   ],
   transfers: [],
   balanceHistory: [],                   // readings each account has since moved past

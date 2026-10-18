@@ -94,7 +94,6 @@ import type { IsoDate } from '~~/domain/dates'
 import { desiredOccurrences, materializationWindow } from '~~/domain/materialization'
 import type { MinorUnits } from '~~/domain/money'
 import type { StoredOccurrenceOverride } from '~~/domain/overrides'
-import { resolveAmount } from '~~/domain/prediction'
 import type { Account, BalanceSnapshot, RecurringItem, RunwayData, Transfer } from '~~/domain/types'
 
 export type { AccountDraft, RecurringItemDraft }
@@ -717,13 +716,7 @@ export function useRunwayData() {
     today: IsoDate,
   ): Promise<RecurringItem> {
     const userId = requireUserId()
-    // Prediction is resolved at save time, not at render time, so the row and
-    // the projection always read one stored figure. `resolveAmount` reads
-    // `depositHistory` and `id`; a brand-new draft has neither yet, and an
-    // unresolved id doesn't change what a fixed or already-predicted amount
-    // resolves to.
-    const amount = resolveAmount({ ...draft, id: draft.id ?? '' })
-    const columns = toRecurringRuleColumns({ ...draft, amount })
+    const columns = toRecurringRuleColumns(draft)
 
     const { data: saved, error: saveError } = draft.id
       ? await client

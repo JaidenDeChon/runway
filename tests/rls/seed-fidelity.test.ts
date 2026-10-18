@@ -180,7 +180,6 @@ interface RuleRow {
   starts_on: Date | null
   ends_on: Date | null
   is_variable: boolean
-  amount_source: 'fixed' | 'predicted'
   days_of_month: number[] | null
   days_of_week: number[] | null
 }
@@ -197,8 +196,6 @@ function toItem(row: RuleRow): RecurringItem {
     cadence: row.cadence,
     accountId: 'unused-here',
     nextOccurrence: iso(row.anchor_date),
-    amountSource: row.amount_source,
-    depositHistory: [],
     isVariable: row.is_variable,
     // Spread rather than assign `undefined`: `exactOptionalPropertyTypes` draws a
     // distinction between "absent" and "present and undefined", and RecurringItem
@@ -219,7 +216,7 @@ describe.skipIf(LOCAL_STACK === null)('the seed and the domain fixture agree', (
     try {
       rules = await sql<RuleRow[]>`
         select id, user_id, name, kind, cadence, amount_cents, anchor_date, starts_on, ends_on,
-               is_variable, amount_source, days_of_month, days_of_week
+               is_variable, days_of_month, days_of_week
         from public.recurring_rules
       `
       const rows = await sql<{ rule_id: string; projected_date: Date }[]>`
@@ -305,7 +302,6 @@ describe.skipIf(LOCAL_STACK === null)('the seed and the domain fixture agree', (
           cadence: got?.cadence,
           anchor: got ? iso(got.anchor_date) : undefined,
           variable: got?.is_variable,
-          source: got?.amount_source,
           // A day set is part of the rule, not decoration: dropping C's
           // `{1, 15}` turns a semi-monthly paycheck into a monthly one and
           // halves the household's income without failing anything else.
@@ -315,7 +311,6 @@ describe.skipIf(LOCAL_STACK === null)('the seed and the domain fixture agree', (
           cadence: want.cadence,
           anchor: want.nextOccurrence,
           variable: want.isVariable,
-          source: want.amountSource,
           daysOfMonth: want.daysOfMonth ? [...want.daysOfMonth].sort((a, b) => a - b) : null,
         })
       }

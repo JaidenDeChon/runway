@@ -155,8 +155,6 @@ describe.skipIf(LOCAL_STACK === null)(
             cadence: 'monthly',
             accountId: 'acct-history',
             nextOccurrence: '2026-08-01',
-            amountSource: 'fixed',
-            depositHistory: [],
             isVariable: false,
           },
         ],

@@ -3,8 +3,8 @@
  *
  * `public.occurrences` (issue #9) needs a `(rule_id, projected_date,
  * projected_amount_cents)` row for every date every rule lands on inside a
- * sliding window, so that the occurrence editor (#15), income prediction
- * (#18) and reconciliation (#26) all have real rows to work against instead
+ * sliding window, so that the occurrence editor (#15) and reconciliation
+ * (#26) have real rows to work against instead
  * of re-expanding the rules themselves. This module computes that desired
  * set; it does not write anything — the RPC in
  * `supabase/migrations/<ts>_occurrence_regeneration.sql` applies it.

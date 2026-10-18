@@ -55,7 +55,6 @@ below. It also serves as the RLS-predicate index, so no separate
 | `name` | `text` | 1–80 chars |
 | `kind` | `recurring_kind` enum | `bill` \| `income` |
 | `amount_cents` | `bigint` | always a positive magnitude; the sign is derived from `kind` when an occurrence is materialized |
-| `amount_source` | `recurring_amount_source` enum | `fixed` \| `predicted` — `predicted` is income-only |
 | `is_variable` | `boolean` | bill-only presentation marker (a utility bill); the stored amount is still what projection uses |
 | `cadence` | `recurring_cadence` enum | `weekly` \| `biweekly` \| `monthly` \| `annual` |
 | `anchor_date` | `date` | the rule's first occurrence — which week a biweekly rule falls in, which month-and-day an annual one lands on, and, absent a day set, the weekday or day-of-month everything else aligns to. Nothing is ever projected before it |
@@ -566,7 +565,7 @@ place and returns no successor. Otherwise it closes the rule
 (`ends_on = p_effective_from - 1` — *minus one* because both bounds are
 inclusive, so `p_effective_from` itself would otherwise let both rules emit
 that day) and inserts a successor copying `account_id`, `name`, `kind`,
-`amount_source`, `is_variable`, `cadence`, `days_of_month`, `days_of_week`,
+`is_variable`, `cadence`, `days_of_month`, `days_of_week`,
 and **the closed rule's original `ends_on`** (read before that column was
 overwritten), with `amount_cents = p_amount_cents` and
 `anchor_date = starts_on = p_effective_from`.
@@ -660,7 +659,6 @@ The table `domain/*` code should consult when wiring a store to this schema:
 | `Account.archivedOn` | `accounts.archived_on` | `null` maps to **absent**, not to `archivedOn: undefined` — see [Archiving, not deleting](#archiving-not-deleting) |
 | `RecurringItem.nextOccurrence` | `recurring_rules.anchor_date` | **names differ deliberately**: the domain expands backwards from it too (to fill a chart's look-back), so it is an anchor, not a "next" — but never *before* it, since it is the rule's first occurrence |
 | `RecurringItem.daysOfMonth` / `.daysOfWeek` | `recurring_rules.days_of_month` / `.days_of_week` | same numbering on both sides, `-1` = month end, ISO weekdays. Optional in the domain, nullable here — both mean "the day the anchor names" |
-| `RecurringItem.depositHistory` | *derived* | `occurrences.actual_amount_cents where status = 'confirmed'`, ordered by `projected_date`. No array column — this is why occurrences are materialized. **The app still always reads this as `[]`**: issue #9 materializes `projected` rows, but nothing creates a `confirmed` one yet — that is the occurrence editor (#15) or reconciliation (#26). This is not a bug — it is why the recurring-items editor's "Predict from deposits" toggle stays disabled (`canPredict([])` is false) until one of those lands |
 | `Transfer.date` | `transfers.occurs_on` | |
 | `Transfer.createdAt` | `transfers.created_at` | epoch ms at the mapping edge; only ever a same-day tie-breaker |
 | `RunwayData.safetyCushion` | `user_settings.cushion_cents` | |

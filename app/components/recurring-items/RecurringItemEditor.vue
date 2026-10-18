@@ -15,11 +15,6 @@
  *   occurrence'") but issue #8 requires as a first-class verb — ending a rule
  *   stops future occurrences without erasing past ones.
  *
- * Predicted income is resolved by `useRunwayData().saveRecurringItem` at save
- * time — this form only *previews* the predicted figure, via the same
- * `resolveAmount` the store calls, so the preview and the saved value can
- * never disagree.
- *
  * Every write is async and can fail — a dropped connection, an expired
  * session — so `saving`/`deleting` disable the buttons and a failure renders
  * inline rather than closing the editor out from under whatever the user typed.
@@ -27,7 +22,6 @@
 import { computed, reactive, ref, watch } from 'vue'
 import MoneyInput from '@/components/MoneyInput.vue'
 import ResponsiveEditor from '@/components/ResponsiveEditor.vue'
-import PredictedAmountPanel from '@/components/recurring-items/PredictedAmountPanel.vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -40,7 +34,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useRunwayData } from '@/composables/useRunwayData'
 import { useToday } from '@/composables/useToday'
 import { formatCadence } from '@/lib/format'
@@ -49,8 +42,7 @@ import { cn } from '@/lib/utils'
 import { nextOccurrenceOnOrAfter } from '~~/domain/cadence'
 import type { IsoDate } from '~~/domain/dates'
 import type { MinorUnits } from '~~/domain/money'
-import { canPredict, MIN_DEPOSITS_FOR_PREDICTION, resolveAmount } from '~~/domain/prediction'
-import type { AmountSource, Cadence, RecurringItem, RecurringKind } from '~~/domain/types'
+import type { Cadence, RecurringItem, RecurringKind } from '~~/domain/types'
 import { CADENCES } from '~~/domain/types'
 
 const props = defineProps<{ open: boolean; item: RecurringItem | null }>()
@@ -72,8 +64,6 @@ const form = reactive({
   accountId: '',
   amount: 0 as MinorUnits,
   nextOccurrence: today.value as IsoDate,
-  amountSource: 'fixed' as AmountSource,
-  depositHistory: [] as readonly MinorUnits[],
   isVariable: false,
   hasEndsOn: false,
   // Always holds a real date, even unticked, so ticking the checkbox has a
@@ -117,8 +107,6 @@ watch(
         accountId: item.accountId,
         amount: item.amount,
         nextOccurrence: seeded,
-        amountSource: item.amountSource,
-        depositHistory: item.depositHistory,
         isVariable: item.isVariable,
         hasEndsOn: item.endsOn !== undefined,
         endsOn: item.endsOn ?? today.value,
@@ -136,8 +124,6 @@ watch(
       accountId: accounts.value[0]?.id ?? '',
       amount: 0,
       nextOccurrence: today.value,
-      amountSource: 'fixed',
-      depositHistory: [],
       isVariable: false,
       hasEndsOn: false,
       endsOn: today.value,
@@ -166,31 +152,6 @@ const namePlaceholder = computed(() =>
   form.type === 'bill' ? 'e.g. Electric & water' : 'e.g. Paycheck',
 )
 
-const canPredictHistory = computed(() => canPredict(form.depositHistory))
-
-/**
- * A preview of what save would resolve to — reads through the same domain
- * function the store uses, so this can never drift from the saved figure.
- */
-const predictedAmount = computed(() =>
-  resolveAmount({
-    id: props.item?.id ?? '',
-    name: form.name,
-    kind: form.type,
-    amount: form.amount,
-    cadence: form.cadence,
-    accountId: form.accountId,
-    nextOccurrence: form.nextOccurrence,
-    amountSource: form.amountSource,
-    depositHistory: form.depositHistory,
-    isVariable: form.isVariable,
-  }),
-)
-
-const showPredictedPanel = computed(
-  () => form.type === 'income' && form.amountSource === 'predicted',
-)
-
 async function onSave(): Promise<void> {
   if (!isValid.value) return
   saving.value = true
@@ -211,11 +172,9 @@ async function onSave(): Promise<void> {
           props.item && form.nextOccurrence === seededNextOccurrence.value
             ? props.item.nextOccurrence
             : form.nextOccurrence,
-        // Bills are always fixed and never carry the variable flag — the
-        // type-specific controls are hidden, not cleared, when switching tabs, so
-        // the invariant is enforced here rather than trusting stale form state.
-        amountSource: form.type === 'income' ? form.amountSource : 'fixed',
-        depositHistory: form.depositHistory,
+        // Income never carries the variable flag — the bill-only control is
+        // hidden, not cleared, when switching tabs, so the invariant is
+        // enforced here rather than trusting stale form state.
         isVariable: form.type === 'bill' ? form.isVariable : false,
         // Unticked -> absent, not `endsOn: undefined` — `exactOptionalPropertyTypes`
         // distinguishes the two, and the DB enforces `ends_on >= starts_on`
@@ -341,44 +300,7 @@ async function onDelete(): Promise<void> {
         </div>
       </div>
 
-      <div v-if="form.type === 'income'" class="flex flex-col gap-2">
-        <Label>Amount source</Label>
-        <ToggleGroup
-          type="single"
-          :class="cn(SEGMENTED_TRACK, 'w-full gap-0')"
-          :model-value="form.amountSource"
-          aria-label="Amount source"
-          @update:model-value="(value) => value && (form.amountSource = value as AmountSource)"
-        >
-          <ToggleGroupItem
-            value="fixed"
-            :class="cn(SEGMENTED_SEGMENT, 'h-11 flex-1 text-sm font-medium')"
-          >
-            Fixed amount
-          </ToggleGroupItem>
-          <ToggleGroupItem
-            value="predicted"
-            :disabled="!canPredictHistory"
-            :title="canPredictHistory ? undefined : 'Not enough deposit history yet'"
-            :class="cn(SEGMENTED_SEGMENT, 'h-11 flex-1 text-sm font-medium')"
-          >
-            Predict from deposits
-          </ToggleGroupItem>
-        </ToggleGroup>
-        <p v-if="!canPredictHistory" class="text-xs text-muted-foreground">
-          Needs at least {{ MIN_DEPOSITS_FOR_PREDICTION }} recorded deposits before Runway can predict this amount.
-        </p>
-      </div>
-
-      <PredictedAmountPanel
-        v-if="showPredictedPanel"
-        :predicted="predictedAmount"
-        :deposit-count="form.depositHistory.length"
-        :next-occurrence="form.nextOccurrence"
-        @update:next-occurrence="(value) => (form.nextOccurrence = value)"
-      />
-
-      <div v-else class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-2 gap-3">
         <div class="flex min-w-0 flex-col gap-2">
           <Label for="recurring-amount">Amount</Label>
           <MoneyInput id="recurring-amount" v-model="form.amount" aria-label="Amount" />

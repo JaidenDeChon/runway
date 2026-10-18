@@ -38,8 +38,6 @@ const rentItem: RecurringItem = {
   cadence: 'monthly',
   accountId: 'a',
   nextOccurrence: '2026-08-01',
-  amountSource: 'fixed',
-  depositHistory: [],
   isVariable: false,
 }
 

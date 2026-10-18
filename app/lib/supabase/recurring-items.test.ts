@@ -9,7 +9,6 @@ const row = (over: Partial<RecurringRuleRow> = {}): RecurringRuleRow => ({
   name: 'Rent',
   kind: 'bill',
   amount_cents: 165_000,
-  amount_source: 'fixed',
   is_variable: false,
   cadence: 'monthly',
   anchor_date: '2026-09-01',
@@ -29,8 +28,6 @@ const draft = (over: Partial<RecurringItemDraft> = {}): RecurringItemDraft => ({
   cadence: 'monthly',
   accountId: 'acct-1',
   nextOccurrence: '2026-09-01',
-  amountSource: 'fixed',
-  depositHistory: [],
   isVariable: false,
   ...over,
 })
@@ -45,24 +42,12 @@ describe('toRecurringItem', () => {
       cadence: 'monthly',
       accountId: 'acct-1',
       nextOccurrence: '2026-09-01',
-      amountSource: 'fixed',
-      depositHistory: [],
       isVariable: false,
     })
   })
 
   it('maps anchor_date onto nextOccurrence — the names differ deliberately', () => {
     expect(toRecurringItem(row({ anchor_date: '2026-12-25' })).nextOccurrence).toBe('2026-12-25')
-  })
-
-  it('always reads depositHistory as empty — it is derived, not a column on this row', () => {
-    expect(toRecurringItem(row({ amount_source: 'predicted' })).depositHistory).toEqual([])
-  })
-
-  it('round-trips amount_source: predicted', () => {
-    expect(toRecurringItem(row({ kind: 'income', amount_source: 'predicted' })).amountSource).toBe(
-      'predicted',
-    )
   })
 
   it.each([
@@ -102,7 +87,6 @@ describe('toRecurringRuleColumns', () => {
       name: 'Rent',
       kind: 'bill',
       amount_cents: 165_000,
-      amount_source: 'fixed',
       is_variable: false,
       cadence: 'monthly',
       anchor_date: '2026-09-01',
@@ -133,12 +117,6 @@ describe('toRecurringRuleColumns', () => {
     expect(columns.days_of_week).toEqual([1, 4])
     expect(columns.starts_on).toBe('2026-09-01')
     expect(columns.ends_on).toBe('2026-12-31')
-  })
-
-  it('round-trips amount_source: predicted for income', () => {
-    const columns = toRecurringRuleColumns(draft({ kind: 'income', amountSource: 'predicted' }))
-    expect(columns.kind).toBe('income')
-    expect(columns.amount_source).toBe('predicted')
   })
 
   it('round-trips is_variable', () => {

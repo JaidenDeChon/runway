@@ -46,7 +46,6 @@ export interface Occurrence {
   /** Signed: income is positive, bills negative. Post-override, if any. */
   readonly amount: MinorUnits
   readonly isVariable: boolean
-  readonly isPredicted: boolean
   /**
    * The day the recurring rule itself would land on, before any override.
    * Half of `occurrences`' natural key (`rule_id, projected_date`) and the
@@ -210,7 +209,6 @@ export function occurrencesIn(data: RunwayData, window: ProjectionWindow): Occur
         accountId: item.accountId,
         amount,
         isVariable: item.kind === 'bill' && item.isVariable,
-        isPredicted: item.kind === 'income' && item.amountSource === 'predicted',
         projectedDate: date,
         projectedAmount: amount,
         isOverridden: false,

@@ -126,8 +126,9 @@ until Name is non-empty. "Back" is always enabled.
 ### Step 2, income — `screens/step-2-income.png`
 
 Income tab selected; the only change is the Name placeholder → "e.g. Paycheck". No other field
-differs. Unlike the recurring-items editor there is **no** "Amount source" / predicted-income
-option here — onboarding always captures a fixed amount.
+differs. Onboarding always captures a fixed amount. (The recurring-items design also had a
+"Predict from deposits" amount source; it was dropped, see
+[ADR 0003](../../decisions/0003-drop-income-prediction.md).)
 
 ### Done — `screens/done.png`
 

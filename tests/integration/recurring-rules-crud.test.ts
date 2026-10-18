@@ -175,21 +175,6 @@ describe.skipIf(LOCAL_STACK === null)(
       expect(error?.code).toBe('23514') // recurring_rules_variable_is_bill_ck
     })
 
-    it('rejects amount_source: predicted on a bill', async () => {
-      const { error } = await client.from('recurring_rules').insert({
-        user_id: userId,
-        account_id: accountId,
-        name: fixtureName(LABEL, 'predicted-bill'),
-        kind: 'bill',
-        amount_cents: 1_000,
-        amount_source: 'predicted',
-        cadence: 'monthly',
-        anchor_date: '2026-09-01',
-      })
-      expect(error).not.toBeNull()
-      expect(error?.code).toBe('23514') // recurring_rules_predicted_is_income_ck
-    })
-
     it('normalises a day set on write: [15, 1, 15] is read back as [1, 15]', async () => {
       const { data: inserted, error } = await client
         .from('recurring_rules')

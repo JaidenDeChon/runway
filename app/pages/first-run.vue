@@ -116,8 +116,6 @@ async function handleBuildRunway(): Promise<void> {
         cadence: itemForm.cadence,
         accountId: accountId.value,
         nextOccurrence: itemForm.nextOccurrence,
-        amountSource: 'fixed',
-        depositHistory: [],
         isVariable: false,
       },
       today.value,
