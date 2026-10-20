@@ -35,6 +35,12 @@ typed amount is still covered by editing that one occurrence (#15).
 - Migration `20261017120000_remove_income_prediction.sql` drops
   `recurring_rules.amount_source` and its enum, and removes the objects PR #95
   had already put on the hosted database (see that file's header).
+- Migration `20261020120000_reset_preview_settlements.sql` puts back any
+  occurrence #95's preview marked paid or received. Those `confirmed` rows were
+  first left alone as inert, but `override_occurrence` and `revert_occurrence`
+  refuse a non-`projected` row, so each one was an occurrence the dashboard
+  could no longer edit. They return to `projected`, keeping a hand edit made
+  before settling, exactly as #95's own `unsettle_occurrence` did.
 - Every income and bill rule is a typed amount. The bill-only `is_variable`
   marker ("Amount varies each cycle", shown as "Est.") stays: it is a label,
   not a prediction, and predates #18.
