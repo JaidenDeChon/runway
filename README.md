@@ -7,7 +7,7 @@ and shadcn-vue.
 ## Prerequisites
 
 - [Bun](https://bun.sh) `1.3.0`
-- Node `22.13.0` (used by tooling that shells out to Node; Bun runs the app itself)
+- Node `22.23.3` (used by tooling that shells out to Node; Bun runs the app itself)
 
 ## Quickstart
 
