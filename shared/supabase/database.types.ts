@@ -1,492 +1,275 @@
-export type Json =
-  | string
-  | number
-  | boolean
-  | null
-  | { [key: string]: Json | undefined }
-  | Json[]
+
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
 
 export type Database = {
-  public: {
-    Tables: {
-      accounts: {
-        Row: {
-          archived_on: string | null
-          balance_as_of: string
-          balance_cents: number
-          color: string
-          created_at: string
-          id: string
-          name: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          archived_on?: string | null
-          balance_as_of: string
-          balance_cents: number
-          color: string
-          created_at?: string
-          id?: string
-          name: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          archived_on?: string | null
-          balance_as_of?: string
-          balance_cents?: number
-          color?: string
-          created_at?: string
-          id?: string
-          name?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      balance_readings: {
-        Row: {
-          account_id: string
-          as_of: string
-          balance_cents: number
-          created_at: string
-          id: string
-          user_id: string
-        }
-        Insert: {
-          account_id: string
-          as_of: string
-          balance_cents: number
-          created_at?: string
-          id?: string
-          user_id: string
-        }
-        Update: {
-          account_id?: string
-          as_of?: string
-          balance_cents?: number
-          created_at?: string
-          id?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "balance_readings_account_fk"
-            columns: ["user_id", "account_id"]
-            isOneToOne: false
-            referencedRelation: "accounts"
-            referencedColumns: ["user_id", "id"]
-          },
-        ]
-      }
-      dashboard_hidden_accounts: {
-        Row: {
-          account_id: string
-          created_at: string
-          user_id: string
-        }
-        Insert: {
-          account_id: string
-          created_at?: string
-          user_id: string
-        }
-        Update: {
-          account_id?: string
-          created_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "dashboard_hidden_accounts_account_fk"
-            columns: ["user_id", "account_id"]
-            isOneToOne: true
-            referencedRelation: "accounts"
-            referencedColumns: ["user_id", "id"]
-          },
-        ]
-      }
-      occurrences: {
-        Row: {
-          account_id: string
-          actual_amount_cents: number | null
-          actual_date: string | null
-          created_at: string
-          id: string
-          is_overridden: boolean
-          projected_amount_cents: number
-          projected_date: string
-          rule_id: string
-          status: Database["public"]["Enums"]["occurrence_status"]
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          account_id: string
-          actual_amount_cents?: number | null
-          actual_date?: string | null
-          created_at?: string
-          id?: string
-          is_overridden?: boolean
-          projected_amount_cents: number
-          projected_date: string
-          rule_id: string
-          status?: Database["public"]["Enums"]["occurrence_status"]
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          account_id?: string
-          actual_amount_cents?: number | null
-          actual_date?: string | null
-          created_at?: string
-          id?: string
-          is_overridden?: boolean
-          projected_amount_cents?: number
-          projected_date?: string
-          rule_id?: string
-          status?: Database["public"]["Enums"]["occurrence_status"]
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "occurrences_account_fk"
-            columns: ["user_id", "account_id"]
-            isOneToOne: false
-            referencedRelation: "accounts"
-            referencedColumns: ["user_id", "id"]
-          },
-          {
-            foreignKeyName: "occurrences_rule_fk"
-            columns: ["user_id", "rule_id", "account_id"]
-            isOneToOne: false
-            referencedRelation: "recurring_rules"
-            referencedColumns: ["user_id", "id", "account_id"]
-          },
-        ]
-      }
-      recurring_rules: {
-        Row: {
-          account_id: string
-          amount_cents: number
-          anchor_date: string
-          cadence: Database["public"]["Enums"]["recurring_cadence"]
-          created_at: string
-          days_of_month: number[] | null
-          days_of_week: number[] | null
-          ends_on: string | null
-          id: string
-          is_variable: boolean
-          kind: Database["public"]["Enums"]["recurring_kind"]
-          name: string
-          starts_on: string | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          account_id: string
-          amount_cents: number
-          anchor_date: string
-          cadence: Database["public"]["Enums"]["recurring_cadence"]
-          created_at?: string
-          days_of_month?: number[] | null
-          days_of_week?: number[] | null
-          ends_on?: string | null
-          id?: string
-          is_variable?: boolean
-          kind: Database["public"]["Enums"]["recurring_kind"]
-          name: string
-          starts_on?: string | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          account_id?: string
-          amount_cents?: number
-          anchor_date?: string
-          cadence?: Database["public"]["Enums"]["recurring_cadence"]
-          created_at?: string
-          days_of_month?: number[] | null
-          days_of_week?: number[] | null
-          ends_on?: string | null
-          id?: string
-          is_variable?: boolean
-          kind?: Database["public"]["Enums"]["recurring_kind"]
-          name?: string
-          starts_on?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "recurring_rules_account_fk"
-            columns: ["user_id", "account_id"]
-            isOneToOne: false
-            referencedRelation: "accounts"
-            referencedColumns: ["user_id", "id"]
-          },
-        ]
-      }
-      rls_fixture_items: {
-        Row: {
-          created_at: string
-          id: string
-          label: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          label: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          label?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      transfers: {
-        Row: {
-          amount_cents: number
-          created_at: string
-          from_account_id: string
-          id: string
-          occurs_on: string
-          to_account_id: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          amount_cents: number
-          created_at?: string
-          from_account_id: string
-          id?: string
-          occurs_on: string
-          to_account_id: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          amount_cents?: number
-          created_at?: string
-          from_account_id?: string
-          id?: string
-          occurs_on?: string
-          to_account_id?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "transfers_from_account_fk"
-            columns: ["user_id", "from_account_id"]
-            isOneToOne: false
-            referencedRelation: "accounts"
-            referencedColumns: ["user_id", "id"]
-          },
-          {
-            foreignKeyName: "transfers_to_account_fk"
-            columns: ["user_id", "to_account_id"]
-            isOneToOne: false
-            referencedRelation: "accounts"
-            referencedColumns: ["user_id", "id"]
-          },
-        ]
-      }
-      user_settings: {
-        Row: {
-          balance_stale_after_days: number
-          created_at: string
-          cushion_cents: number
-          default_horizon_days: number
-          discretionary_account_id: string | null
-          monthly_discretionary_cents: number
-          time_zone: string | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          balance_stale_after_days?: number
-          created_at?: string
-          cushion_cents?: number
-          default_horizon_days?: number
-          discretionary_account_id?: string | null
-          monthly_discretionary_cents?: number
-          time_zone?: string | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          balance_stale_after_days?: number
-          created_at?: string
-          cushion_cents?: number
-          default_horizon_days?: number
-          discretionary_account_id?: string | null
-          monthly_discretionary_cents?: number
-          time_zone?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "user_settings_discretionary_account_fk"
-            columns: ["user_id", "discretionary_account_id"]
-            isOneToOne: false
-            referencedRelation: "accounts"
-            referencedColumns: ["user_id", "id"]
-          },
-        ]
-      }
+  
+  "public": {
+          Tables: {
+            "accounts": {
+                  Row: {
+                    "archived_on": string | null,"balance_as_of": string,"balance_cents": number,"color": string,"created_at": string,"id": string,"name": string,"updated_at": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "archived_on"?: string | null,"balance_as_of": string,"balance_cents": number,"color": string,"created_at"?: string,"id"?: string,"name": string,"updated_at"?: string,"user_id": string
+                  }
+                  Update: {
+                    "archived_on"?: string | null,"balance_as_of"?: string,"balance_cents"?: number,"color"?: string,"created_at"?: string,"id"?: string,"name"?: string,"updated_at"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"balance_readings": {
+                  Row: {
+                    "account_id": string,"as_of": string,"balance_cents": number,"created_at": string,"id": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "account_id": string,"as_of": string,"balance_cents": number,"created_at"?: string,"id"?: string,"user_id": string
+                  }
+                  Update: {
+                    "account_id"?: string,"as_of"?: string,"balance_cents"?: number,"created_at"?: string,"id"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "balance_readings_account_fk"
+      columns: ["user_id","account_id"]
+isOneToOne: false
+      referencedRelation: "accounts"
+      referencedColumns: ["user_id","id"]
     }
-    Views: {
-      [_ in never]: never
+                  ]
+                },"dashboard_hidden_accounts": {
+                  Row: {
+                    "account_id": string,"created_at": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "account_id": string,"created_at"?: string,"user_id": string
+                  }
+                  Update: {
+                    "account_id"?: string,"created_at"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "dashboard_hidden_accounts_account_fk"
+      columns: ["user_id","account_id"]
+isOneToOne: true
+      referencedRelation: "accounts"
+      referencedColumns: ["user_id","id"]
     }
-    Functions: {
-      override_occurrence: {
-        Args: {
-          p_actual_amount_cents: number
-          p_actual_date: string
-          p_projected_amount_cents: number
-          p_projected_date: string
-          p_rule_id: string
-        }
-        Returns: {
-          account_id: string
-          actual_amount_cents: number | null
-          actual_date: string | null
-          created_at: string
-          id: string
-          is_overridden: boolean
-          projected_amount_cents: number
-          projected_date: string
-          rule_id: string
-          status: Database["public"]["Enums"]["occurrence_status"]
-          updated_at: string
-          user_id: string
-        }
-        SetofOptions: {
-          from: "*"
-          to: "occurrences"
-          isOneToOne: true
-          isSetofReturn: false
-        }
-      }
-      regenerate_occurrences: {
-        Args: {
-          p_occurrence_amount_cents: number[]
-          p_occurrence_dates: string[]
-          p_occurrence_rule_ids: string[]
-          p_rule_ids: string[]
-          p_window_end: string
-          p_window_start: string
-        }
-        Returns: {
-          deleted: number
-          upserted: number
-        }[]
-      }
-      revert_occurrence: {
-        Args: { p_projected_date: string; p_rule_id: string }
-        Returns: {
-          account_id: string
-          actual_amount_cents: number | null
-          actual_date: string | null
-          created_at: string
-          id: string
-          is_overridden: boolean
-          projected_amount_cents: number
-          projected_date: string
-          rule_id: string
-          status: Database["public"]["Enums"]["occurrence_status"]
-          updated_at: string
-          user_id: string
-        }
-        SetofOptions: {
-          from: "*"
-          to: "occurrences"
-          isOneToOne: true
-          isSetofReturn: false
-        }
-      }
-      save_account: {
-        Args: {
-          p_balance_as_of: string
-          p_balance_cents: number
-          p_color: string
-          p_id: string
-          p_is_discretionary_source: boolean
-          p_name: string
-        }
-        Returns: {
-          archived_on: string | null
-          balance_as_of: string
-          balance_cents: number
-          color: string
-          created_at: string
-          id: string
-          name: string
-          updated_at: string
-          user_id: string
-        }
-        SetofOptions: {
-          from: "*"
-          to: "accounts"
-          isOneToOne: true
-          isSetofReturn: false
-        }
-      }
-      save_account_balances: {
-        Args: {
-          p_account_ids: string[]
-          p_as_of: string
-          p_balance_cents: number[]
-        }
-        Returns: {
-          archived_on: string | null
-          balance_as_of: string
-          balance_cents: number
-          color: string
-          created_at: string
-          id: string
-          name: string
-          updated_at: string
-          user_id: string
-        }[]
-        SetofOptions: {
-          from: "*"
-          to: "accounts"
-          isOneToOne: false
-          isSetofReturn: true
-        }
-      }
-      split_recurring_rule: {
-        Args: {
-          p_amount_cents: number
-          p_effective_from: string
-          p_rule_id: string
-        }
-        Returns: {
-          closed_rule_id: string
-          successor_rule_id: string
-        }[]
-      }
+                  ]
+                },"occurrences": {
+                  Row: {
+                    "account_id": string,"actual_amount_cents": number | null,"actual_date": string | null,"created_at": string,"id": string,"is_overridden": boolean,"projected_amount_cents": number,"projected_date": string,"rule_id": string,"status": Database["public"]['Enums']["occurrence_status"],"updated_at": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "account_id": string,"actual_amount_cents"?: number | null,"actual_date"?: string | null,"created_at"?: string,"id"?: string,"is_overridden"?: boolean,"projected_amount_cents": number,"projected_date": string,"rule_id": string,"status"?: Database["public"]['Enums']["occurrence_status"],"updated_at"?: string,"user_id": string
+                  }
+                  Update: {
+                    "account_id"?: string,"actual_amount_cents"?: number | null,"actual_date"?: string | null,"created_at"?: string,"id"?: string,"is_overridden"?: boolean,"projected_amount_cents"?: number,"projected_date"?: string,"rule_id"?: string,"status"?: Database["public"]['Enums']["occurrence_status"],"updated_at"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "occurrences_account_fk"
+      columns: ["user_id","account_id"]
+isOneToOne: false
+      referencedRelation: "accounts"
+      referencedColumns: ["user_id","id"]
+    },{
+      foreignKeyName: "occurrences_rule_fk"
+      columns: ["user_id","rule_id","account_id"]
+isOneToOne: false
+      referencedRelation: "recurring_rules"
+      referencedColumns: ["user_id","id","account_id"]
     }
-    Enums: {
-      occurrence_status: "projected" | "confirmed" | "skipped"
-      recurring_cadence: "weekly" | "biweekly" | "monthly" | "annual"
-      recurring_kind: "bill" | "income"
+                  ]
+                },"recurring_rules": {
+                  Row: {
+                    "account_id": string,"amount_cents": number,"anchor_date": string,"cadence": Database["public"]['Enums']["recurring_cadence"],"created_at": string,"days_of_month": (number)[] | null,"days_of_week": (number)[] | null,"ends_on": string | null,"id": string,"is_variable": boolean,"kind": Database["public"]['Enums']["recurring_kind"],"name": string,"starts_on": string | null,"updated_at": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "account_id": string,"amount_cents": number,"anchor_date": string,"cadence": Database["public"]['Enums']["recurring_cadence"],"created_at"?: string,"days_of_month"?: (number)[] | null,"days_of_week"?: (number)[] | null,"ends_on"?: string | null,"id"?: string,"is_variable"?: boolean,"kind": Database["public"]['Enums']["recurring_kind"],"name": string,"starts_on"?: string | null,"updated_at"?: string,"user_id": string
+                  }
+                  Update: {
+                    "account_id"?: string,"amount_cents"?: number,"anchor_date"?: string,"cadence"?: Database["public"]['Enums']["recurring_cadence"],"created_at"?: string,"days_of_month"?: (number)[] | null,"days_of_week"?: (number)[] | null,"ends_on"?: string | null,"id"?: string,"is_variable"?: boolean,"kind"?: Database["public"]['Enums']["recurring_kind"],"name"?: string,"starts_on"?: string | null,"updated_at"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "recurring_rules_account_fk"
+      columns: ["user_id","account_id"]
+isOneToOne: false
+      referencedRelation: "accounts"
+      referencedColumns: ["user_id","id"]
     }
-    CompositeTypes: {
-      [_ in never]: never
+                  ]
+                },"rls_fixture_items": {
+                  Row: {
+                    "created_at": string,"id": string,"label": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"id"?: string,"label": string,"user_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"id"?: string,"label"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"transfers": {
+                  Row: {
+                    "amount_cents": number,"created_at": string,"from_account_id": string,"id": string,"occurs_on": string,"to_account_id": string,"updated_at": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "amount_cents": number,"created_at"?: string,"from_account_id": string,"id"?: string,"occurs_on": string,"to_account_id": string,"updated_at"?: string,"user_id": string
+                  }
+                  Update: {
+                    "amount_cents"?: number,"created_at"?: string,"from_account_id"?: string,"id"?: string,"occurs_on"?: string,"to_account_id"?: string,"updated_at"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "transfers_from_account_fk"
+      columns: ["user_id","from_account_id"]
+isOneToOne: false
+      referencedRelation: "accounts"
+      referencedColumns: ["user_id","id"]
+    },{
+      foreignKeyName: "transfers_to_account_fk"
+      columns: ["user_id","to_account_id"]
+isOneToOne: false
+      referencedRelation: "accounts"
+      referencedColumns: ["user_id","id"]
     }
-  }
+                  ]
+                },"user_settings": {
+                  Row: {
+                    "balance_stale_after_days": number,"created_at": string,"cushion_cents": number,"default_horizon_days": number,"discretionary_account_id": string | null,"monthly_discretionary_cents": number,"time_zone": string | null,"updated_at": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "balance_stale_after_days"?: number,"created_at"?: string,"cushion_cents"?: number,"default_horizon_days"?: number,"discretionary_account_id"?: string | null,"monthly_discretionary_cents"?: number,"time_zone"?: string | null,"updated_at"?: string,"user_id": string
+                  }
+                  Update: {
+                    "balance_stale_after_days"?: number,"created_at"?: string,"cushion_cents"?: number,"default_horizon_days"?: number,"discretionary_account_id"?: string | null,"monthly_discretionary_cents"?: number,"time_zone"?: string | null,"updated_at"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "user_settings_discretionary_account_fk"
+      columns: ["user_id","discretionary_account_id"]
+isOneToOne: false
+      referencedRelation: "accounts"
+      referencedColumns: ["user_id","id"]
+    }
+                  ]
+                }
+          }
+          Views: {
+            [_ in never]: never
+          }
+          Functions: {
+            "override_occurrence":
+{ Args: { "p_actual_amount_cents": number,"p_actual_date": string,"p_projected_amount_cents": number,"p_projected_date": string,"p_rule_id": string }; Returns: {
+              "account_id": string,
+"actual_amount_cents": number | null,
+"actual_date": string | null,
+"created_at": string,
+"id": string,
+"is_overridden": boolean,
+"projected_amount_cents": number,
+"projected_date": string,
+"rule_id": string,
+"status": Database["public"]['Enums']["occurrence_status"],
+"updated_at": string,
+"user_id": string
+            }
+                          SetofOptions: {
+        from: "*"
+        to: "occurrences"
+        isOneToOne: true
+        isSetofReturn: false
+      } },
+"regenerate_occurrences":
+{ Args: { "p_occurrence_amount_cents": (number)[],"p_occurrence_dates": (string)[],"p_occurrence_rule_ids": (string)[],"p_rule_ids": (string)[],"p_window_end": string,"p_window_start": string }; Returns: {
+              "deleted": number,"upserted": number
+            }[]
+                           },
+"revert_occurrence":
+{ Args: { "p_projected_date": string,"p_rule_id": string }; Returns: {
+              "account_id": string,
+"actual_amount_cents": number | null,
+"actual_date": string | null,
+"created_at": string,
+"id": string,
+"is_overridden": boolean,
+"projected_amount_cents": number,
+"projected_date": string,
+"rule_id": string,
+"status": Database["public"]['Enums']["occurrence_status"],
+"updated_at": string,
+"user_id": string
+            }
+                          SetofOptions: {
+        from: "*"
+        to: "occurrences"
+        isOneToOne: true
+        isSetofReturn: false
+      } },
+"save_account":
+{ Args: { "p_balance_as_of": string,"p_balance_cents": number,"p_color": string,"p_id": string,"p_is_discretionary_source": boolean,"p_name": string }; Returns: {
+              "archived_on": string | null,
+"balance_as_of": string,
+"balance_cents": number,
+"color": string,
+"created_at": string,
+"id": string,
+"name": string,
+"updated_at": string,
+"user_id": string
+            }
+                          SetofOptions: {
+        from: "*"
+        to: "accounts"
+        isOneToOne: true
+        isSetofReturn: false
+      } },
+"save_account_balances":
+{ Args: { "p_account_ids": (string)[],"p_as_of": string,"p_balance_cents": (number)[] }; Returns: {
+              "archived_on": string | null,
+"balance_as_of": string,
+"balance_cents": number,
+"color": string,
+"created_at": string,
+"id": string,
+"name": string,
+"updated_at": string,
+"user_id": string
+            }[]
+                          SetofOptions: {
+        from: "*"
+        to: "accounts"
+        isOneToOne: false
+        isSetofReturn: true
+      } },
+"split_recurring_rule":
+{ Args: { "p_amount_cents": number,"p_effective_from": string,"p_rule_id": string }; Returns: {
+              "closed_rule_id": string,"successor_rule_id": string
+            }[]
+                           }
+          }
+          Enums: {
+            "occurrence_status": "projected"|"confirmed"|"skipped","recurring_cadence": "weekly"|"biweekly"|"monthly"|"annual","recurring_kind": "bill"|"income"
+          }
+          CompositeTypes: {
+            [_ in never]: never
+          }
+        }
 }
 
-type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+type DatabaseWithoutInternals = Omit<Database, '__InternalSupabase'>
 
 type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
@@ -499,25 +282,21 @@ export type Tables<
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
+    : never = never
+> = DefaultSchemaTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
   ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
       DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
     ? R
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])
-    ? (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
-        Row: infer R
-      }
-      ? R
-      : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+  ? (DefaultSchema["Tables"] & DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+      Row: infer R
+    }
+    ? R
     : never
+  : never
 
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
@@ -527,22 +306,20 @@ export type TablesInsert<
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
+    : never = never
+> = DefaultSchemaTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
   ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Insert: infer I
     }
     ? I
     : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-        Insert: infer I
-      }
-      ? I
-      : never
+  ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+      Insert: infer I
+    }
+    ? I
     : never
+  : never
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
@@ -552,22 +329,20 @@ export type TablesUpdate<
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
+    : never = never
+> = DefaultSchemaTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
   ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Update: infer U
     }
     ? U
     : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-        Update: infer U
-      }
-      ? U
-      : never
+  ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+      Update: infer U
+    }
+    ? U
     : never
+  : never
 
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
@@ -577,14 +352,12 @@ export type Enums<
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
-> = DefaultSchemaEnumNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
+    : never = never
+> = DefaultSchemaEnumNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
   ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
   : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
-    : never
+  ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+  : never
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
@@ -594,22 +367,17 @@ export type CompositeTypes<
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
-> = PublicCompositeTypeNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
+    : never = never
+> = PublicCompositeTypeNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
   ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
   : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
-    : never
+  ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+  : never
 
 export const Constants = {
-  public: {
-    Enums: {
-      occurrence_status: ["projected", "confirmed", "skipped"],
-      recurring_cadence: ["weekly", "biweekly", "monthly", "annual"],
-      recurring_kind: ["bill", "income"],
-    },
-  },
+  "public": {
+          Enums: {
+            "occurrence_status": ["projected", "confirmed", "skipped"],"recurring_cadence": ["weekly", "biweekly", "monthly", "annual"],"recurring_kind": ["bill", "income"]
+          }
+        }
 } as const
-

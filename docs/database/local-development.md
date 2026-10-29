@@ -6,7 +6,7 @@ with synthetic data, and it is never connected to the hosted project.
 ## Prerequisites
 
 - **Docker**, running. `supabase start` is a set of containers.
-- **Supabase CLI**. `supabase --version` — this repo was built against 2.76.15.
+- **Supabase CLI**. `supabase --version` — CI pins 2.122.0 (`.github/workflows/ci.yml`); use the same version locally, because `supabase gen types` output differs between versions and CI checks the generated file.
 
 ## First run
 
