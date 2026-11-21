@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # No moving `v5` tag exists for this action — pin the exact release.
-      - uses: actions/dependency-review-action@v5.0.0
+      - uses: actions/dependency-review-action@v5.0.1
         with:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
